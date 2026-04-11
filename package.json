@@ -1,0 +1,24 @@
+{
+  "name": "spaluter-desktop",
+  "version": "0.1.0",
+  "description": "Cross-platform Electron app for controlling Spaluter SuperCollider patch via OSC",
+  "main": "main.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node scripts/start-electron.js",
+    "check": "node --check main.js && node --check preload.js && node --check renderer/renderer.js"
+  },
+  "keywords": [
+    "electron",
+    "supercollider",
+    "osc",
+    "synth"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "osc": "^2.4.5"
+  },
+  "devDependencies": {
+    "electron": "^33.2.1"
+  }
+}
