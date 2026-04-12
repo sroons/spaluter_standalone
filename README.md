@@ -10,6 +10,7 @@ Cross-platform desktop wrapper for the `spaluter_supercollider.scd` patch.
 - Starts the synth
 - Provides a non-SuperCollider UI (HTML/CSS/JS in Electron)
 - Sends parameter changes via OSC
+- Handles MIDI CC mappings plus MIDI Note On/Off pitch+gate control (auto-switches from Free Run to MIDI-like gating so attack/release is honored)
 
 ## Requirements
 

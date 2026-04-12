@@ -37,6 +37,7 @@ const DEFAULT_SAMPLE_DIR = "/spaluter/samples/";
 let currentSamplePath = "";
 let midiAccess = null;
 let midiMappings = {};
+let activeMidiNotes = [];
 let synthRunning = false;
 const allParamNames = Array.from(new Set([
   ...knobByParam.keys(),
@@ -102,6 +103,10 @@ const WINDOW_WAVE_NAMES = [
 ];
 const TWO_PI = Math.PI * 2;
 const OUTPUT_SCOPE_FRAME_SIZE = 64;
+const MIDI_STATUS_TYPE_MASK = 0xF0;
+const MIDI_STATUS_NOTE_OFF = 0x80;
+const MIDI_STATUS_NOTE_ON = 0x90;
+const MIDI_STATUS_CC = 0xB0;
 let outputScopeSamples = Array.from({ length: OUTPUT_SCOPE_FRAME_SIZE }, () => 0);
 
 function appendLog(text) {
@@ -515,6 +520,58 @@ function valueFromMidiCc(param, ccValue) {
   return clamp(quantize(v, meta.step), meta.min, meta.max);
 }
 
+function midiNoteToHz(noteNumber) {
+  const note = clamp(Number(noteNumber), 0, 127);
+  return 440 * (2 ** ((note - 69) / 12));
+}
+
+function releaseActiveMidiNote(noteNumber) {
+  activeMidiNotes = activeMidiNotes.filter((note) => note !== noteNumber);
+}
+
+function applyMidiNotePitch(noteNumber) {
+  setParamValue("basePitch", midiNoteToHz(noteNumber), true);
+}
+
+function updateGateFromMidiNotes() {
+  const gateValue = activeMidiNotes.length > 0 ? 1 : 0;
+  window.spaluterApi.setParam("gate", gateValue);
+  window.spaluterApi.setParam("trigIn", gateValue);
+}
+
+function ensureMidiNoteEnvelopeMode() {
+  const gateMode = currentParamValue("gateMode", 1);
+  if (gateMode !== 1) return;
+  setParamValue("gateMode", 0, true);
+  appendLog("[MIDI] Gate Mode set to MIDI-like so Note On/Off uses attack/release.");
+}
+
+function handleMidiNoteMessage(status, noteNumber, velocity) {
+  const messageType = status & MIDI_STATUS_TYPE_MASK;
+  const note = clamp(Math.round(Number(noteNumber)), 0, 127);
+  const vel = clamp(Math.round(Number(velocity)), 0, 127);
+  const isNoteOn = messageType === MIDI_STATUS_NOTE_ON && vel > 0;
+  const isNoteOff = messageType === MIDI_STATUS_NOTE_OFF || (messageType === MIDI_STATUS_NOTE_ON && vel === 0);
+  const wasActive = activeMidiNotes.includes(note);
+
+  if (isNoteOn || (isNoteOff && wasActive)) ensureMidiNoteEnvelopeMode();
+
+  if (isNoteOn) {
+    releaseActiveMidiNote(note);
+    activeMidiNotes.push(note);
+    applyMidiNotePitch(note);
+    updateGateFromMidiNotes();
+    return;
+  }
+
+  if (!isNoteOff) return;
+
+  releaseActiveMidiNote(note);
+  const nextNote = activeMidiNotes[activeMidiNotes.length - 1];
+  if (Number.isInteger(nextNote)) applyMidiNotePitch(nextNote);
+  updateGateFromMidiNotes();
+}
+
 function closeMidiPanels(exceptParam = null) {
   midiUiByParam.forEach((ui, param) => {
     if (param !== exceptParam) ui.panel.classList.add("hidden");
@@ -613,17 +670,27 @@ function setupMidiMappingControls() {
 function handleMidiMessage(event) {
   const data = event?.data;
   if (!data || data.length < 3) return;
-  const status = data[0];
-  if ((status & 0xF0) !== 0xB0) return;
-  const cc = Number(data[1]);
-  const ccValue = Number(data[2]);
+  const status = Number(data[0]);
+  const data1 = Number(data[1]);
+  const data2 = Number(data[2]);
+  const messageType = status & MIDI_STATUS_TYPE_MASK;
 
-  Object.entries(midiMappings).forEach(([param, mappedCc]) => {
-    if (mappedCc !== cc) return;
-    const value = valueFromMidiCc(param, ccValue);
-    if (value === null) return;
-    setParamValue(param, value, true);
-  });
+  if (messageType === MIDI_STATUS_CC) {
+    const cc = data1;
+    const ccValue = data2;
+
+    Object.entries(midiMappings).forEach(([param, mappedCc]) => {
+      if (mappedCc !== cc) return;
+      const value = valueFromMidiCc(param, ccValue);
+      if (value === null) return;
+      setParamValue(param, value, true);
+    });
+    return;
+  }
+
+  if (messageType === MIDI_STATUS_NOTE_ON || messageType === MIDI_STATUS_NOTE_OFF) {
+    handleMidiNoteMessage(status, data1, data2);
+  }
 }
 
 function bindMidiInputs() {
@@ -885,6 +952,7 @@ window.spaluterApi.onStatus((text) => {
   setStatusState(state);
   updateSynthRunningFromStatus(text);
   if (/(synth stopped|stopped by user|manual stop|quitting runtime|sclang exited)/.test(statusText)) {
+    activeMidiNotes = [];
     clearOutputScope("Waiting for synth...");
   }
   if (/synth started/.test(statusText) && outputScopeLabelEl) {
