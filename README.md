@@ -32,6 +32,31 @@ Note: this repo’s launcher clears `ELECTRON_RUN_AS_NODE` automatically before 
 - Windows: supported (`sclang.exe` expected in PATH)
 - Linux / Raspberry Pi 4: supported if Electron and SuperCollider are installed
 
+## Build installers
+
+Installer artifacts are written to `installers/`.
+
+```bash
+npm install
+npm run build:mac
+npm run build:win
+npm run build:pi
+```
+
+Or build all in one go:
+
+```bash
+npm run build:installers
+```
+
+Installer behavior:
+
+- macOS build script outputs both Intel (`x64`) and Apple Silicon (`arm64`) installers.
+- macOS (`.pkg` postinstall): creates `/usr/local/bin/spaluter-desktop` symlink to the app binary.
+- Windows (`NSIS`): adds install directory to machine `PATH`.
+- Raspberry Pi / Linux ARM64 (`.deb` postinst): creates `/usr/local/bin/spaluter-desktop` symlink.
+- All platforms: package app/runtime files and warn if `sclang` is not installed.
+
 ## OSC bridge details
 
 Electron sends to `127.0.0.1:57130`, runtime replies to `127.0.0.1:57131`.

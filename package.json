@@ -6,7 +6,11 @@
   "type": "commonjs",
   "scripts": {
     "start": "node scripts/start-electron.js",
-    "check": "node --check main.js && node --check preload.js && node --check renderer/renderer.js"
+    "check": "node --check main.js && node --check preload.js && node --check renderer/renderer.js",
+    "build:mac": "electron-builder --mac dmg pkg --x64 --arm64 --publish never",
+    "build:win": "electron-builder --win nsis --publish never",
+    "build:pi": "electron-builder --linux deb --arm64 --publish never",
+    "build:installers": "npm run build:mac && npm run build:win && npm run build:pi"
   },
   "keywords": [
     "electron",
@@ -19,6 +23,60 @@
     "osc": "^2.4.5"
   },
   "devDependencies": {
-    "electron": "^33.2.1"
+    "electron": "^33.2.1",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.spaluter.desktop",
+    "productName": "Spaluter Desktop",
+    "npmRebuild": false,
+    "nodeGypRebuild": false,
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "directories": {
+      "output": "installers",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/**/*",
+      "sc/**/*",
+      "scripts/start-electron.js",
+      "spaluter_supercollider.scd",
+      "package.json"
+    ],
+    "mac": {
+      "category": "public.app-category.music",
+      "target": [
+        "dmg",
+        "pkg"
+      ],
+      "identity": null
+    },
+    "pkg": {
+      "scripts": "build/mac/pkg-scripts"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": true,
+      "include": "build/win/installer.nsh"
+    },
+    "linux": {
+      "category": "AudioVideo",
+      "maintainer": "Spaluter Desktop <noreply@spaluter.local>",
+      "target": [
+        "deb"
+      ]
+    },
+    "deb": {
+      "afterInstall": "build/linux/postinst.sh"
+    }
   }
 }
