@@ -1,5 +1,6 @@
 const { app, BrowserWindow, ipcMain } = require("electron");
 const path = require("path");
+const fsSync = require("fs");
 const fs = require("fs/promises");
 const { spawn } = require("child_process");
 const osc = require("osc");
@@ -116,22 +117,34 @@ function maybeInjectRuntime(textChunk, runtimePath, patchPath) {
   sclangProc.stdin.write(script);
 }
 
+function resolveExternalAssetPath(...parts) {
+  const packagedPath = path.join(__dirname, ...parts);
+  const asarSegment = `${path.sep}app.asar${path.sep}`;
+
+  if (!packagedPath.includes(asarSegment)) return packagedPath;
+
+  const unpackedPath = packagedPath.replace(asarSegment, `${path.sep}app.asar.unpacked${path.sep}`);
+  if (fsSync.existsSync(unpackedPath)) return unpackedPath;
+  return packagedPath;
+}
+
 function startSuperCollider() {
   if (sclangProc) return;
 
   const cmd = detectSclangCommand();
-  const runtimePath = path.join(__dirname, "sc", "runtime.scd");
-  const patchPath = path.join(__dirname, "spaluter_supercollider.scd");
+  const runtimePath = resolveExternalAssetPath("sc", "runtime.scd");
+  const patchPath = resolveExternalAssetPath("spaluter_supercollider.scd");
+  const sclangCwd = path.dirname(runtimePath);
 
   sendStatus(`Starting sclang (${cmd})...`);
   sendLog(`[BOOT] runtime: ${runtimePath}`);
   sendLog(`[BOOT] patch:   ${patchPath}`);
-  sendLog(`[BOOT] cwd:     ${__dirname}`);
+  sendLog(`[BOOT] cwd:     ${sclangCwd}`);
 
   runtimeInjected = false;
   sclangStartupBuffer = "";
   sclangProc = spawn(cmd, [], {
-    cwd: __dirname,
+    cwd: sclangCwd,
     stdio: ["pipe", "pipe", "pipe"],
     env: process.env
   });

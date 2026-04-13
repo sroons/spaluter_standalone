@@ -31,6 +31,10 @@
     "productName": "Spaluter Desktop",
     "npmRebuild": false,
     "nodeGypRebuild": false,
+    "asarUnpack": [
+      "sc/**/*",
+      "spaluter_supercollider.scd"
+    ],
     "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
     "directories": {
       "output": "installers",
