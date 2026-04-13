@@ -15,6 +15,7 @@ let lastStatus = "Starting...";
 const logBuffer = [];
 let runtimeInjected = false;
 let quittingApp = false;
+let sclangStartupBuffer = "";
 
 function pushLog(text) {
   const line = String(text ?? "");
@@ -97,6 +98,24 @@ function isSupportedSampleFile(filePath) {
   return [".wav", ".aif", ".aiff", ".flac", ".ogg", ".mp3"].includes(path.extname(filePath).toLowerCase());
 }
 
+function maybeInjectRuntime(textChunk, runtimePath, patchPath) {
+  if (runtimeInjected || !sclangProc) return;
+
+  const chunk = String(textChunk ?? "");
+  if (chunk.length > 0) {
+    sclangStartupBuffer = `${sclangStartupBuffer}${chunk}`.slice(-8192);
+  }
+
+  if (!/welcome to supercollider/i.test(sclangStartupBuffer)) return;
+
+  runtimeInjected = true;
+  const escaped = runtimePath.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  const escapedPatch = patchPath.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  const script = `~spaluterPatchPath="${escapedPatch}"; this.executeFile("${escaped}");\n`;
+  sendLog("[BOOT] injecting runtime.scd into sclang");
+  sclangProc.stdin.write(script);
+}
+
 function startSuperCollider() {
   if (sclangProc) return;
 
@@ -110,6 +129,7 @@ function startSuperCollider() {
   sendLog(`[BOOT] cwd:     ${__dirname}`);
 
   runtimeInjected = false;
+  sclangStartupBuffer = "";
   sclangProc = spawn(cmd, [], {
     cwd: __dirname,
     stdio: ["pipe", "pipe", "pipe"],
@@ -119,19 +139,13 @@ function startSuperCollider() {
   sclangProc.stdout.on("data", (buf) => {
     const text = buf.toString();
     sendLog(text);
-    if (!runtimeInjected && text.includes("*** Welcome to SuperCollider")) {
-      runtimeInjected = true;
-      const escaped = runtimePath.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-      const escapedPatch = patchPath.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-      const script = `~spaluterPatchPath="${escapedPatch}"; this.executeFile("${escaped}");\n`;
-      sendLog("[BOOT] injecting runtime.scd into sclang");
-      sclangProc.stdin.write(script);
-    }
+    maybeInjectRuntime(text, runtimePath, patchPath);
   });
 
   sclangProc.stderr.on("data", (buf) => {
     const text = buf.toString();
     sendLog(`[ERR] ${text}`);
+    maybeInjectRuntime(text, runtimePath, patchPath);
   });
 
   sclangProc.on("error", (err) => {
@@ -144,6 +158,7 @@ function startSuperCollider() {
     sendStatus(`sclang exited (${code})`);
     sclangProc = null;
     runtimeInjected = false;
+    sclangStartupBuffer = "";
   });
 }
 
