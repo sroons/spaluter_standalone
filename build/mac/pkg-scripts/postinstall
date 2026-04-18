@@ -4,9 +4,19 @@ set -euo pipefail
 APP_BINARY="/Applications/Spaluter Desktop.app/Contents/MacOS/Spaluter Desktop"
 SYMLINK_PATH="/usr/local/bin/spaluter-desktop"
 
+if [ ! -x "$APP_BINARY" ]; then
+  FALLBACK_BINARY="$(find /Applications -maxdepth 3 -type f -path "*/Spaluter Desktop.app/Contents/MacOS/Spaluter Desktop" -print -quit 2>/dev/null || true)"
+  if [ -n "$FALLBACK_BINARY" ]; then
+    APP_BINARY="$FALLBACK_BINARY"
+  fi
+fi
+
 if [ -x "$APP_BINARY" ]; then
   mkdir -p "$(dirname "$SYMLINK_PATH")"
   ln -sf "$APP_BINARY" "$SYMLINK_PATH"
+else
+  echo "Spaluter Desktop installed, but app bundle binary was not found in /Applications." >&2
+  echo "Skipping CLI symlink creation for ${SYMLINK_PATH}." >&2
 fi
 
 if ! command -v sclang >/dev/null 2>&1; then

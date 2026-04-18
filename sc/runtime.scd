@@ -13,7 +13,8 @@ Boots local scsynth, loads patch file, and exposes OSC control:
 */
 
 (
-    var patchPath, appAddr, status, startSynth, stopSynth, resetSynth, waitForPatch, waitForSynthDef, silentBuf, booted, loadSample, forwardScope;
+    var patchPath, appPort, appAddr, status, startSynth, stopSynth, resetSynth, waitForPatch, waitForSynthDef, silentBuf, booted, loadSample, forwardScope;
+    var readIntEnv, patchWaitRetries, synthDefWaitRetries, scopeRate, scopeEnabled, applyScopeConfig;
 
 patchPath = ~spaluterPatchPath;
 if(patchPath.isNil) {
@@ -24,7 +25,23 @@ if(patchPath.isNil or: { PathName.new(patchPath).isFile.not }) {
     1.exit;
 };
 
-appAddr = NetAddr("127.0.0.1", 57131);
+readIntEnv = { |name, fallback|
+    var raw, parsed;
+    raw = Platform.getenv(name);
+    if(raw.notNil) {
+        parsed = raw.asInteger;
+        if(parsed > 0) { parsed } { fallback };
+    } {
+        fallback
+    };
+};
+
+patchWaitRetries = readIntEnv.("SPALUTER_PATCH_WAIT_RETRIES", 120);
+synthDefWaitRetries = readIntEnv.("SPALUTER_SYNTHDEF_WAIT_RETRIES", 160);
+scopeRate = (~spaluterScopeRate ? 20).asFloat.clip(1, 60);
+scopeEnabled = (~spaluterScopeEnabled ? 1).asInteger > 0;
+appPort = (~spaluterAppPort ? 57131).asInteger;
+appAddr = NetAddr("127.0.0.1", appPort);
 
     status = { |txt|
         txt.postln;
@@ -40,7 +57,7 @@ appAddr = NetAddr("127.0.0.1", 57131);
 s.options.numInputBusChannels = 0;
 s.options.numOutputBusChannels = 2;
 // Do not force sampleRate here; let OS/default device choose a valid rate.
-s.options.numWireBufs = 8192;
+s.options.numWireBufs = readIntEnv.("SPALUTER_WIRE_BUFS", 4096).clip(1024, 8192);
 s.options.bindAddress = "127.0.0.1";
 
 thisProcess.openUDPPort(57130);
@@ -67,7 +84,7 @@ s.doWhenBooted({
         };
     };
 
-    waitForSynthDef = { |name = \spaluterSC, onReady, retries = 80|
+    waitForSynthDef = { |name = \spaluterSC, onReady, retries = synthDefWaitRetries|
         if(SynthDescLib.global.at(name).notNil) {
             onReady.value;
         } {
@@ -79,6 +96,15 @@ s.doWhenBooted({
         };
     };
 
+    applyScopeConfig = {
+        if(~spaluter.notNil) {
+            ~spaluter.set(
+                \scopeEnabled, if(scopeEnabled) { 1 } { 0 },
+                \scopeRate, scopeRate
+            );
+        };
+    };
+
     startSynth = {
         waitForPatch.value({
             waitForSynthDef.value(\spaluterSC, {
@@ -87,6 +113,7 @@ s.doWhenBooted({
                     ~spaluter = ~spaluterStart.();
                     if(~spaluter.notNil and: { silentBuf.notNil }) {
                         ~spaluter.set(\bufnum, silentBuf.bufnum);
+                        applyScopeConfig.value;
                     };
                     if(~spaluter.notNil) {
                         status.value("Synth started");
@@ -95,7 +122,7 @@ s.doWhenBooted({
                     };
                 }.defer;
             });
-        });
+        }, patchWaitRetries);
     };
 
     stopSynth = {
@@ -192,6 +219,20 @@ s.doWhenBooted({
             forwardScope.value(msg.copyRange(cmdIdx + 1, msg.size - 1));
         };
     }, "/reply");
+
+    OSCdef(\spaluterScopeConfig, { |msg|
+        var enabled, rate;
+        enabled = msg[1];
+        rate = msg[2];
+        scopeEnabled = enabled.asInteger > 0;
+        if(rate.notNil) {
+            scopeRate = rate.asFloat.clip(1, 60);
+        };
+        {
+            applyScopeConfig.value;
+            status.value("Scope stream " ++ (if(scopeEnabled) { "enabled" } { "disabled" }) ++ " @" ++ scopeRate.asString ++ " Hz");
+        }.defer;
+    }, "/spaluter/scope-config");
 
     OSCdef(\spaluterQuit, { |msg|
         {

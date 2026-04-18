@@ -29,16 +29,38 @@ const selectInputs = Array.from(document.querySelectorAll("select[data-param]"))
 const knobByParam = new Map(knobs.map((knob) => [knob.dataset.param, knob]));
 const rangeByParam = new Map(rangeInputs.map((input) => [input.dataset.param, input]));
 const selectByParam = new Map(selectInputs.map((input) => [input.dataset.param, input]));
+const knobVisualByParam = new Map(knobs.map((knob) => [
+  knob.dataset.param,
+  {
+    pointer: knob.querySelector(".knob-pointer"),
+    valueEl: knob.parentElement?.querySelector(".knob-value")
+  }
+]));
 
 const PRESET_COUNT = 32;
 const PRESET_STORAGE_KEY = "spaluter-presets-v1";
 const MIDI_MAP_STORAGE_KEY = "spaluter-midi-map-v1";
-const DEFAULT_SAMPLE_DIR = "/spaluter/samples/";
+const DEFAULT_SAMPLE_DIR = navigator.platform.toLowerCase().startsWith("win")
+  ? "C:\\Users\\Public\\Music"
+  : "/spaluter/samples/";
+const LOG_LINE_LIMIT = 400;
+const RESIZE_DEBOUNCE_MS = 120;
+const MIN_SCOPE_RATE_HZ = 2;
+const ACTIVE_SCOPE_RATE_HZ = 20;
+let sampleDefaultDir = DEFAULT_SAMPLE_DIR;
 let currentSamplePath = "";
 let midiAccess = null;
 let midiMappings = {};
+let midiParamsByCc = new Map();
 let activeMidiNotes = [];
 let synthRunning = false;
+let waveformLayoutDirty = true;
+let resizeDebounceTimer = null;
+let activeKnobDrag = null;
+let logLineCount = 0;
+let scopeStreamingEnabled = true;
+const controlMetaByParam = new Map();
+const canvasMetricsByElement = new WeakMap();
 const allParamNames = Array.from(new Set([
   ...knobByParam.keys(),
   ...rangeByParam.keys(),
@@ -107,11 +129,30 @@ const MIDI_STATUS_TYPE_MASK = 0xF0;
 const MIDI_STATUS_NOTE_OFF = 0x80;
 const MIDI_STATUS_NOTE_ON = 0x90;
 const MIDI_STATUS_CC = 0xB0;
+const scopeSampleBuffer = new Float64Array(OUTPUT_SCOPE_FRAME_SIZE);
+const scopeRenderBuffer = Array.from({ length: OUTPUT_SCOPE_FRAME_SIZE }, () => 0);
 let outputScopeSamples = Array.from({ length: OUTPUT_SCOPE_FRAME_SIZE }, () => 0);
 
-function appendLog(text) {
-  logEl.textContent += `${text}\n`;
+function appendLogLine(line) {
+  if (!logEl) return;
+  logEl.appendChild(document.createTextNode(`${line}\n`));
+  logLineCount += 1;
+  while (logLineCount > LOG_LINE_LIMIT && logEl.firstChild) {
+    logEl.removeChild(logEl.firstChild);
+    logLineCount -= 1;
+  }
   logEl.scrollTop = logEl.scrollHeight;
+}
+
+function resetLog(lines = []) {
+  if (!logEl) return;
+  logEl.textContent = "";
+  logLineCount = 0;
+  lines.forEach((line) => appendLogLine(line));
+}
+
+function appendLog(text) {
+  appendLogLine(String(text ?? ""));
 }
 
 function setStatusState(state) {
@@ -192,8 +233,10 @@ function updateRangeLabel(rangeEl, value) {
 }
 
 function setKnobVisual(knob, value) {
-  const pointer = knob.querySelector(".knob-pointer");
-  const valueEl = knob.parentElement.querySelector(".knob-value");
+  const param = knob?.dataset?.param;
+  const visual = param ? knobVisualByParam.get(param) : null;
+  const pointer = visual?.pointer || null;
+  const valueEl = visual?.valueEl || null;
   const min = Number(knob.dataset.min);
   const max = Number(knob.dataset.max);
   const angle = knobAngleFromValue(value, min, max);
@@ -279,16 +322,43 @@ function currentParamValue(param, fallback = 0) {
   return fallback;
 }
 
-function drawWaveform(canvas, sampleFn, minValue = -1, maxValue = 1) {
-  if (!canvas) return;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return;
-
+function measureCanvasMetrics(canvas) {
   const dpr = window.devicePixelRatio || 1;
   const cssWidth = Math.max(1, Math.round(canvas.clientWidth || Number(canvas.getAttribute("width")) || 320));
   const cssHeight = Math.max(1, Math.round(canvas.clientHeight || Number(canvas.getAttribute("height")) || 84));
   const drawWidth = Math.max(1, Math.round(cssWidth * dpr));
   const drawHeight = Math.max(1, Math.round(cssHeight * dpr));
+  const metrics = {
+    dpr,
+    drawWidth,
+    drawHeight,
+    leftPad: 4 * dpr,
+    rightPad: drawWidth - (4 * dpr),
+    topPad: 6 * dpr,
+    bottomPad: drawHeight - (6 * dpr)
+  };
+  canvasMetricsByElement.set(canvas, metrics);
+  waveformLayoutDirty = false;
+  return metrics;
+}
+
+function getCanvasMetrics(canvas) {
+  const cached = canvasMetricsByElement.get(canvas);
+  const dpr = window.devicePixelRatio || 1;
+  if (cached && !waveformLayoutDirty && cached.dpr === dpr) return cached;
+  return measureCanvasMetrics(canvas);
+}
+
+function drawWaveform(canvas, sampleFn, minValue = -1, maxValue = 1) {
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+
+  const metrics = getCanvasMetrics(canvas);
+  const {
+    dpr, drawWidth, drawHeight, leftPad, rightPad, topPad, bottomPad
+  } = metrics;
+
   if (canvas.width !== drawWidth || canvas.height !== drawHeight) {
     canvas.width = drawWidth;
     canvas.height = drawHeight;
@@ -303,10 +373,6 @@ function drawWaveform(canvas, sampleFn, minValue = -1, maxValue = 1) {
   ctx.lineTo(drawWidth, centerY);
   ctx.stroke();
 
-  const leftPad = 4 * dpr;
-  const rightPad = drawWidth - (4 * dpr);
-  const topPad = 6 * dpr;
-  const bottomPad = drawHeight - (6 * dpr);
   const usableWidth = Math.max(1, rightPad - leftPad);
   const usableHeight = Math.max(1, bottomPad - topPad);
   const range = maxValue - minValue || 1;
@@ -331,7 +397,7 @@ function drawScopeFromSamples(canvas, samples) {
     drawWaveform(canvas, () => 0, -1, 1);
     return;
   }
-  const values = samples.map((v) => Number(v));
+  const values = samples;
   drawWaveform(canvas, (t) => {
     const idx = t * (values.length - 1);
     const lo = Math.floor(idx);
@@ -343,16 +409,22 @@ function drawScopeFromSamples(canvas, samples) {
 
 function normalizeScopeSamples(samples) {
   if (!Array.isArray(samples)) return null;
-  const normalized = samples
-    .map((value) => Number(value))
-    .filter((value) => Number.isFinite(value))
-    .slice(0, OUTPUT_SCOPE_FRAME_SIZE);
-  if (normalized.length === 0) return null;
-  if (normalized.length < OUTPUT_SCOPE_FRAME_SIZE) {
-    const fillCount = OUTPUT_SCOPE_FRAME_SIZE - normalized.length;
-    for (let i = 0; i < fillCount; i += 1) normalized.push(0);
+  let sampleCount = 0;
+  for (let i = 0; i < samples.length && sampleCount < OUTPUT_SCOPE_FRAME_SIZE; i += 1) {
+    const value = Number(samples[i]);
+    if (!Number.isFinite(value)) continue;
+    scopeSampleBuffer[sampleCount] = value;
+    sampleCount += 1;
   }
-  return normalized;
+  if (sampleCount === 0) return null;
+  while (sampleCount < OUTPUT_SCOPE_FRAME_SIZE) {
+    scopeSampleBuffer[sampleCount] = 0;
+    sampleCount += 1;
+  }
+  for (let i = 0; i < OUTPUT_SCOPE_FRAME_SIZE; i += 1) {
+    scopeRenderBuffer[i] = scopeSampleBuffer[i];
+  }
+  return scopeRenderBuffer;
 }
 
 function setOutputScopeSamples(samples, label = "Live output") {
@@ -364,7 +436,10 @@ function setOutputScopeSamples(samples, label = "Live output") {
 }
 
 function clearOutputScope(label = "Waiting for synth...") {
-  outputScopeSamples = Array.from({ length: OUTPUT_SCOPE_FRAME_SIZE }, () => 0);
+  for (let i = 0; i < OUTPUT_SCOPE_FRAME_SIZE; i += 1) {
+    scopeRenderBuffer[i] = 0;
+  }
+  outputScopeSamples = scopeRenderBuffer;
   if (outputScopeLabelEl) outputScopeLabelEl.textContent = label;
   drawScopeFromSamples(outputScopeCanvas, outputScopeSamples);
 }
@@ -473,36 +548,56 @@ function persistMidiMappings() {
   }
 }
 
+function rebuildMidiCcLookup() {
+  const nextLookup = new Map();
+  Object.entries(midiMappings).forEach(([param, mappedCc]) => {
+    if (!Number.isInteger(mappedCc) || mappedCc < 0 || mappedCc > 127) return;
+    if (!nextLookup.has(mappedCc)) nextLookup.set(mappedCc, []);
+    nextLookup.get(mappedCc).push(param);
+  });
+  midiParamsByCc = nextLookup;
+}
+
+function rebuildControlMetaCache() {
+  controlMetaByParam.clear();
+  allParamNames.forEach((param) => {
+    const knob = knobByParam.get(param);
+    if (knob) {
+      controlMetaByParam.set(param, {
+        type: "continuous",
+        min: Number(knob.dataset.min),
+        max: Number(knob.dataset.max),
+        step: Number(knob.dataset.step || "0.01")
+      });
+      return;
+    }
+
+    const range = rangeByParam.get(param);
+    if (range) {
+      controlMetaByParam.set(param, {
+        type: "continuous",
+        min: Number(range.min),
+        max: Number(range.max),
+        step: Number(range.step || "0.01")
+      });
+      return;
+    }
+
+    const select = selectByParam.get(param);
+    if (select) {
+      const values = Array.from(select.options).map((opt) => Number(opt.value));
+      controlMetaByParam.set(param, {
+        type: "discrete",
+        values,
+        valueSet: new Set(values),
+        valueStringSet: new Set(values.map((value) => String(value)))
+      });
+    }
+  });
+}
+
 function getControlMeta(param) {
-  const knob = knobByParam.get(param);
-  if (knob) {
-    return {
-      type: "continuous",
-      min: Number(knob.dataset.min),
-      max: Number(knob.dataset.max),
-      step: Number(knob.dataset.step || "0.01")
-    };
-  }
-
-  const range = rangeByParam.get(param);
-  if (range) {
-    return {
-      type: "continuous",
-      min: Number(range.min),
-      max: Number(range.max),
-      step: Number(range.step || "0.01")
-    };
-  }
-
-  const select = selectByParam.get(param);
-  if (select) {
-    return {
-      type: "discrete",
-      values: Array.from(select.options).map((opt) => Number(opt.value))
-    };
-  }
-
-  return null;
+  return controlMetaByParam.get(param) || null;
 }
 
 function valueFromMidiCc(param, ccValue) {
@@ -650,12 +745,14 @@ function setupMidiMappingControls() {
         midiMappings[param] = null;
         appendLog(`[MIDI] ${param} mapping cleared`);
       }
+      rebuildMidiCcLookup();
       persistMidiMappings();
       refreshMidiMapControl(param);
     });
 
     clearButton.addEventListener("click", () => {
       midiMappings[param] = null;
+      rebuildMidiCcLookup();
       persistMidiMappings();
       refreshMidiMapControl(param);
       appendLog(`[MIDI] ${param} mapping cleared`);
@@ -678,9 +775,9 @@ function handleMidiMessage(event) {
   if (messageType === MIDI_STATUS_CC) {
     const cc = data1;
     const ccValue = data2;
-
-    Object.entries(midiMappings).forEach(([param, mappedCc]) => {
-      if (mappedCc !== cc) return;
+    const mappedParams = midiParamsByCc.get(cc);
+    if (!Array.isArray(mappedParams) || mappedParams.length === 0) return;
+    mappedParams.forEach((param) => {
       const value = valueFromMidiCc(param, ccValue);
       if (value === null) return;
       setParamValue(param, value, true);
@@ -727,29 +824,14 @@ function normalizeParamValue(param, rawValue) {
   const value = Number(rawValue);
   if (Number.isNaN(value)) return null;
 
-  const knob = knobByParam.get(param);
-  if (knob) {
-    const min = Number(knob.dataset.min);
-    const max = Number(knob.dataset.max);
-    const step = Number(knob.dataset.step || "0.01");
-    return clamp(quantize(value, step), min, max);
+  const meta = getControlMeta(param);
+  if (!meta) return value;
+
+  if (meta.type === "continuous") {
+    return clamp(quantize(value, meta.step), meta.min, meta.max);
   }
 
-  const range = rangeByParam.get(param);
-  if (range) {
-    const min = Number(range.min);
-    const max = Number(range.max);
-    const step = Number(range.step || "0.01");
-    return clamp(quantize(value, step), min, max);
-  }
-
-  const select = selectByParam.get(param);
-  if (select) {
-    const optionValues = new Set(Array.from(select.options).map((opt) => Number(opt.value)));
-    if (!optionValues.has(value)) return null;
-    return value;
-  }
-
+  if (!meta.valueSet?.has(value)) return null;
   return value;
 }
 
@@ -772,7 +854,8 @@ function setParamValue(param, rawValue, send = true) {
   const select = selectByParam.get(param);
   if (select) {
     const valueStr = String(value);
-    if (Array.from(select.options).some((opt) => opt.value === valueStr)) {
+    const meta = getControlMeta(param);
+    if (meta?.valueStringSet?.has(valueStr)) {
       select.value = valueStr;
     }
   }
@@ -793,7 +876,7 @@ function createDefaultPresets() {
   return Array.from({ length: PRESET_COUNT }, (_unused, index) => ({
     name: defaultPresetName(index),
     params: null,
-    sampleDirectory: DEFAULT_SAMPLE_DIR,
+    sampleDirectory: sampleDefaultDir,
     samplePath: ""
   }));
 }
@@ -814,7 +897,7 @@ function loadPresets() {
       const params = loaded.params && typeof loaded.params === "object" ? loaded.params : null;
       const sampleDirectory = typeof loaded.sampleDirectory === "string" && loaded.sampleDirectory.trim().length > 0
         ? loaded.sampleDirectory.trim()
-        : DEFAULT_SAMPLE_DIR;
+        : sampleDefaultDir;
       const samplePath = typeof loaded.samplePath === "string" ? loaded.samplePath : "";
       return { name, params, sampleDirectory, samplePath };
     });
@@ -893,7 +976,7 @@ function renderSampleOptions(files, preferredPath = "") {
 
 async function refreshSampleList(preferredDir, preferredPath = "") {
   if (!sampleDirectoryEl) return;
-  const dir = (preferredDir || sampleDirectoryEl.value || DEFAULT_SAMPLE_DIR).trim() || DEFAULT_SAMPLE_DIR;
+  const dir = (preferredDir || sampleDirectoryEl.value || sampleDefaultDir).trim() || sampleDefaultDir;
   sampleDirectoryEl.value = dir;
   const result = await window.spaluterApi.listSamples(dir);
   if (!result?.ok) {
@@ -945,6 +1028,29 @@ function renderPresetOptions() {
   syncPresetNameField();
 }
 
+function scheduleWaveformResizeRefresh() {
+  waveformLayoutDirty = true;
+  if (resizeDebounceTimer) clearTimeout(resizeDebounceTimer);
+  resizeDebounceTimer = window.setTimeout(() => {
+    updateWaveformViews();
+  }, RESIZE_DEBOUNCE_MS);
+}
+
+function setScopeStreaming(enabled) {
+  const nextEnabled = Boolean(enabled);
+  if (scopeStreamingEnabled === nextEnabled) return;
+  scopeStreamingEnabled = nextEnabled;
+  const scopeRate = nextEnabled ? ACTIVE_SCOPE_RATE_HZ : MIN_SCOPE_RATE_HZ;
+  window.spaluterApi.setScope(nextEnabled, scopeRate).catch(() => {
+    appendLog("[SCOPE] Failed to update scope streaming state.");
+  });
+}
+
+function refreshScopeStreamingState() {
+  const visible = document.visibilityState !== "hidden" && document.hasFocus();
+  setScopeStreaming(visible);
+}
+
 window.spaluterApi.onStatus((text) => {
   statusEl.textContent = text;
   const state = classifyStatus(text);
@@ -974,7 +1080,10 @@ window.spaluterApi.onScope((samples) => {
 renderSynthToggle();
 updateWaveformViews();
 clearOutputScope();
-window.addEventListener("resize", updateWaveformViews);
+window.addEventListener("resize", scheduleWaveformResizeRefresh);
+document.addEventListener("visibilitychange", refreshScopeStreamingState);
+window.addEventListener("focus", refreshScopeStreamingState);
+window.addEventListener("blur", refreshScopeStreamingState);
 
 document.querySelectorAll("button[data-action]").forEach((btn) => {
   btn.addEventListener("click", () => {
@@ -1024,40 +1133,41 @@ selectInputs.forEach((el) => {
   });
 });
 
+rebuildControlMetaCache();
+
 knobs.forEach((knob) => {
   const param = knob.dataset.param;
   const min = Number(knob.dataset.min);
   const max = Number(knob.dataset.max);
-  const step = Number(knob.dataset.step || "0.01");
   let value = Number(knob.dataset.value ?? min);
 
   value = clamp(value, min, max);
   setParamValue(param, value, true);
-
-  let dragging = false;
-  let startY = 0;
-  let startValue = value;
-
   knob.addEventListener("mousedown", (e) => {
-    dragging = true;
-    startY = e.clientY;
-    startValue = Number(knob.dataset.value);
+    activeKnobDrag = {
+      param,
+      min,
+      max,
+      startY: e.clientY,
+      startValue: Number(knob.dataset.value)
+    };
     e.preventDefault();
-  });
-
-  window.addEventListener("mousemove", (e) => {
-    if (!dragging) return;
-    const dy = startY - e.clientY;
-    const scale = (max - min) / 180;
-    setParamValue(param, startValue + (dy * scale), true);
-  });
-
-  window.addEventListener("mouseup", () => {
-    dragging = false;
   });
 });
 
+window.addEventListener("mousemove", (e) => {
+  if (!activeKnobDrag) return;
+  const dy = activeKnobDrag.startY - e.clientY;
+  const scale = (activeKnobDrag.max - activeKnobDrag.min) / 180;
+  setParamValue(activeKnobDrag.param, activeKnobDrag.startValue + (dy * scale), true);
+});
+
+window.addEventListener("mouseup", () => {
+  activeKnobDrag = null;
+});
+
 setupMidiMappingControls();
+rebuildMidiCcLookup();
 initMidiSupport();
 
 if (presetSlotEl) {
@@ -1073,7 +1183,7 @@ if (savePresetBtn) {
     presets[idx] = {
       name,
       params: collectCurrentParams(),
-      sampleDirectory: String(sampleDirectoryEl?.value || "").trim() || DEFAULT_SAMPLE_DIR,
+      sampleDirectory: String(sampleDirectoryEl?.value || "").trim() || sampleDefaultDir,
       samplePath: String(sampleFileEl?.value || "")
     };
     persistPresets(presets);
@@ -1094,7 +1204,7 @@ if (loadPresetBtn) {
     }
     if (presetNameEl) presetNameEl.value = preset.name;
     applyPresetParams(preset.params);
-    await refreshSampleList(preset.sampleDirectory || DEFAULT_SAMPLE_DIR, preset.samplePath || "");
+    await refreshSampleList(preset.sampleDirectory || sampleDefaultDir, preset.samplePath || "");
     if (preset.samplePath) {
       const hasPath = Array.from(sampleFileEl?.options || []).some((opt) => opt.value === preset.samplePath);
       if (hasPath) {
@@ -1116,7 +1226,7 @@ if (sampleFileEl) {
 
 if (refreshSamplesBtn) {
   refreshSamplesBtn.addEventListener("click", () => {
-    refreshSampleList(sampleDirectoryEl?.value || DEFAULT_SAMPLE_DIR, sampleFileEl?.value || "");
+    refreshSampleList(sampleDirectoryEl?.value || sampleDefaultDir, sampleFileEl?.value || "");
   });
 }
 
@@ -1136,9 +1246,13 @@ window.spaluterApi.getInitialState().then((state) => {
     setStatusState("starting");
   }
   if (Array.isArray(state.logs) && state.logs.length > 0) {
-    logEl.textContent = `${state.logs.join("\n")}\n`;
-    logEl.scrollTop = logEl.scrollHeight;
+    resetLog(state.logs);
   }
-  const defaultDir = String(state.sampleDefaultDir || DEFAULT_SAMPLE_DIR);
+  const defaultDir = String(state.sampleDefaultDir || sampleDefaultDir);
+  sampleDefaultDir = defaultDir || sampleDefaultDir;
   refreshSampleList(defaultDir, "");
+  window.spaluterApi.setScope(true, ACTIVE_SCOPE_RATE_HZ).catch(() => {
+    appendLog("[SCOPE] Failed to initialize scope streaming.");
+  });
+  refreshScopeStreamingState();
 });

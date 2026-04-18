@@ -30,11 +30,12 @@ s.waitForBoot {
         attackMs=10, releaseMs=200, glideMs=0, drive=1.0,
         pan1=0, pan2=(-0.5), pan3=0.5,
         ampJitter=0, timingJitter=0, glisson=0,
-        useSample=0, bufnum=0, sampleRate=1.0|
+        useSample=0, bufnum=0, sampleRate=1.0,
+        scopeEnabled=1, scopeRate=20|
 
         var atk, rel, glid, vc, fc, mode, ctype, bPitch;
         var fHzArr, panArr, voices, sig;
-        var scopeMono, scopeFrames, scopeMaxDelay, scopeValues, scopeTrig;
+        var scopeMono, scopeFrames, scopeBuf, scopeWritePos, scopeReadPos, scopeValues, scopeTrig;
 
         atk = attackMs.max(0.1) * 0.001;
         rel = releaseMs.max(1.0) * 0.001;
@@ -168,11 +169,12 @@ s.waitForBoot {
         sig = tanh(sig * drive.clip(0.1, 4.0));
         scopeMono = Mix(sig) * 0.9;
         scopeFrames = 64;
-        scopeMaxDelay = (scopeFrames - 1) / SampleRate.ir;
-        scopeValues = Array.fill(scopeFrames, { |i|
-            DelayN.ar(scopeMono, scopeMaxDelay, (scopeFrames - 1 - i) / SampleRate.ir)
-        });
-        scopeTrig = Impulse.kr(20);
+        scopeBuf = LocalBuf(scopeFrames, 1);
+        scopeWritePos = Phasor.ar(0, 1, 0, scopeFrames, 0);
+        BufWr.ar(scopeMono, scopeBuf, scopeWritePos, loop: 1);
+        scopeReadPos = (scopeWritePos - Array.series(scopeFrames, scopeFrames - 1, -1)).wrap(0, scopeFrames - 1);
+        scopeValues = BufRd.ar(1, scopeBuf, scopeReadPos, loop: 1, interpolation: 1);
+        scopeTrig = Impulse.kr(scopeRate.clip(1, 60)) * (scopeEnabled > 0);
         SendReply.kr(scopeTrig, "/spaluter/scope", scopeValues);
         Out.ar(out, sig * amp);
     }).add;

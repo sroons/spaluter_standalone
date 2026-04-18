@@ -11,12 +11,17 @@ Cross-platform desktop wrapper for the `spaluter_supercollider.scd` patch.
 - Provides a non-SuperCollider UI (HTML/CSS/JS in Electron)
 - Sends parameter changes via OSC
 - Handles MIDI CC mappings plus MIDI Note On/Off pitch+gate control (auto-switches from Free Run to MIDI-like gating so attack/release is honored)
+- Startup order is enforced as: check SuperCollider -> install if missing -> start SuperCollider -> start synth -> start GUI
 
 ## Requirements
 
 - Node.js 18+
-- SuperCollider installed (`sclang` available in `PATH`)
-  - You can override binary path with `SCLANG_PATH`
+- SuperCollider is auto-detected on startup (`sclang` in `PATH` or `SCLANG_PATH`)
+- If missing, startup attempts platform package-manager install:
+  - macOS: Homebrew
+  - Windows: winget (fallback choco)
+  - Linux / Raspberry Pi: apt (fallback dnf/pacman/zypper)
+  - You may be prompted for administrator privileges by your package manager
 
 ## Run
 
@@ -30,8 +35,8 @@ Note: this repo’s launcher clears `ELECTRON_RUN_AS_NODE` automatically before 
 ## Platforms
 
 - macOS: supported
-- Windows: supported (`sclang.exe` expected in PATH)
-- Linux / Raspberry Pi 4: supported if Electron and SuperCollider are installed
+- Windows: supported
+- Linux / Raspberry Pi 4: supported
 
 ## Build installers
 
@@ -55,7 +60,7 @@ Installer behavior:
 - macOS build script outputs both Intel (`x64`) and Apple Silicon (`arm64`) installers.
 - macOS (`.pkg` postinstall): creates `/usr/local/bin/spaluter-desktop` symlink to the app binary.
 - Windows (`NSIS`): adds install directory to machine `PATH`.
-- Raspberry Pi / Linux ARM64 (`.deb` postinst): creates `/usr/local/bin/spaluter-desktop` symlink.
+- Raspberry Pi / Linux ARM64 (`.deb` postinst): creates `/usr/local/bin/spaluter-desktop` launcher that prefers `pw-jack`.
 - All platforms: package app/runtime files and warn if `sclang` is not installed.
 
 ## OSC bridge details
