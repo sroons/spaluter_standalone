@@ -2,6 +2,7 @@
 set -euo pipefail
 
 LAUNCHER_PATH="/usr/local/bin/spaluter-desktop"
+SETUP_SCRIPT_PATH="/usr/local/bin/spaluter-rpi-setup"
 APP_BINARY=""
 
 for candidate in \
@@ -36,6 +37,86 @@ EOF
 else
   echo "Spaluter Desktop installed, but app binary was not found at expected paths." >&2
   echo "Skipping launcher creation for ${LAUNCHER_PATH}." >&2
+fi
+
+cat >"$SETUP_SCRIPT_PATH" <<'EOF'
+#!/bin/bash
+set -euo pipefail
+
+STAMP_DIR="/var/lib/spaluter"
+STAMP_FILE="${STAMP_DIR}/rpi-setup.done"
+AUTO_MODE=0
+FORCE_MODE=0
+
+for arg in "$@"; do
+  case "$arg" in
+    --auto) AUTO_MODE=1 ;;
+    --force) FORCE_MODE=1 ;;
+  esac
+done
+
+if [ "$AUTO_MODE" -eq 1 ]; then
+  sleep 20
+fi
+
+if [ "$(id -u)" -ne 0 ]; then
+  if command -v sudo >/dev/null 2>&1; then
+    exec sudo "$0" "$@"
+  fi
+  echo "This script requires root privileges. Re-run as root." >&2
+  exit 1
+fi
+
+ARCH="$(dpkg --print-architecture 2>/dev/null || uname -m)"
+case "$ARCH" in
+  arm64|armhf|aarch64|armv7l) ;;
+  *)
+    echo "Skipping Raspberry Pi setup on unsupported architecture: $ARCH"
+    exit 0
+    ;;
+esac
+
+if [ "$FORCE_MODE" -eq 0 ] && [ "$AUTO_MODE" -eq 1 ] && [ -f "$STAMP_FILE" ]; then
+  echo "Spaluter RPi setup already completed; skipping."
+  exit 0
+fi
+
+if ! command -v apt-get >/dev/null 2>&1; then
+  echo "This setup script currently supports Raspberry Pi OS / Debian (apt-get required)." >&2
+  exit 1
+fi
+
+export DEBIAN_FRONTEND=noninteractive
+APT_ARGS=(-o DPkg::Lock::Timeout=600)
+
+apt-get "${APT_ARGS[@]}" update
+apt-get "${APT_ARGS[@]}" install -y --no-install-recommends \
+  supercollider supercollider-language supercollider-server \
+  pipewire pipewire-pulse pipewire-jack wireplumber pulseaudio-utils
+
+if command -v systemctl >/dev/null 2>&1; then
+  if ! systemctl --global enable pipewire.service pipewire-pulse.service wireplumber.service >/dev/null 2>&1; then
+    echo "Warning: failed to globally enable PipeWire/WirePlumber user services." >&2
+  fi
+fi
+
+mkdir -p "$STAMP_DIR"
+date -u +"%Y-%m-%dT%H:%M:%SZ" > "$STAMP_FILE"
+
+echo "Spaluter Raspberry Pi dependency setup completed."
+echo "Launch command: pw-jack \"/opt/Spaluter Desktop/spaluter-desktop\""
+EOF
+chmod 755 "$SETUP_SCRIPT_PATH"
+
+ARCH="$(dpkg --print-architecture 2>/dev/null || uname -m)"
+if command -v apt-get >/dev/null 2>&1 && [[ "$ARCH" =~ ^(arm64|armhf|aarch64|armv7l)$ ]]; then
+  SETUP_LOG_PATH="/var/log/spaluter-rpi-setup.log"
+  if nohup "$SETUP_SCRIPT_PATH" --auto >"$SETUP_LOG_PATH" 2>&1 & then
+    echo "Started Raspberry Pi dependency bootstrap in background (${SETUP_LOG_PATH})."
+  else
+    echo "Warning: failed to start automatic Raspberry Pi dependency bootstrap." >&2
+    echo "Run '${SETUP_SCRIPT_PATH}' manually to install dependencies." >&2
+  fi
 fi
 
 if ! command -v sclang >/dev/null 2>&1; then
