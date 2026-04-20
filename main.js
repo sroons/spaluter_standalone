@@ -17,6 +17,7 @@ const INSTALL_COMMAND_TIMEOUT_MS = 30 * 60_000;
 const STARTUP_WAIT_TIMEOUT_MS = 90_000;
 
 let mainWindow = null;
+let mainWindowReady = false;
 let sclangProc = null;
 let oscPort = null;
 let appOscRecvPort = APP_OSC_RECV_PORT_CANDIDATES[0];
@@ -338,13 +339,23 @@ function sendStatus(text) {
       // ignore listener errors
     }
   });
-  if (mainWindow) mainWindow.webContents.send("sc-status", lastStatus);
+  sendRendererEvent("sc-status", lastStatus);
 }
 
 function sendLog(text) {
   const line = String(text ?? "");
   pushLog(line);
-  if (mainWindow) mainWindow.webContents.send("sc-log", line);
+  sendRendererEvent("sc-log", line);
+}
+
+function sendRendererEvent(channel, payload) {
+  if (!mainWindow || !mainWindowReady) return;
+  if (mainWindow.isDestroyed()) return;
+  try {
+    mainWindow.webContents.send(channel, payload);
+  } catch {
+    // Renderer may still be tearing down during app shutdown.
+  }
 }
 
 function sendOsc(address, args = []) {
@@ -532,16 +543,23 @@ function stopRuntimeAndCloseOsc() {
 }
 
 function createWindow() {
+  mainWindowReady = false;
   mainWindow = new BrowserWindow({
-    width: 980,
-    height: 760,
+    width: 800,
+    height: 480,
+    fullscreen: process.platform === "linux",
     webPreferences: {
       preload: path.join(__dirname, "preload.js")
     }
   });
 
+  mainWindow.webContents.on("did-finish-load", () => {
+    mainWindowReady = true;
+  });
+
   mainWindow.loadFile(path.join(__dirname, "renderer", "index.html"));
   mainWindow.on("closed", () => {
+    mainWindowReady = false;
     mainWindow = null;
   });
 }
@@ -607,19 +625,18 @@ function registerIpcHandlers() {
 }
 
 async function performStartupSequence() {
-  sendStatus("Startup 1/5: checking SuperCollider...");
+  sendStatus("Startup 1/4: checking SuperCollider...");
   let superColliderReady = await isSuperColliderAvailable();
   if (!superColliderReady) {
-    sendStatus("Startup 2/5: installing SuperCollider packages...");
+    sendStatus("Startup 2/4: installing SuperCollider packages...");
     sendLog("[BOOT] sclang was not found. Attempting automatic install.");
     superColliderReady = await installSuperCollider();
   } else {
-    sendStatus("Startup 2/5: SuperCollider already installed.");
+    sendStatus("Startup 2/4: SuperCollider already installed.");
   }
 
   if (!superColliderReady) {
     sendStatus("SuperCollider unavailable; open UI for manual setup.");
-    createWindow();
     return;
   }
 
@@ -627,27 +644,28 @@ async function performStartupSequence() {
   const oscReady = await createOscClient();
   if (!oscReady) {
     sendStatus("OSC unavailable; open UI for troubleshooting.");
-    createWindow();
     return;
   }
 
-  sendStatus("Startup 3/5: starting SuperCollider runtime...");
+  sendStatus("Startup 3/4: starting SuperCollider runtime...");
   startSuperCollider();
 
-  sendStatus("Startup 4/5: starting synth...");
+  sendStatus("Startup 4/4: starting synth...");
   try {
     await waitForSynthStartup(STARTUP_WAIT_TIMEOUT_MS);
   } catch (err) {
     sendLog(`[BOOT] ${err.message}`);
+    sendStatus("ERROR. Check Log.");
   }
-
-  sendStatus("Startup 5/5: starting GUI...");
-  createWindow();
 }
 
 app.whenReady().then(async () => {
   registerIpcHandlers();
-  await performStartupSequence();
+  createWindow();
+  performStartupSequence().catch((err) => {
+    sendLog(`[BOOT] Startup sequence failed: ${err.message}`);
+    sendStatus("Startup failed; see log for details.");
+  });
 });
 
 app.on("before-quit", (event) => {

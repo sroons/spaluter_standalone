@@ -14,7 +14,7 @@ Boots local scsynth, loads patch file, and exposes OSC control:
 
 (
     var patchPath, appPort, appAddr, status, startSynth, stopSynth, resetSynth, waitForPatch, waitForSynthDef, silentBuf, booted, loadSample, forwardScope;
-    var readIntEnv, patchWaitRetries, synthDefWaitRetries, scopeRate, scopeEnabled, applyScopeConfig;
+    var patchWaitRetries, synthDefWaitRetries, scopeRate, scopeEnabled, applyScopeConfig;
 
 patchPath = ~spaluterPatchPath;
 if(patchPath.isNil) {
@@ -25,19 +25,8 @@ if(patchPath.isNil or: { PathName.new(patchPath).isFile.not }) {
     1.exit;
 };
 
-readIntEnv = { |name, fallback|
-    var raw, parsed;
-    raw = Platform.getenv(name);
-    if(raw.notNil) {
-        parsed = raw.asInteger;
-        if(parsed > 0) { parsed } { fallback };
-    } {
-        fallback
-    };
-};
-
-patchWaitRetries = readIntEnv.("SPALUTER_PATCH_WAIT_RETRIES", 120);
-synthDefWaitRetries = readIntEnv.("SPALUTER_SYNTHDEF_WAIT_RETRIES", 160);
+patchWaitRetries = 120;
+synthDefWaitRetries = 160;
 scopeRate = (~spaluterScopeRate ? 20).asFloat.clip(1, 60);
 scopeEnabled = (~spaluterScopeEnabled ? 1).asInteger > 0;
 appPort = (~spaluterAppPort ? 57131).asInteger;
@@ -57,7 +46,7 @@ appAddr = NetAddr("127.0.0.1", appPort);
 s.options.numInputBusChannels = 0;
 s.options.numOutputBusChannels = 2;
 // Do not force sampleRate here; let OS/default device choose a valid rate.
-s.options.numWireBufs = readIntEnv.("SPALUTER_WIRE_BUFS", 4096).clip(1024, 8192);
+s.options.numWireBufs = 4096;
 s.options.bindAddress = "127.0.0.1";
 
 thisProcess.openUDPPort(57130);
@@ -84,14 +73,17 @@ s.doWhenBooted({
         };
     };
 
-    waitForSynthDef = { |name = \spaluterSC, onReady, retries = synthDefWaitRetries|
-        if(SynthDescLib.global.at(name).notNil) {
+    waitForSynthDef = { |onReady, name = \spaluterSC, retries|
+        var desc;
+        retries = retries ? synthDefWaitRetries;
+        desc = SynthDescLib.global.at(name);
+        if(desc.notNil and: { desc.def.notNil }) {
             onReady.value;
         } {
             if(retries <= 0) {
                 status.value("SynthDef not found: " ++ name.asString);
             } {
-                AppClock.sched(0.1, { waitForSynthDef.value(name, onReady, retries - 1); nil });
+                AppClock.sched(0.1, { waitForSynthDef.value(onReady, name, retries - 1); nil });
             };
         };
     };
@@ -107,7 +99,7 @@ s.doWhenBooted({
 
     startSynth = {
         waitForPatch.value({
-            waitForSynthDef.value(\spaluterSC, {
+            waitForSynthDef.value({
                 {
                     if(~spaluter.notNil) { ~spaluter.free; };
                     ~spaluter = ~spaluterStart.();
@@ -121,7 +113,7 @@ s.doWhenBooted({
                         status.value("~spaluterStart returned nil");
                     };
                 }.defer;
-            });
+            }, \spaluterSC);
         }, patchWaitRetries);
     };
 

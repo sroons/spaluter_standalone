@@ -7,14 +7,23 @@
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
+
+    <!-- Header -->
     <header>
       <div class="header-brand">
         <h1><span class="title-spaluter">Spa</span><span class="title-desktop">lu</span><span class="title-spaluter">ter</span></h1>
         <img class="header-wave" src="./assets/spaluter_icon.png" alt="" />
+        <div id="status">Starting...</div>
       </div>
-      <div id="status">Starting...</div>
+      <div class="header-transport">
+        <button id="synthToggle" data-action="start" aria-pressed="false">Start Synth</button>
+        <button data-action="reset">↺ Reset</button>
+        <button id="toggleLog" type="button" aria-expanded="false">Log</button>
+        <button id="toggleAbout" type="button" aria-expanded="false">About</button>
+      </div>
     </header>
 
+    <!-- Waveform scopes -->
     <div class="waveform-strip" aria-label="Waveform previews">
       <div class="waveform-panel">
         <div class="waveform-panel-header">
@@ -37,7 +46,7 @@
         </div>
         <canvas id="dutyWaveView" class="waveform-canvas" width="320" height="84" aria-label="Duty waveform preview"></canvas>
       </div>
-      <div class="waveform-panel">
+      <div class="waveform-panel output-scope-panel">
         <div class="waveform-panel-header">
           <span class="waveform-panel-title">Output Scope</span>
           <span id="outputScopeLabel" class="waveform-panel-meta">Waiting for synth...</span>
@@ -46,13 +55,7 @@
       </div>
     </div>
 
-    <section class="buttons">
-      <button id="synthToggle" data-action="start" aria-pressed="false">Start Synth</button>
-      <button data-action="reset">Reset Patch</button>
-      <button id="toggleLog" type="button" aria-expanded="false">Show Log</button>
-      <button id="toggleAbout" type="button" aria-expanded="false">About Spaluter</button>
-    </section>
-
+    <!-- About drawer (hidden by default, renderer.js toggles it) -->
     <section id="aboutDrawer" class="info-drawer closed">
       <div class="info-drawer-header">
         <h2>About Spaluter</h2>
@@ -62,7 +65,7 @@
         <p>Pulsar synthesis builds sound from a stream of tiny wave fragments called pulsarets. Each pulsaret is brief, periodic, and can be morphed to create very different timbres.</p>
         <p>Spaluter shapes each pulsaret with a <strong>window</strong>, which controls the grain envelope, and a <strong>duty</strong> value, which sets how much of each cycle is active versus silent.</p>
         <p>By sweeping pulsaret waveform, window type, pitch/formants, and texture controls, you move between pitched tones, vocal-like spectra, and noisy granular textures while keeping a rhythmic pulse structure.</p>
-        <p><strong>Credits:</strong> Spaluter’s pulsar synthesis direction is inspired by Curtis Roads’ foundational work in granular and microsound composition.</p>
+        <p><strong>Credits:</strong> Spaluter's pulsar synthesis direction is inspired by Curtis Roads' foundational work in granular and microsound composition.</p>
         <p class="info-sources-title"><strong>Curtis Roads source material:</strong></p>
         <ul class="info-sources">
           <li><a href="https://mitpress.mit.edu/9780262681544/microsound/" target="_blank" rel="noopener noreferrer">Microsound (MIT Press)</a></li>
@@ -71,105 +74,182 @@
       </div>
     </section>
 
-    <section class="group">
-      <h2>Presets</h2>
-      <div class="grid">
-        <div class="control">
-          <label for="presetSlot">Preset Slot</label>
-          <select id="presetSlot"></select>
+    <!-- Tab strip -->
+    <div class="tab-strip" id="tabStrip">
+      <button class="tab-btn active" data-tab="core" type="button">Core</button>
+      <button class="tab-btn" data-tab="wave" type="button">Wave / Formants</button>
+      <button class="tab-btn" data-tab="fx" type="button">Texture / FX</button>
+      <button class="tab-btn" data-tab="voice" type="button">Voice / Sample</button>
+    </div>
+
+    <!-- Tab panels -->
+    <div class="tab-panels">
+
+      <!-- ─── Core ─── -->
+      <div class="tab-panel active" data-tab="core">
+        <div class="section-title blue">Main Controls</div>
+        <div class="knob-grid">
+          <div class="knob-control"><div class="knob" data-param="amp" data-min="0" data-max="1" data-step="0.01" data-value="0.25"><div class="knob-pointer"></div></div><div class="knob-label">Amplitude</div><div class="knob-value">0.25</div></div>
+          <div class="knob-control"><div class="knob" data-param="drive" data-min="0.1" data-max="4" data-step="0.01" data-value="1.0"><div class="knob-pointer"></div></div><div class="knob-label">Drive</div><div class="knob-value">1.00</div></div>
+          <div class="knob-control"><div class="knob" data-param="pulsaret" data-min="0" data-max="9" data-step="0.1" data-value="2.5"><div class="knob-pointer"></div></div><div class="knob-label">Pulsaret</div><div class="knob-value">2.50</div></div>
+          <div class="knob-control"><div class="knob" data-param="window" data-min="0" data-max="8" data-step="0.1" data-value="0.5"><div class="knob-pointer"></div></div><div class="knob-label">Window</div><div class="knob-value">0.50</div></div>
+          <div class="knob-control"><div class="knob" data-param="duty" data-min="0.01" data-max="1" data-step="0.01" data-value="0.5"><div class="knob-pointer"></div></div><div class="knob-label">Duty</div><div class="knob-value">0.50</div></div>
         </div>
-        <div class="control">
-          <label for="presetName">Preset Name</label>
-          <input id="presetName" type="text" maxlength="48" placeholder="Enter preset name" />
+
+        <div class="section-title" style="margin-top:6px;">Presets</div>
+        <div class="preset-row">
+          <select id="presetSlot" style="max-width:220px"></select>
+          <input id="presetName" type="text" maxlength="48" placeholder="Enter preset name" style="max-width:180px" />
+          <button id="savePreset" type="button">Save</button>
+          <button id="loadPreset" type="button">Recall</button>
         </div>
       </div>
-      <section class="buttons">
-        <button id="savePreset" type="button">Save Preset</button>
-        <button id="loadPreset" type="button">Recall Preset</button>
-      </section>
-    </section>
 
-    <section class="group">
-      <h2>Core Knobs</h2>
-      <section class="knob-grid">
-        <div class="knob-control"><div class="knob" data-param="amp" data-min="0" data-max="1" data-step="0.01" data-value="0.25"><div class="knob-pointer"></div></div><div class="knob-label">Amplitude</div><div class="knob-value">0.25</div></div>
-        <div class="knob-control"><div class="knob" data-param="drive" data-min="0.1" data-max="4" data-step="0.01" data-value="1.0"><div class="knob-pointer"></div></div><div class="knob-label">Drive</div><div class="knob-value">1.00</div></div>
-        <div class="knob-control"><div class="knob" data-param="pulsaret" data-min="0" data-max="9" data-step="0.1" data-value="2.5"><div class="knob-pointer"></div></div><div class="knob-label">Pulsaret</div><div class="knob-value">2.50</div></div>
-        <div class="knob-control"><div class="knob" data-param="window" data-min="0" data-max="8" data-step="0.1" data-value="0.5"><div class="knob-pointer"></div></div><div class="knob-label">Window</div><div class="knob-value">0.50</div></div>
-        <div class="knob-control"><div class="knob" data-param="duty" data-min="0.01" data-max="1" data-step="0.01" data-value="0.5"><div class="knob-pointer"></div></div><div class="knob-label">Duty</div><div class="knob-value">0.50</div></div>
-      </section>
-    </section>
-
-    <section class="group">
-      <h2>Wave/Formants</h2>
-      <div class="grid">
-        <div class="control"><label for="dutyMode">Duty Mode</label><select id="dutyMode" data-param="dutyMode"><option value="0" selected>Manual</option><option value="1">Formant</option></select></div>
-        <div class="control"><label for="formantCount">Formants</label><select id="formantCount" data-param="formantCount"><option value="1">1</option><option value="2" selected>2</option><option value="3">3</option></select></div>
-        <div class="control"><label for="formantTrack">Formant Track</label><select id="formantTrack" data-param="formantTrack"><option value="0" selected>Off</option><option value="1">On</option></select></div>
+      <!-- ─── Wave / Formants ─── -->
+      <div class="tab-panel" data-tab="wave">
+        <div class="controls-row">
+          <div class="control"><label for="dutyMode">Duty Mode</label><select id="dutyMode" data-param="dutyMode"><option value="0" selected>Manual</option><option value="1">Formant</option></select></div>
+          <div class="control"><label for="formantCount">Formants</label><select id="formantCount" data-param="formantCount"><option value="1">1</option><option value="2" selected>2</option><option value="3">3</option></select></div>
+          <div class="control"><label for="formantTrack">Formant Track</label><select id="formantTrack" data-param="formantTrack"><option value="0" selected>Off</option><option value="1">On</option></select></div>
+        </div>
+        <div class="split-row">
+          <div>
+            <div class="section-title orange">Formant Frequencies</div>
+            <div class="knob-grid">
+              <div class="knob-control"><div class="knob" data-param="formant1" data-min="20" data-max="3000" data-step="1" data-value="20"><div class="knob-pointer"></div></div><div class="knob-label">Formant 1</div><div class="knob-value">20.00</div></div>
+              <div class="knob-control"><div class="knob" data-param="formant2" data-min="20" data-max="3000" data-step="1" data-value="200"><div class="knob-pointer"></div></div><div class="knob-label">Formant 2</div><div class="knob-value">200.00</div></div>
+              <div class="knob-control"><div class="knob" data-param="formant3" data-min="20" data-max="3000" data-step="1" data-value="400"><div class="knob-pointer"></div></div><div class="knob-label">Formant 3</div><div class="knob-value">400.00</div></div>
+            </div>
+          </div>
+          <div>
+            <div class="section-title orange">Stereo Pan</div>
+            <div class="knob-grid">
+              <div class="knob-control"><div class="knob" data-param="pan1" data-min="-1" data-max="1" data-step="0.01" data-value="0"><div class="knob-pointer"></div></div><div class="knob-label">Pan 1</div><div class="knob-value">0.00</div></div>
+              <div class="knob-control"><div class="knob" data-param="pan2" data-min="-1" data-max="1" data-step="0.01" data-value="-0.5"><div class="knob-pointer"></div></div><div class="knob-label">Pan 2</div><div class="knob-value">-0.50</div></div>
+              <div class="knob-control"><div class="knob" data-param="pan3" data-min="-1" data-max="1" data-step="0.01" data-value="0.5"><div class="knob-pointer"></div></div><div class="knob-label">Pan 3</div><div class="knob-value">0.50</div></div>
+            </div>
+          </div>
+        </div>
       </div>
-      <section class="knob-grid">
-        <div class="knob-control"><div class="knob" data-param="formant1" data-min="20" data-max="3000" data-step="1" data-value="20"><div class="knob-pointer"></div></div><div class="knob-label">Formant 1</div><div class="knob-value">20.00</div></div>
-        <div class="knob-control"><div class="knob" data-param="formant2" data-min="20" data-max="3000" data-step="1" data-value="200"><div class="knob-pointer"></div></div><div class="knob-label">Formant 2</div><div class="knob-value">200.00</div></div>
-        <div class="knob-control"><div class="knob" data-param="formant3" data-min="20" data-max="3000" data-step="1" data-value="400"><div class="knob-pointer"></div></div><div class="knob-label">Formant 3</div><div class="knob-value">400.00</div></div>
-        <div class="knob-control"><div class="knob" data-param="pan1" data-min="-1" data-max="1" data-step="0.01" data-value="0"><div class="knob-pointer"></div></div><div class="knob-label">Pan 1</div><div class="knob-value">0.00</div></div>
-        <div class="knob-control"><div class="knob" data-param="pan2" data-min="-1" data-max="1" data-step="0.01" data-value="-0.5"><div class="knob-pointer"></div></div><div class="knob-label">Pan 2</div><div class="knob-value">-0.50</div></div>
-        <div class="knob-control"><div class="knob" data-param="pan3" data-min="-1" data-max="1" data-step="0.01" data-value="0.5"><div class="knob-pointer"></div></div><div class="knob-label">Pan 3</div><div class="knob-value">0.50</div></div>
-      </section>
-    </section>
 
-    <section class="group">
-      <h2>Texture/FX</h2>
-      <div class="grid">
-        <div class="control"><label for="maskMode">Mask Mode</label><select id="maskMode" data-param="maskMode"><option value="0" selected>Off</option><option value="1">Stochastic</option><option value="2">Burst</option></select></div>
-        <div class="control"><label for="perFormantMask">Per-Formant Mask</label><select id="perFormantMask" data-param="perFormantMask"><option value="0" selected>Off</option><option value="1">On</option></select></div>
+      <!-- ─── Texture / FX ─── -->
+      <div class="tab-panel" data-tab="fx">
+        <div class="controls-row">
+          <div class="control"><label for="maskMode">Mask Mode</label><select id="maskMode" data-param="maskMode"><option value="0" selected>Off</option><option value="1">Stochastic</option><option value="2">Burst</option></select></div>
+          <div class="control"><label for="perFormantMask">Per-Formant Mask</label><select id="perFormantMask" data-param="perFormantMask"><option value="0" selected>Off</option><option value="1">On</option></select></div>
+        </div>
+        <div class="section-title green">Texture Controls</div>
+        <div class="knob-grid">
+          <div class="knob-control"><div class="knob" data-param="maskAmount" data-min="0" data-max="1" data-step="0.01" data-value="0.5"><div class="knob-pointer"></div></div><div class="knob-label">Mask Amt</div><div class="knob-value">0.50</div></div>
+          <div class="knob-control"><div class="knob" data-param="ampJitter" data-min="0" data-max="1" data-step="0.01" data-value="0"><div class="knob-pointer"></div></div><div class="knob-label">Amp Jitter</div><div class="knob-value">0.00</div></div>
+          <div class="knob-control"><div class="knob" data-param="timingJitter" data-min="0" data-max="1" data-step="0.01" data-value="0"><div class="knob-pointer"></div></div><div class="knob-label">Timing Jit</div><div class="knob-value">0.00</div></div>
+          <div class="knob-control"><div class="knob" data-param="glisson" data-min="-2" data-max="2" data-step="0.01" data-value="0"><div class="knob-pointer"></div></div><div class="knob-label">Glisson</div><div class="knob-value">0.00</div></div>
+          <div class="knob-control"><div class="knob" data-param="burstOn" data-min="1" data-max="16" data-step="1" data-value="4"><div class="knob-pointer"></div></div><div class="knob-label">Burst On</div><div class="knob-value">4.00</div></div>
+          <div class="knob-control"><div class="knob" data-param="burstOff" data-min="0" data-max="16" data-step="1" data-value="0"><div class="knob-pointer"></div></div><div class="knob-label">Burst Off</div><div class="knob-value">0.00</div></div>
+        </div>
       </div>
-      <section class="knob-grid">
-        <div class="knob-control"><div class="knob" data-param="maskAmount" data-min="0" data-max="1" data-step="0.01" data-value="0.5"><div class="knob-pointer"></div></div><div class="knob-label">Mask Amt</div><div class="knob-value">0.50</div></div>
-        <div class="knob-control"><div class="knob" data-param="ampJitter" data-min="0" data-max="1" data-step="0.01" data-value="0"><div class="knob-pointer"></div></div><div class="knob-label">Amp Jitter</div><div class="knob-value">0.00</div></div>
-        <div class="knob-control"><div class="knob" data-param="timingJitter" data-min="0" data-max="1" data-step="0.01" data-value="0"><div class="knob-pointer"></div></div><div class="knob-label">Timing Jit</div><div class="knob-value">0.00</div></div>
-        <div class="knob-control"><div class="knob" data-param="glisson" data-min="-2" data-max="2" data-step="0.01" data-value="0"><div class="knob-pointer"></div></div><div class="knob-label">Glisson</div><div class="knob-value">0.00</div></div>
-        <div class="knob-control"><div class="knob" data-param="burstOn" data-min="1" data-max="16" data-step="1" data-value="4"><div class="knob-pointer"></div></div><div class="knob-label">Burst On</div><div class="knob-value">4.00</div></div>
-        <div class="knob-control"><div class="knob" data-param="burstOff" data-min="0" data-max="16" data-step="1" data-value="0"><div class="knob-pointer"></div></div><div class="knob-label">Burst Off</div><div class="knob-value">0.00</div></div>
-      </section>
-    </section>
 
-    <section class="group">
-      <h2>Global / Voice</h2>
-      <div class="grid">
-        <div class="control"><label for="gateMode">Gate Mode</label><select id="gateMode" data-param="gateMode"><option value="0">MIDI-like</option><option value="1" selected>Free Run</option><option value="2">CV-like</option></select></div>
-        <div class="control"><label for="voiceCount">Voices</label><select id="voiceCount" data-param="voiceCount"><option value="1" selected>1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option></select></div>
-        <div class="control"><label for="chordType">Chord Type</label><select id="chordType" data-param="chordType"><option value="0" selected>Unison</option><option value="1">Octaves</option><option value="2">Fifths</option><option value="3">Sub+Oct</option><option value="4">Major</option><option value="5">Minor</option><option value="6">Maj7</option><option value="7">Min7</option><option value="8">Sus4</option><option value="9">Dom7</option><option value="10">Dim</option><option value="11">Aug</option><option value="12">Power</option><option value="13">Open5th</option></select></div>
-      </div>
-      <section class="knob-grid">
-        <div class="knob-control"><div class="knob" data-param="basePitch" data-min="20" data-max="1000" data-step="1" data-value="33"><div class="knob-pointer"></div></div><div class="knob-label">Base Pitch</div><div class="knob-value">33.00</div></div>
-        <div class="knob-control"><div class="knob" data-param="attackMs" data-min="0.1" data-max="2000" data-step="0.1" data-value="10"><div class="knob-pointer"></div></div><div class="knob-label">Attack ms</div><div class="knob-value">10.00</div></div>
-        <div class="knob-control"><div class="knob" data-param="releaseMs" data-min="1" data-max="3200" data-step="1" data-value="200"><div class="knob-pointer"></div></div><div class="knob-label">Release ms</div><div class="knob-value">200.00</div></div>
-        <div class="knob-control"><div class="knob" data-param="glideMs" data-min="0" data-max="2000" data-step="1" data-value="0"><div class="knob-pointer"></div></div><div class="knob-label">Glide ms</div><div class="knob-value">0.00</div></div>
-      </div>
-    </section>
+      <!-- ─── Voice / Sample ─── -->
+      <div class="tab-panel" data-tab="voice">
+        <div class="section-title violet">Voice</div>
+        <div class="controls-row">
+          <div class="control"><label for="gateMode">Gate Mode</label><select id="gateMode" data-param="gateMode"><option value="0">MIDI-like</option><option value="1" selected>Free Run</option><option value="2">CV-like</option></select></div>
+          <div class="control"><label for="voiceCount">Voices</label><select id="voiceCount" data-param="voiceCount"><option value="1" selected>1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option></select></div>
+          <div class="control"><label for="chordType">Chord Type</label><select id="chordType" data-param="chordType"><option value="0" selected>Unison</option><option value="1">Octaves</option><option value="2">Fifths</option><option value="3">Sub+Oct</option><option value="4">Major</option><option value="5">Minor</option><option value="6">Maj7</option><option value="7">Min7</option><option value="8">Sus4</option><option value="9">Dom7</option><option value="10">Dim</option><option value="11">Aug</option><option value="12">Power</option><option value="13">Open5th</option></select></div>
+        </div>
+        <div class="knob-grid">
+          <div class="knob-control"><div class="knob" data-param="basePitch" data-min="20" data-max="1000" data-step="1" data-value="33"><div class="knob-pointer"></div></div><div class="knob-label">Base Pitch</div><div class="knob-value">33.00</div></div>
+          <div class="knob-control"><div class="knob" data-param="attackMs" data-min="0.1" data-max="2000" data-step="0.1" data-value="10"><div class="knob-pointer"></div></div><div class="knob-label">Attack ms</div><div class="knob-value">10.00</div></div>
+          <div class="knob-control"><div class="knob" data-param="releaseMs" data-min="1" data-max="3200" data-step="1" data-value="200"><div class="knob-pointer"></div></div><div class="knob-label">Release ms</div><div class="knob-value">200.00</div></div>
+          <div class="knob-control"><div class="knob" data-param="glideMs" data-min="0" data-max="2000" data-step="1" data-value="0"><div class="knob-pointer"></div></div><div class="knob-label">Glide ms</div><div class="knob-value">0.00</div></div>
+        </div>
 
-    <section class="group">
-      <h2>Sample</h2>
-      <div class="grid">
-        <div class="control"><label for="useSample">Use Sample</label><select id="useSample" data-param="useSample"><option value="0" selected>Off</option><option value="1">On</option></select></div>
-        <div class="control"><label for="sampleRate">Sample Rate</label><input id="sampleRate" data-param="sampleRate" type="range" min="0.25" max="4" step="0.01" value="1" /></div>
-        <div class="control"><label for="sampleDirectory">Sample Folder</label><input id="sampleDirectory" type="text" value="" /></div>
-        <div class="control"><label for="sampleFile">Sample File</label><select id="sampleFile"></select></div>
+        <div class="section-title violet" style="margin-top:6px;">Sample</div>
+        <div class="sample-row">
+          <div class="control" style="border:none;background:none;padding:0">
+            <label for="useSample"><input type="checkbox" id="useSampleCheck" style="accent-color:var(--accent-blue)"> Use Sample</label>
+            <select id="useSample" data-param="useSample" style="display:none"><option value="0" selected>Off</option><option value="1">On</option></select>
+          </div>
+          <select id="sampleFile" style="flex:1;max-width:170px;font-size:10px;font-family:inherit;background:rgb(22,24,40);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 6px"></select>
+          <input id="sampleDirectory" type="text" value="" placeholder="/spaluter/samples/" style="flex:1;max-width:130px;font-size:10px;font-family:inherit;background:rgb(22,24,40);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 6px" />
+          <div class="control" style="border:none;background:none;padding:0;gap:4px;flex-shrink:0">
+            <label for="sampleRate" style="font-size:9px">Rate</label>
+            <input id="sampleRate" data-param="sampleRate" type="range" min="0.25" max="4" step="0.01" value="1" style="width:80px" />
+            <span class="sample-rate-val" id="sampleRateVal">1.00×</span>
+          </div>
+          <button id="loadSample" type="button">Load</button>
+          <button id="refreshSamples" type="button">↻</button>
+        </div>
       </div>
-      <section class="buttons">
-        <button id="refreshSamples" type="button">Refresh Samples</button>
-        <button id="loadSample" type="button">Load Sample</button>
-      </section>
-    </section>
 
+    </div>
+
+    <!-- Log footer -->
     <section id="logDrawer" class="log-drawer">
-      <div class="log-drawer-header">
-        <h2>Log</h2>
-        <button id="closeLog" type="button">Close</button>
+      <div class="log-footer">
+        <div class="log-toggle-bar" id="logToggleBar">
+          <span>▸ LOG</span>
+          <span class="log-chevron" id="logChevron">▾</span>
+        </div>
+        <div class="log-content closed" id="logContent">
+          <div class="log-drawer-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+            <h2 style="font-size:12px;margin:0">Log</h2>
+            <button id="closeLog" type="button" style="font-size:10px;padding:2px 8px">Close</button>
+          </div>
+          <pre id="log"></pre>
+        </div>
       </div>
-      <pre id="log"></pre>
     </section>
 
     <script src="./renderer.js"></script>
+    <script>
+      /* ── Tab switching ── */
+      document.getElementById('tabStrip').addEventListener('click', function(e) {
+        const btn = e.target.closest('.tab-btn');
+        if (!btn) return;
+        document.querySelectorAll('.tab-btn').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+        btn.classList.add('active');
+        document.querySelector('.tab-panel[data-tab="' + btn.dataset.tab + '"]').classList.add('active');
+      });
+
+      /* ── Log toggle (supplements renderer.js log open/close) ── */
+      document.getElementById('logToggleBar').addEventListener('click', function() {
+        const content = document.getElementById('logContent');
+        const isOpen = !content.classList.contains('closed');
+        content.classList.toggle('closed', isOpen);
+        document.getElementById('logChevron').textContent = isOpen ? '▾' : '▴';
+      });
+
+      /* ── Use Sample checkbox <-> hidden select sync ── */
+      (function() {
+        const checkbox = document.getElementById('useSampleCheck');
+        const select = document.getElementById('useSample');
+        if (checkbox && select) {
+          checkbox.addEventListener('change', function() {
+            select.value = checkbox.checked ? '1' : '0';
+            select.dispatchEvent(new Event('change'));
+          });
+          /* Keep checkbox in sync if renderer.js changes the select */
+          const observer = new MutationObserver(function() {
+            checkbox.checked = select.value === '1';
+          });
+          observer.observe(select, { attributes: true, childList: true });
+          /* Also poll in case value is set programmatically */
+          setInterval(function() { checkbox.checked = select.value === '1'; }, 500);
+        }
+      })();
+
+      /* ── Sample rate label update ── */
+      (function() {
+        const slider = document.getElementById('sampleRate');
+        const label = document.getElementById('sampleRateVal');
+        if (slider && label) {
+          slider.addEventListener('input', function() {
+            label.textContent = Number(slider.value).toFixed(2) + '×';
+          });
+        }
+      })();
+    </script>
   </body>
-  </html>
+</html>

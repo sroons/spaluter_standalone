@@ -2,6 +2,7 @@
 set -euo pipefail
 
 LAUNCHER_PATH="/usr/local/bin/spaluter-desktop"
+STARTUP_SCRIPT_PATH="/usr/local/bin/spaluter-linux-startup"
 SETUP_SCRIPT_PATH="/usr/local/bin/spaluter-rpi-setup"
 APP_BINARY=""
 
@@ -16,10 +17,20 @@ for candidate in \
 done
 
 if [ -n "$APP_BINARY" ]; then
+  # electron-builder may install /usr/local/bin/spaluter-desktop as a symlink
+  # to the app binary. Remove it first so we don't overwrite the binary target.
+  rm -f "$LAUNCHER_PATH"
   cat >"$LAUNCHER_PATH" <<EOF
 #!/bin/bash
 set -euo pipefail
 APP_BINARY='$APP_BINARY'
+STARTUP_SCRIPT='$STARTUP_SCRIPT_PATH'
+
+if [ -x "\$STARTUP_SCRIPT" ]; then
+  if ! "\$STARTUP_SCRIPT"; then
+    echo "Spaluter startup bootstrap reported issues; continuing launch." >&2
+  fi
+fi
 
 if command -v pw-jack >/dev/null 2>&1; then
   exec pw-jack "\$APP_BINARY" "\$@"
@@ -38,6 +49,44 @@ else
   echo "Spaluter Desktop installed, but app binary was not found at expected paths." >&2
   echo "Skipping launcher creation for ${LAUNCHER_PATH}." >&2
 fi
+
+cat >"$STARTUP_SCRIPT_PATH" <<'EOF'
+#!/bin/bash
+set -euo pipefail
+
+log_warn() {
+  echo "[spaluter-linux-startup] $*" >&2
+}
+
+if command -v systemctl >/dev/null 2>&1; then
+  if ! systemctl --user start wireplumber pipewire pipewire-pulse >/dev/null 2>&1; then
+    log_warn "Could not start one or more user services: wireplumber pipewire pipewire-pulse"
+  fi
+fi
+
+if command -v aconnect >/dev/null 2>&1; then
+  if ! aconnect -l >/dev/null 2>&1; then
+    log_warn "ALSA MIDI sequencer is unavailable (aconnect -l failed)."
+  fi
+else
+  log_warn "MIDI utility 'aconnect' not found; install alsa-utils."
+fi
+
+if command -v pactl >/dev/null 2>&1; then
+  if ! pactl info >/dev/null 2>&1; then
+    log_warn "PipeWire/PulseAudio control path is unavailable (pactl info failed)."
+  fi
+else
+  log_warn "Audio utility 'pactl' not found; install pulseaudio-utils."
+fi
+
+if ! command -v sclang >/dev/null 2>&1; then
+  log_warn "SuperCollider binary 'sclang' not found in PATH."
+elif ! sclang -v >/dev/null 2>&1; then
+  log_warn "SuperCollider did not respond correctly to version probe."
+fi
+EOF
+chmod 755 "$STARTUP_SCRIPT_PATH"
 
 cat >"$SETUP_SCRIPT_PATH" <<'EOF'
 #!/bin/bash

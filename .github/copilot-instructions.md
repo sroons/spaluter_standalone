@@ -20,3 +20,7 @@ There is no application architecture yet. Establish this section once the first 
 No repository-specific coding conventions are defined yet in tracked docs or config files.
 
 As conventions are introduced, capture only project-specific patterns here (for example: module layout, naming patterns tied to domain concepts, test organization, or config layering rules).
+
+- System configuration rule:
+  - If system config changes are needed on macOS, perform them directly.
+  - If system config changes are needed on Raspberry Pi, perform them over SSH.

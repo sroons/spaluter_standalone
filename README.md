@@ -61,6 +61,7 @@ Installer behavior:
 - macOS (`.pkg` postinstall): creates `/usr/local/bin/spaluter-desktop` symlink to the app binary.
 - Windows (`NSIS`): adds install directory to machine `PATH`.
 - Raspberry Pi / Linux ARM64 (`.deb` postinst): creates `/usr/local/bin/spaluter-desktop` launcher that prefers `pw-jack`.
+- Raspberry Pi / Linux ARM64 (`.deb` postinst): installs `/usr/local/bin/spaluter-linux-startup`, invoked on each launch to start audio services and probe MIDI/audio/SuperCollider prerequisites.
 - Raspberry Pi / Linux ARM64 (`.deb` postinst): installs `/usr/local/bin/spaluter-rpi-setup` and starts it automatically in the background at install-time.
 - All platforms: package app/runtime files and warn if `sclang` is not installed.
 
@@ -104,3 +105,5 @@ Sample browsing defaults to `/spaluter/samples/` (intended USB mount path). You 
   - On macOS, check Audio MIDI Setup for consistent output sample rate.
 - Raspberry Pi one-shot dependency setup (manual rerun):
   - `sudo /usr/local/bin/spaluter-rpi-setup --force`
+- Linux startup bootstrap (manual run):
+  - `/usr/local/bin/spaluter-linux-startup`

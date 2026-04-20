@@ -178,6 +178,7 @@ s.waitForBoot {
         SendReply.kr(scopeTrig, "/spaluter/scope", scopeValues);
         Out.ar(out, sig * amp);
     }).add;
+    s.sync;
 
     ~spaluterStart = { |out=0|
         Synth(\spaluterSC, [
