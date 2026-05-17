@@ -1,0 +1,47 @@
+directories:
+  output: installers
+  buildResources: build
+appId: com.spaluter.desktop
+productName: Spaluter Desktop
+npmRebuild: false
+nodeGypRebuild: false
+asarUnpack:
+  - sc/**/*
+  - spaluter_supercollider.scd
+artifactName: ${productName}-${version}-${os}-${arch}.${ext}
+files:
+  - filter:
+      - main.js
+      - preload.js
+      - renderer/**/*
+      - sc/**/*
+      - scripts/start-electron.js
+      - spaluter_supercollider.scd
+      - package.json
+mac:
+  category: public.app-category.music
+  target:
+    - dmg
+    - pkg
+  identity: null
+pkg:
+  scripts: build/mac/pkg-scripts
+win:
+  target:
+    - nsis
+nsis:
+  oneClick: false
+  allowElevation: true
+  allowToChangeInstallationDirectory: true
+  perMachine: true
+  include: build/win/installer.nsh
+linux:
+  category: AudioVideo
+  maintainer: Spaluter Desktop <noreply@spaluter.local>
+  target:
+    - deb
+deb:
+  afterInstall: build/linux/postinst.sh
+extraMetadata:
+  homepage: https://spaluter.local
+electronVersion: 33.4.11

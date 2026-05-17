@@ -13,6 +13,42 @@ Cross-platform desktop wrapper for the `spaluter_supercollider.scd` patch.
 - Handles MIDI CC mappings plus MIDI Note On/Off pitch+gate control (auto-switches from Free Run to MIDI-like gating so attack/release is honored)
 - Startup order is enforced as: check SuperCollider -> install if missing -> start SuperCollider -> start synth -> start GUI
 
+## Default MIDI channel values (CC mappings)
+
+| Parameter | Default MIDI CC |
+| --- | ---: |
+| amp | 7 |
+| drive | 71 |
+| pulsaret | 20 |
+| window | 21 |
+| duty | 22 |
+| dutyMode | 23 |
+| formantCount | 24 |
+| formantTrack | 25 |
+| formant1 | 26 |
+| formant2 | 27 |
+| formant3 | 28 |
+| pan1 | 29 |
+| pan2 | 30 |
+| pan3 | 31 |
+| maskMode | 32 |
+| perFormantMask | 33 |
+| maskAmount | 34 |
+| ampJitter | 35 |
+| timingJitter | 36 |
+| glisson | 37 |
+| burstOn | 38 |
+| burstOff | 39 |
+| gateMode | 40 |
+| voiceCount | 41 |
+| chordType | 42 |
+| basePitch | 43 |
+| attackMs | 44 |
+| releaseMs | 45 |
+| glideMs | 46 |
+| useSample | 47 |
+| sampleRate | 48 |
+
 ## Requirements
 
 - Node.js 18+

@@ -13,9 +13,9 @@
       <div class="header-brand">
         <h1><span class="title-spaluter">Spa</span><span class="title-desktop">lu</span><span class="title-spaluter">ter</span></h1>
         <img class="header-wave" src="./assets/spaluter_icon.png" alt="" />
-        <div id="status">Starting...</div>
       </div>
       <div class="header-transport">
+        <div id="status">Starting...</div>
         <button id="synthToggle" data-action="start" aria-pressed="false">Start Synth</button>
         <button data-action="reset">↺ Reset</button>
         <button id="toggleLog" type="button" aria-expanded="false">Log</button>
@@ -23,67 +23,91 @@
       </div>
     </header>
 
-    <!-- Waveform scopes -->
-    <div class="waveform-strip" aria-label="Waveform previews">
-      <div class="waveform-panel">
-        <div class="waveform-panel-header">
-          <span class="waveform-panel-title">Pulsaret</span>
-          <span id="pulsaretWaveLabel" class="waveform-panel-meta">sine</span>
-        </div>
-        <canvas id="pulsaretWaveView" class="waveform-canvas" width="320" height="84" aria-label="Pulsaret waveform preview"></canvas>
-      </div>
-      <div class="waveform-panel">
-        <div class="waveform-panel-header">
-          <span class="waveform-panel-title">Window</span>
-          <span id="windowWaveLabel" class="waveform-panel-meta">rectangular</span>
-        </div>
-        <canvas id="windowWaveView" class="waveform-canvas" width="320" height="84" aria-label="Window waveform preview"></canvas>
-      </div>
-      <div class="waveform-panel">
-        <div class="waveform-panel-header">
-          <span class="waveform-panel-title">Duty</span>
-          <span id="dutyWaveLabel" class="waveform-panel-meta">0.50</span>
-        </div>
-        <canvas id="dutyWaveView" class="waveform-canvas" width="320" height="84" aria-label="Duty waveform preview"></canvas>
-      </div>
-      <div class="waveform-panel output-scope-panel">
-        <div class="waveform-panel-header">
-          <span class="waveform-panel-title">Output Scope</span>
-          <span id="outputScopeLabel" class="waveform-panel-meta">Waiting for synth...</span>
-        </div>
-        <canvas id="outputScopeView" class="waveform-canvas" width="320" height="84" aria-label="Output waveform scope"></canvas>
-      </div>
+    <div class="main-screen-switch" id="mainScreenSwitch" role="tablist" aria-label="Main screens">
+      <button class="main-screen-btn active" data-view-index="0" type="button" aria-pressed="true">SCOPES</button>
+      <button class="main-screen-btn" data-view-index="1" type="button" aria-pressed="false">PARAMETERS P1</button>
+      <button class="main-screen-btn" data-view-index="2" type="button" aria-pressed="false">PARAMETERS P2</button>
+      <button class="main-screen-btn" data-view-index="3" type="button" aria-pressed="false">PARAMETERS P3</button>
+      <button class="main-screen-btn" data-view-index="4" type="button" aria-pressed="false">PARAMETERS P4</button>
+      <button class="main-screen-btn" data-view-index="5" type="button" aria-pressed="false">PARAMETERS P5</button>
+      <button class="main-screen-btn" data-view-index="6" type="button" aria-pressed="false">PARAMETERS P6</button>
     </div>
 
-    <!-- About drawer (hidden by default, renderer.js toggles it) -->
-    <section id="aboutDrawer" class="info-drawer closed">
-      <div class="info-drawer-header">
-        <h2>About Spaluter</h2>
-        <button id="closeAbout" type="button">Close</button>
-      </div>
-      <div class="info-content">
-        <p>Pulsar synthesis builds sound from a stream of tiny wave fragments called pulsarets. Each pulsaret is brief, periodic, and can be morphed to create very different timbres.</p>
-        <p>Spaluter shapes each pulsaret with a <strong>window</strong>, which controls the grain envelope, and a <strong>duty</strong> value, which sets how much of each cycle is active versus silent.</p>
-        <p>By sweeping pulsaret waveform, window type, pitch/formants, and texture controls, you move between pitched tones, vocal-like spectra, and noisy granular textures while keeping a rhythmic pulse structure.</p>
-        <p><strong>Credits:</strong> Spaluter's pulsar synthesis direction is inspired by Curtis Roads' foundational work in granular and microsound composition.</p>
-        <p class="info-sources-title"><strong>Curtis Roads source material:</strong></p>
-        <ul class="info-sources">
-          <li><a href="https://mitpress.mit.edu/9780262681544/microsound/" target="_blank" rel="noopener noreferrer">Microsound (MIT Press)</a></li>
-          <li><a href="https://mitpress.mit.edu/9780262044912/the-computer-music-tutorial/" target="_blank" rel="noopener noreferrer">The Computer Music Tutorial, 2nd Edition (MIT Press)</a></li>
-        </ul>
-      </div>
-    </section>
+    <div id="mainScreenStage" class="main-screen-stage">
+      <section class="main-screen active" data-screen="scopes" aria-label="Scope screen">
+        <div class="waveform-strip" aria-label="Waveform previews">
+        <div class="waveform-panel">
+          <div class="waveform-panel-header">
+            <span class="waveform-panel-title">Pulsaret</span>
+            <span id="pulsaretWaveLabel" class="waveform-panel-meta">sine</span>
+          </div>
+          <canvas id="pulsaretWaveView" class="waveform-canvas" width="320" height="84" aria-label="Pulsaret waveform preview"></canvas>
+        </div>
+        <div class="waveform-panel">
+          <div class="waveform-panel-header">
+            <span class="waveform-panel-title">Window</span>
+            <span id="windowWaveLabel" class="waveform-panel-meta">rectangular</span>
+          </div>
+          <canvas id="windowWaveView" class="waveform-canvas" width="320" height="84" aria-label="Window waveform preview"></canvas>
+        </div>
+        <div class="waveform-panel">
+          <div class="waveform-panel-header">
+            <span class="waveform-panel-title">Duty</span>
+            <span id="dutyWaveLabel" class="waveform-panel-meta">0.50</span>
+          </div>
+          <canvas id="dutyWaveView" class="waveform-canvas" width="320" height="84" aria-label="Duty waveform preview"></canvas>
+        </div>
+        <div class="waveform-panel formant-scope-panel">
+          <div class="waveform-panel-header">
+            <span class="waveform-panel-title">Formants</span>
+            <span id="formantWaveLabel" class="waveform-panel-meta">F1 20 Hz • F2 200 Hz</span>
+          </div>
+          <canvas id="formantWaveView" class="waveform-canvas" width="320" height="84" aria-label="Active formants scope preview"></canvas>
+        </div>
+        <div class="waveform-panel output-scope-panel output-scope-large">
+          <div class="waveform-panel-header">
+            <span class="waveform-panel-title">Output Scope</span>
+            <span id="outputScopeLabel" class="waveform-panel-meta">Waiting for synth...</span>
+          </div>
+          <canvas id="outputScopeView" class="waveform-canvas" width="320" height="160" aria-label="Output waveform scope"></canvas>
+        </div>
+        </div>
+      </section>
 
-    <!-- Tab strip -->
-    <div class="tab-strip" id="tabStrip">
-      <button class="tab-btn active" data-tab="core" type="button">Core</button>
-      <button class="tab-btn" data-tab="wave" type="button">Wave / Formants</button>
-      <button class="tab-btn" data-tab="fx" type="button">Texture / FX</button>
-      <button class="tab-btn" data-tab="voice" type="button">Voice / Sample</button>
-    </div>
+      <section class="main-screen" data-screen="parameters" aria-label="Parameter screen">
+      <!-- About drawer (hidden by default, renderer.js toggles it) -->
+      <section id="aboutDrawer" class="info-drawer closed">
+        <div class="info-drawer-header">
+          <h2>About Spaluter</h2>
+          <button id="closeAbout" type="button">Close</button>
+        </div>
+        <div class="info-content">
+          <p>Pulsar synthesis builds sound from a stream of tiny wave fragments called pulsarets. Each pulsaret is brief, periodic, and can be morphed to create very different timbres.</p>
+          <p>Spaluter shapes each pulsaret with a <strong>window</strong>, which controls the grain envelope, and a <strong>duty</strong> value, which sets how much of each cycle is active versus silent.</p>
+          <p>By sweeping pulsaret waveform, window type, pitch/formants, and texture controls, you move between pitched tones, vocal-like spectra, and noisy granular textures while keeping a rhythmic pulse structure.</p>
+          <p><strong>Credits:</strong> Spaluter's pulsar synthesis direction is inspired by Curtis Roads' foundational work in granular and microsound composition.</p>
+          <p class="info-sources-title"><strong>Curtis Roads source material:</strong></p>
+          <ul class="info-sources">
+            <li><a href="https://mitpress.mit.edu/9780262681544/microsound/" target="_blank" rel="noopener noreferrer">Microsound (MIT Press)</a></li>
+            <li><a href="https://mitpress.mit.edu/9780262044912/the-computer-music-tutorial/" target="_blank" rel="noopener noreferrer">The Computer Music Tutorial, 2nd Edition (MIT Press)</a></li>
+          </ul>
+        </div>
+      </section>
 
-    <!-- Tab panels -->
-    <div class="tab-panels">
+      <section class="param-monitor" aria-label="Realtime parameter values">
+        <div id="paramValueGrid" class="param-value-grid"></div>
+      </section>
+
+      <!-- Tab strip -->
+      <div class="tab-strip" id="tabStrip">
+        <button class="tab-btn active" data-tab="core" type="button">Core</button>
+        <button class="tab-btn" data-tab="wave" type="button">Wave / Formants</button>
+        <button class="tab-btn" data-tab="fx" type="button">Texture / FX</button>
+        <button class="tab-btn" data-tab="voice" type="button">Voice / Sample</button>
+      </div>
+
+      <!-- Tab panels -->
+      <div class="tab-panels">
 
       <!-- ─── Core ─── -->
       <div class="tab-panel active" data-tab="core">
@@ -182,6 +206,8 @@
         </div>
       </div>
 
+        </div>
+      </section>
     </div>
 
     <!-- Log footer -->

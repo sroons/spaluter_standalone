@@ -19,10 +19,20 @@ const outputScopeCanvas = document.getElementById("outputScopeView");
 const pulsaretWaveCanvas = document.getElementById("pulsaretWaveView");
 const windowWaveCanvas = document.getElementById("windowWaveView");
 const dutyWaveCanvas = document.getElementById("dutyWaveView");
+const formantWaveCanvas = document.getElementById("formantWaveView");
 const outputScopeLabelEl = document.getElementById("outputScopeLabel");
 const pulsaretWaveLabelEl = document.getElementById("pulsaretWaveLabel");
 const windowWaveLabelEl = document.getElementById("windowWaveLabel");
 const dutyWaveLabelEl = document.getElementById("dutyWaveLabel");
+const formantWaveLabelEl = document.getElementById("formantWaveLabel");
+const mainScreenSwitchEl = document.getElementById("mainScreenSwitch");
+const mainScreenStageEl = document.getElementById("mainScreenStage");
+const mainScreenButtons = Array.from(document.querySelectorAll(".main-screen-btn[data-view-index]"));
+const mainScreenPanels = Array.from(document.querySelectorAll(".main-screen[data-screen]"));
+const paramValueGridEl = document.getElementById("paramValueGrid");
+const paramPagePrevBtn = document.getElementById("paramPagePrev");
+const paramPageNextBtn = document.getElementById("paramPageNext");
+const paramPageIndicatorEl = document.getElementById("paramPageIndicator");
 const knobs = Array.from(document.querySelectorAll(".knob[data-param]"));
 const rangeInputs = Array.from(document.querySelectorAll('input[data-param][type="range"]'));
 const selectInputs = Array.from(document.querySelectorAll("select[data-param]"));
@@ -47,6 +57,14 @@ const LOG_LINE_LIMIT = 400;
 const RESIZE_DEBOUNCE_MS = 120;
 const MIN_SCOPE_RATE_HZ = 2;
 const ACTIVE_SCOPE_RATE_HZ = 20;
+const MAIN_SCREENS = ["scopes", "parameters"];
+const SCREEN_SLIDE_MS = 240;
+const SWIPE_MIN_DISTANCE_PX = 60;
+const SWIPE_MAX_OFF_AXIS_PX = 45;
+const SWIPE_MAX_DURATION_MS = 700;
+const MIDI_REBIND_DEBOUNCE_MS = 120;
+const MIDI_STATE_LOG_MIN_INTERVAL_MS = 250;
+const RENDERER_HEARTBEAT_MS = 1000;
 let sampleDefaultDir = DEFAULT_SAMPLE_DIR;
 let currentSamplePath = "";
 let midiAccess = null;
@@ -56,16 +74,76 @@ let activeMidiNotes = [];
 let synthRunning = false;
 let waveformLayoutDirty = true;
 let resizeDebounceTimer = null;
+let midiRebindTimer = null;
+let rendererHeartbeatTimer = null;
 let activeKnobDrag = null;
 let logLineCount = 0;
 let scopeStreamingEnabled = true;
+let currentMainScreen = "scopes";
+let currentViewIndex = 0;
+let screenTransitionTimer = null;
+let screenTransitionToken = 0;
+let currentParamPage = 0;
+let lastMidiInputCount = -1;
+let lastMidiStateLogAt = 0;
+let lastMidiStateKey = "";
 const controlMetaByParam = new Map();
+const paramValueElByParam = new Map();
+const paramSliderByParam = new Map();
 const canvasMetricsByElement = new WeakMap();
 const allParamNames = Array.from(new Set([
   ...knobByParam.keys(),
   ...rangeByParam.keys(),
   ...selectByParam.keys()
 ]));
+const PARAM_PAGE_DEFINITIONS = Object.freeze([
+  {
+    title: "Core",
+    params: ["amp", "drive", "pulsaret", "window", "duty", "dutyMode"]
+  },
+  {
+    title: "Formants",
+    params: ["formantCount", "formantTrack", "formant1", "formant2", "formant3"]
+  },
+  {
+    title: "Stereo / Mask",
+    params: ["pan1", "pan2", "pan3", "maskMode", "perFormantMask", "maskAmount"]
+  },
+  {
+    title: "Texture",
+    params: ["ampJitter", "timingJitter", "glisson", "burstOn", "burstOff"]
+  },
+  {
+    title: "Voice",
+    params: ["gateMode", "voiceCount", "chordType", "basePitch", "attackMs", "releaseMs", "glideMs"]
+  },
+  {
+    title: "Sample",
+    params: ["useSample", "sampleRate"]
+  }
+]);
+
+function buildParameterPages() {
+  const availableParams = new Set(allParamNames);
+  const seen = new Set();
+  const pages = PARAM_PAGE_DEFINITIONS
+    .map((page) => {
+      const pageParams = page.params.filter((param) => availableParams.has(param) && !seen.has(param));
+      pageParams.forEach((param) => seen.add(param));
+      return { title: page.title, params: pageParams };
+    })
+    .filter((page) => page.params.length > 0);
+
+  const ungroupedParams = allParamNames.filter((param) => !seen.has(param));
+  if (ungroupedParams.length > 0) {
+    pages.push({ title: "Other", params: ungroupedParams });
+  }
+
+  return pages.length > 0 ? pages : [{ title: "Parameters", params: allParamNames.slice() }];
+}
+
+const PARAM_PAGES = buildParameterPages();
+const MAIN_VIEW_COUNT = 1 + PARAM_PAGES.length;
 const midiUiByParam = new Map();
 const PREFERRED_MIDI_CC_BY_PARAM = Object.freeze({
   amp: 7,
@@ -125,6 +203,7 @@ const WINDOW_WAVE_NAMES = [
 ];
 const TWO_PI = Math.PI * 2;
 const OUTPUT_SCOPE_FRAME_SIZE = 64;
+const FORMANT_SCOPE_COLORS = ["rgb(235, 110, 79)", "rgb(114, 213, 142)", "rgb(199, 146, 234)"];
 const MIDI_STATUS_TYPE_MASK = 0xF0;
 const MIDI_STATUS_NOTE_OFF = 0x80;
 const MIDI_STATUS_NOTE_ON = 0x90;
@@ -219,6 +298,19 @@ function clamp(v, lo, hi) {
 
 function quantize(v, step) {
   return Math.round(v / step) * step;
+}
+
+function formatParamName(param) {
+  return String(param || "")
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function decimalsFromStep(step, fallback = 2) {
+  if (!Number.isFinite(step) || step <= 0) return fallback;
+  const text = String(step);
+  if (!text.includes(".")) return 0;
+  return Math.min(4, text.length - text.indexOf(".") - 1);
 }
 
 function knobAngleFromValue(v, min, max) {
@@ -407,6 +499,53 @@ function drawScopeFromSamples(canvas, samples) {
   }, -1, 1);
 }
 
+function drawFormantWaves(canvas, formantHzValues, activeCount) {
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+
+  const metrics = getCanvasMetrics(canvas);
+  const {
+    dpr, drawWidth, drawHeight, leftPad, rightPad, topPad, bottomPad
+  } = metrics;
+
+  if (canvas.width !== drawWidth || canvas.height !== drawHeight) {
+    canvas.width = drawWidth;
+    canvas.height = drawHeight;
+  }
+
+  ctx.clearRect(0, 0, drawWidth, drawHeight);
+  ctx.lineWidth = Math.max(1, dpr);
+  ctx.strokeStyle = "rgba(169, 180, 208, 0.3)";
+  ctx.beginPath();
+  const centerY = drawHeight * 0.5;
+  ctx.moveTo(0, centerY);
+  ctx.lineTo(drawWidth, centerY);
+  ctx.stroke();
+
+  const usableWidth = Math.max(1, rightPad - leftPad);
+  const usableHeight = Math.max(1, bottomPad - topPad);
+  const samples = Math.max(48, Math.floor(drawWidth / 2));
+
+  for (let formantIndex = 0; formantIndex < activeCount; formantIndex += 1) {
+    const hz = clamp(Number(formantHzValues[formantIndex]) || 20, 20, 8000);
+    const cycles = clamp(Math.log2((hz / 20) + 1), 0.5, 6.5);
+    const amplitude = clamp(0.9 - (formantIndex * 0.12), 0.4, 0.95);
+    ctx.strokeStyle = FORMANT_SCOPE_COLORS[formantIndex % FORMANT_SCOPE_COLORS.length];
+    ctx.beginPath();
+    for (let i = 0; i <= samples; i += 1) {
+      const t = i / samples;
+      const sample = Math.sin(t * TWO_PI * cycles) * amplitude;
+      const normalized = (sample + 1) * 0.5;
+      const x = leftPad + (t * usableWidth);
+      const y = topPad + ((1 - normalized) * usableHeight);
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+}
+
 function normalizeScopeSamples(samples) {
   if (!Array.isArray(samples)) return null;
   let sampleCount = 0;
@@ -448,6 +587,12 @@ function updateWaveformViews() {
   const pulsaret = currentParamValue("pulsaret", 2.5);
   const windowType = currentParamValue("window", 0.5);
   const duty = clamp(currentParamValue("duty", 0.5), 0.01, 1);
+  const formantCount = clamp(Math.round(currentParamValue("formantCount", 2)), 1, 3);
+  const formantHzValues = [
+    clamp(currentParamValue("formant1", 20), 20, 8000),
+    clamp(currentParamValue("formant2", 200), 20, 8000),
+    clamp(currentParamValue("formant3", 400), 20, 8000)
+  ];
 
   if (pulsaretWaveLabelEl) {
     pulsaretWaveLabelEl.textContent = `${interpolatedWaveLabel(pulsaret, PULSARET_WAVE_NAMES)} (${pulsaret.toFixed(2)})`;
@@ -457,6 +602,12 @@ function updateWaveformViews() {
   }
   if (dutyWaveLabelEl) {
     dutyWaveLabelEl.textContent = duty.toFixed(2);
+  }
+  if (formantWaveLabelEl) {
+    const activeLabels = formantHzValues
+      .slice(0, formantCount)
+      .map((hz, index) => `F${index + 1} ${Math.round(hz)} Hz`);
+    formantWaveLabelEl.textContent = activeLabels.join(" • ");
   }
 
   drawWaveform(
@@ -480,6 +631,7 @@ function updateWaveformViews() {
     -1,
     1
   );
+  drawFormantWaves(formantWaveCanvas, formantHzValues, formantCount);
   drawScopeFromSamples(outputScopeCanvas, outputScopeSamples);
 }
 
@@ -598,6 +750,173 @@ function rebuildControlMetaCache() {
 
 function getControlMeta(param) {
   return controlMetaByParam.get(param) || null;
+}
+
+function formatParamValue(param, value) {
+  if (!Number.isFinite(value)) return "--";
+
+  const meta = getControlMeta(param);
+  if (meta?.type === "continuous") {
+    const decimals = decimalsFromStep(meta.step, 2);
+    return Number(value).toFixed(decimals);
+  }
+
+  const discreteSelect = selectByParam.get(param);
+  if (discreteSelect) {
+    const valueStr = String(value);
+    const selectedOption = Array.from(discreteSelect.options).find((option) => option.value === valueStr);
+    const optionLabel = selectedOption?.textContent?.trim();
+    if (optionLabel) return optionLabel;
+  }
+
+  if (Number.isInteger(value)) return String(value);
+  return Number(value).toFixed(2);
+}
+
+function findParamLabel(param) {
+  const knob = knobByParam.get(param);
+  const knobLabel = knob?.closest(".knob-control")?.querySelector(".knob-label")?.textContent?.trim();
+  if (knobLabel) return knobLabel;
+
+  const range = rangeByParam.get(param);
+  const rangeLabel = range?.closest(".control")?.querySelector(`label[for="${range.id}"]`)?.textContent?.trim();
+  if (rangeLabel) return rangeLabel;
+
+  const select = selectByParam.get(param);
+  const selectLabel = select?.closest(".control")?.querySelector(`label[for="${select.id}"]`)?.textContent?.trim();
+  if (selectLabel) return selectLabel;
+
+  return formatParamName(param);
+}
+
+function updateRealtimeParamValue(param, value) {
+  const valueEl = paramValueElByParam.get(param);
+  const numericValue = Number(value);
+  if (valueEl) {
+    valueEl.textContent = formatParamValue(param, numericValue);
+  }
+
+  const sliderEl = paramSliderByParam.get(param);
+  if (!sliderEl) return;
+
+  const meta = getControlMeta(param);
+  if (!meta) return;
+  if (meta.type === "discrete") {
+    const discreteIndex = meta.values.indexOf(numericValue);
+    if (discreteIndex >= 0) sliderEl.value = String(discreteIndex);
+    return;
+  }
+
+  sliderEl.value = String(numericValue);
+}
+
+function sliderValueToParamValue(param, sliderRawValue) {
+  const meta = getControlMeta(param);
+  const numeric = Number(sliderRawValue);
+  if (!meta || !Number.isFinite(numeric)) return null;
+
+  if (meta.type === "discrete") {
+    const index = clamp(Math.round(numeric), 0, Math.max(0, meta.values.length - 1));
+    const value = meta.values[index];
+    return Number.isFinite(value) ? value : null;
+  }
+
+  return clamp(quantize(numeric, meta.step), meta.min, meta.max);
+}
+
+function parameterNamesForPage(pageIndex) {
+  if (allParamNames.length === 0) return [];
+  const totalPages = Math.max(1, PARAM_PAGES.length);
+  const normalizedPage = clamp(Math.floor(Number(pageIndex) || 0), 0, totalPages - 1);
+  return PARAM_PAGES[normalizedPage]?.params || [];
+}
+
+function parameterPageTitle(pageIndex) {
+  const totalPages = Math.max(1, PARAM_PAGES.length);
+  const normalizedPage = clamp(Math.floor(Number(pageIndex) || 0), 0, totalPages - 1);
+  return PARAM_PAGES[normalizedPage]?.title || "Parameters";
+}
+
+function renderParamPageIndicator() {
+  const totalPages = Math.max(1, PARAM_PAGES.length);
+  if (paramPageIndicatorEl) {
+    const title = parameterPageTitle(currentParamPage);
+    paramPageIndicatorEl.textContent = `${title} (${currentParamPage + 1}/${totalPages})`;
+  }
+  if (paramPagePrevBtn) paramPagePrevBtn.disabled = currentParamPage <= 0;
+  if (paramPageNextBtn) paramPageNextBtn.disabled = currentParamPage >= totalPages - 1;
+}
+
+function setParameterPage(pageIndex) {
+  const totalPages = Math.max(1, PARAM_PAGES.length);
+  const nextPage = clamp(Math.floor(Number(pageIndex) || 0), 0, totalPages - 1);
+  if (nextPage === currentParamPage && paramValueElByParam.size > 0) {
+    renderParamPageIndicator();
+    return;
+  }
+  currentParamPage = nextPage;
+  rebuildRealtimeParamGrid();
+}
+
+function rebuildRealtimeParamGrid() {
+  if (!paramValueGridEl) return;
+  paramValueGridEl.innerHTML = "";
+  paramValueElByParam.clear();
+  paramSliderByParam.clear();
+
+  const visibleParamNames = parameterNamesForPage(currentParamPage);
+  visibleParamNames.forEach((param) => {
+    const row = document.createElement("div");
+    row.className = "param-value-item";
+
+    const labelEl = document.createElement("span");
+    labelEl.className = "param-value-label";
+    labelEl.textContent = findParamLabel(param);
+
+    const valueEl = document.createElement("span");
+    valueEl.className = "param-value-current";
+    valueEl.textContent = "--";
+
+    const sliderEl = document.createElement("input");
+    sliderEl.type = "range";
+    sliderEl.className = "param-value-slider";
+
+    const meta = getControlMeta(param);
+    const currentValue = currentParamValue(param, 0);
+    if (meta?.type === "discrete") {
+      sliderEl.min = "0";
+      sliderEl.max = String(Math.max(0, meta.values.length - 1));
+      sliderEl.step = "1";
+      sliderEl.value = String(Math.max(0, meta.values.indexOf(Number(currentValue))));
+    } else if (meta?.type === "continuous") {
+      sliderEl.min = String(meta.min);
+      sliderEl.max = String(meta.max);
+      sliderEl.step = String(meta.step);
+      sliderEl.value = String(currentValue);
+    } else {
+      sliderEl.min = "0";
+      sliderEl.max = "1";
+      sliderEl.step = "1";
+      sliderEl.value = "0";
+      sliderEl.disabled = true;
+    }
+
+    sliderEl.addEventListener("input", () => {
+      const nextValue = sliderValueToParamValue(param, sliderEl.value);
+      if (nextValue === null) return;
+      setParamValue(param, nextValue, true);
+    });
+
+    row.append(labelEl, sliderEl, valueEl);
+    paramValueGridEl.appendChild(row);
+    paramValueElByParam.set(param, valueEl);
+    paramSliderByParam.set(param, sliderEl);
+  });
+
+  visibleParamNames.forEach((param) => {
+    updateRealtimeParamValue(param, currentParamValue(param, 0));
+  });
+  renderParamPageIndicator();
 }
 
 function valueFromMidiCc(param, ccValue) {
@@ -794,10 +1113,21 @@ function bindMidiInputs() {
   if (!midiAccess) return;
   let inputCount = 0;
   midiAccess.inputs.forEach((input) => {
+    if (!input) return;
     input.onmidimessage = handleMidiMessage;
     inputCount += 1;
   });
+  if (inputCount === lastMidiInputCount) return;
+  lastMidiInputCount = inputCount;
   appendLog(`[MIDI] Listening on ${inputCount} input${inputCount === 1 ? "" : "s"}.`);
+}
+
+function scheduleMidiInputRebind() {
+  if (midiRebindTimer) clearTimeout(midiRebindTimer);
+  midiRebindTimer = window.setTimeout(() => {
+    midiRebindTimer = null;
+    bindMidiInputs();
+  }, MIDI_REBIND_DEBOUNCE_MS);
 }
 
 async function initMidiSupport() {
@@ -810,10 +1140,17 @@ async function initMidiSupport() {
     midiAccess = await navigator.requestMIDIAccess();
     bindMidiInputs();
     midiAccess.onstatechange = (event) => {
-      if (event?.port?.type === "input") {
-        bindMidiInputs();
-        appendLog(`[MIDI] ${event.port.name || event.port.id} is ${event.port.state}.`);
-      }
+      const port = event?.port;
+      if (port?.type !== "input") return;
+      scheduleMidiInputRebind();
+      const portName = port.name || port.id || "MIDI input";
+      const portState = port.state || "unknown";
+      const stateKey = `${portName}:${portState}`;
+      const now = Date.now();
+      if (stateKey === lastMidiStateKey && (now - lastMidiStateLogAt) < MIDI_STATE_LOG_MIN_INTERVAL_MS) return;
+      lastMidiStateKey = stateKey;
+      lastMidiStateLogAt = now;
+      appendLog(`[MIDI] ${portName} is ${portState}.`);
     };
   } catch (err) {
     appendLog(`[MIDI] Failed to initialize: ${err.message}`);
@@ -860,10 +1197,19 @@ function setParamValue(param, rawValue, send = true) {
     }
   }
 
-  if (param === "pulsaret" || param === "window" || param === "duty") {
+  if (
+    param === "pulsaret"
+    || param === "window"
+    || param === "duty"
+    || param === "formantCount"
+    || param === "formant1"
+    || param === "formant2"
+    || param === "formant3"
+  ) {
     updateWaveformViews();
   }
 
+  updateRealtimeParamValue(param, value);
   if (send) window.spaluterApi.setParam(param, value);
   return true;
 }
@@ -1036,6 +1382,260 @@ function scheduleWaveformResizeRefresh() {
   }, RESIZE_DEBOUNCE_MS);
 }
 
+function normalizedMainViewIndex(rawIndex) {
+  return clamp(Math.floor(Number(rawIndex) || 0), 0, Math.max(0, MAIN_VIEW_COUNT - 1));
+}
+
+function screenForMainViewIndex(viewIndex) {
+  return normalizedMainViewIndex(viewIndex) === 0 ? "scopes" : "parameters";
+}
+
+function parameterPageForMainViewIndex(viewIndex) {
+  const normalized = normalizedMainViewIndex(viewIndex);
+  if (normalized <= 0) return 0;
+  return clamp(normalized - 1, 0, Math.max(0, PARAM_PAGES.length - 1));
+}
+
+function inferMainViewSwipeDirection(fromIndex, toIndex) {
+  const from = normalizedMainViewIndex(fromIndex);
+  const to = normalizedMainViewIndex(toIndex);
+  if (from === to) return -1;
+  return to > from ? -1 : 1;
+}
+
+function clearMainScreenTransitionState(panel) {
+  if (!panel) return;
+  panel.classList.remove("transitioning");
+  panel.style.transitionDuration = "";
+  panel.style.transform = "";
+}
+
+function updateMainScreenSwitchButtons(targetViewIndex) {
+  mainScreenButtons.forEach((button) => {
+    const buttonViewIndex = normalizedMainViewIndex(button.dataset.viewIndex);
+    const isActive = buttonViewIndex === targetViewIndex;
+    button.classList.toggle("active", isActive);
+    button.setAttribute("aria-pressed", String(isActive));
+  });
+}
+
+function animateParameterPageTransition(panel, nextPage, swipeDirection, transitionToken) {
+  if (!panel) return;
+  const incomingStartX = swipeDirection < 0 ? "100%" : "-100%";
+  const outgoingEndX = swipeDirection < 0 ? "-100%" : "100%";
+
+  clearMainScreenTransitionState(panel);
+  panel.classList.add("active", "transitioning");
+  panel.style.transitionDuration = `${SCREEN_SLIDE_MS}ms`;
+  panel.style.transform = "translate3d(0, 0, 0)";
+  void panel.offsetWidth;
+
+  window.requestAnimationFrame(() => {
+    if (transitionToken !== screenTransitionToken) return;
+    panel.style.transform = `translate3d(${outgoingEndX}, 0, 0)`;
+  });
+
+  screenTransitionTimer = window.setTimeout(() => {
+    if (transitionToken !== screenTransitionToken) return;
+    clearMainScreenTransitionState(panel);
+    setParameterPage(nextPage);
+    panel.classList.add("active", "transitioning");
+    panel.style.transitionDuration = "0ms";
+    panel.style.transform = `translate3d(${incomingStartX}, 0, 0)`;
+    void panel.offsetWidth;
+    panel.style.transitionDuration = `${SCREEN_SLIDE_MS}ms`;
+    window.requestAnimationFrame(() => {
+      if (transitionToken !== screenTransitionToken) return;
+      panel.style.transform = "translate3d(0, 0, 0)";
+    });
+    screenTransitionTimer = window.setTimeout(() => {
+      if (transitionToken !== screenTransitionToken) return;
+      clearMainScreenTransitionState(panel);
+      panel.classList.add("active");
+      screenTransitionTimer = null;
+    }, SCREEN_SLIDE_MS + 34);
+  }, SCREEN_SLIDE_MS + 16);
+}
+
+function setMainView(targetViewIndex, options = {}) {
+  const targetIndex = normalizedMainViewIndex(targetViewIndex);
+  const targetScreen = screenForMainViewIndex(targetIndex);
+  const targetParamPage = parameterPageForMainViewIndex(targetIndex);
+  const animate = Boolean(options.animate);
+  const swipeDirection = Number(options.swipeDirection) < 0 ? -1 : 1;
+  const transitionToken = ++screenTransitionToken;
+
+  if (screenTransitionTimer) {
+    clearTimeout(screenTransitionTimer);
+    screenTransitionTimer = null;
+  }
+
+  if (targetIndex === currentViewIndex && !options.force) return;
+
+  const previousViewIndex = currentViewIndex;
+  const previousScreen = currentMainScreen;
+  const previousParamPage = currentParamPage;
+
+  const nextPanel = mainScreenPanels.find((panel) => panel.dataset.screen === targetScreen) || null;
+  const currentPanel = mainScreenPanels.find((panel) => panel.dataset.screen === previousScreen) || null;
+  if (!nextPanel) return;
+
+  updateMainScreenSwitchButtons(targetIndex);
+  currentViewIndex = targetIndex;
+  currentMainScreen = targetScreen;
+
+  if (!animate) {
+    if (targetScreen === "parameters") {
+      setParameterPage(targetParamPage);
+    }
+    mainScreenPanels.forEach((panel) => {
+      clearMainScreenTransitionState(panel);
+      panel.classList.toggle("active", panel === nextPanel);
+    });
+    if (targetScreen === "scopes") scheduleWaveformResizeRefresh();
+    return;
+  }
+
+  if (!currentPanel) {
+    if (targetScreen === "parameters") {
+      setParameterPage(targetParamPage);
+    }
+    nextPanel.classList.add("active");
+    if (targetScreen === "scopes") scheduleWaveformResizeRefresh();
+    return;
+  }
+
+  if (previousScreen === "parameters" && targetScreen === "parameters" && previousParamPage !== targetParamPage) {
+    animateParameterPageTransition(nextPanel, targetParamPage, swipeDirection, transitionToken);
+    return;
+  }
+
+  if (previousScreen === targetScreen) {
+    if (targetScreen === "parameters") {
+      setParameterPage(targetParamPage);
+    }
+    if (targetScreen === "scopes") scheduleWaveformResizeRefresh();
+    return;
+  }
+
+  if (targetScreen === "parameters") {
+    setParameterPage(targetParamPage);
+  }
+
+  const incomingStartX = swipeDirection < 0 ? "100%" : "-100%";
+  const outgoingEndX = swipeDirection < 0 ? "-100%" : "100%";
+
+  mainScreenPanels.forEach((panel) => {
+    clearMainScreenTransitionState(panel);
+    if (panel !== currentPanel && panel !== nextPanel) {
+      panel.classList.remove("active");
+    }
+  });
+
+  currentPanel.classList.add("active");
+  nextPanel.classList.add("active");
+  nextPanel.style.transform = `translate3d(${incomingStartX}, 0, 0)`;
+  currentPanel.style.transform = "translate3d(0, 0, 0)";
+
+  // Force layout before enabling transition to keep animation smooth.
+  void nextPanel.offsetWidth;
+
+  nextPanel.classList.add("transitioning");
+  currentPanel.classList.add("transitioning");
+  nextPanel.style.transitionDuration = `${SCREEN_SLIDE_MS}ms`;
+  currentPanel.style.transitionDuration = `${SCREEN_SLIDE_MS}ms`;
+
+  window.requestAnimationFrame(() => {
+    if (transitionToken !== screenTransitionToken) return;
+    nextPanel.style.transform = "translate3d(0, 0, 0)";
+    currentPanel.style.transform = `translate3d(${outgoingEndX}, 0, 0)`;
+  });
+
+  screenTransitionTimer = window.setTimeout(() => {
+    if (transitionToken !== screenTransitionToken) return;
+    clearMainScreenTransitionState(currentPanel);
+    clearMainScreenTransitionState(nextPanel);
+    currentPanel.classList.remove("active");
+    nextPanel.classList.add("active");
+    if (targetScreen === "scopes") scheduleWaveformResizeRefresh();
+    screenTransitionTimer = null;
+  }, SCREEN_SLIDE_MS + 34);
+}
+
+function initMainScreenSwitcher() {
+  if (!mainScreenSwitchEl) return;
+  mainScreenSwitchEl.addEventListener("click", (event) => {
+    const button = event.target.closest(".main-screen-btn[data-view-index]");
+    if (!button) return;
+    const targetViewIndex = normalizedMainViewIndex(button.dataset.viewIndex);
+    const direction = inferMainViewSwipeDirection(currentViewIndex, targetViewIndex);
+    setMainView(targetViewIndex, { animate: true, swipeDirection: direction });
+  });
+}
+
+function shouldIgnoreSwipeStartTarget(target) {
+  if (!(target instanceof Element)) return true;
+  return Boolean(target.closest(
+    "button,input,select,textarea,a,label,.tab-strip,.main-screen-switch,.log-footer,#aboutDrawer,.midi-map-panel,.midi-map-trigger"
+  ));
+}
+
+function switchMainViewBySwipe(step) {
+  const direction = step >= 0 ? 1 : -1;
+  const nextViewIndex = clamp(currentViewIndex + direction, 0, Math.max(0, MAIN_VIEW_COUNT - 1));
+  if (nextViewIndex === currentViewIndex) return;
+  const swipeDirection = direction > 0 ? -1 : 1;
+  setMainView(nextViewIndex, { animate: true, swipeDirection });
+}
+
+function initMainScreenSwipe() {
+  if (!mainScreenStageEl) return;
+  let swipeStart = null;
+
+  mainScreenStageEl.addEventListener("touchstart", (event) => {
+    if (event.touches.length !== 1) {
+      swipeStart = null;
+      return;
+    }
+    const touch = event.touches[0];
+    if (!touch || shouldIgnoreSwipeStartTarget(event.target)) {
+      swipeStart = null;
+      return;
+    }
+    swipeStart = {
+      x: touch.clientX,
+      y: touch.clientY,
+      time: Date.now()
+    };
+  }, { passive: true });
+
+  mainScreenStageEl.addEventListener("touchcancel", () => {
+    swipeStart = null;
+  }, { passive: true });
+
+  mainScreenStageEl.addEventListener("touchend", (event) => {
+    if (!swipeStart) return;
+    const touch = event.changedTouches?.[0];
+    if (!touch) {
+      swipeStart = null;
+      return;
+    }
+
+    const dx = touch.clientX - swipeStart.x;
+    const dy = touch.clientY - swipeStart.y;
+    const dt = Date.now() - swipeStart.time;
+    swipeStart = null;
+
+    if (dt > SWIPE_MAX_DURATION_MS) return;
+    if (Math.abs(dx) < SWIPE_MIN_DISTANCE_PX) return;
+    if (Math.abs(dy) > SWIPE_MAX_OFF_AXIS_PX) return;
+    if (Math.abs(dx) <= Math.abs(dy)) return;
+
+    if (dx < 0) switchMainViewBySwipe(1);
+    else switchMainViewBySwipe(-1);
+  }, { passive: true });
+}
+
 function setScopeStreaming(enabled) {
   const nextEnabled = Boolean(enabled);
   if (scopeStreamingEnabled === nextEnabled) return;
@@ -1078,12 +1678,28 @@ window.spaluterApi.onScope((samples) => {
 });
 
 renderSynthToggle();
+initMainScreenSwitcher();
+initMainScreenSwipe();
+setMainView(mainScreenButtons.find((button) => button.classList.contains("active"))?.dataset.viewIndex || 0, { force: true });
 updateWaveformViews();
 clearOutputScope();
 window.addEventListener("resize", scheduleWaveformResizeRefresh);
 document.addEventListener("visibilitychange", refreshScopeStreamingState);
 window.addEventListener("focus", refreshScopeStreamingState);
 window.addEventListener("blur", refreshScopeStreamingState);
+rendererHeartbeatTimer = window.setInterval(() => {
+  window.spaluterApi.heartbeat();
+}, RENDERER_HEARTBEAT_MS);
+window.addEventListener("beforeunload", () => {
+  if (midiRebindTimer) {
+    clearTimeout(midiRebindTimer);
+    midiRebindTimer = null;
+  }
+  if (rendererHeartbeatTimer) {
+    clearInterval(rendererHeartbeatTimer);
+    rendererHeartbeatTimer = null;
+  }
+});
 
 document.querySelectorAll("button[data-action]").forEach((btn) => {
   btn.addEventListener("click", () => {
@@ -1134,6 +1750,18 @@ selectInputs.forEach((el) => {
 });
 
 rebuildControlMetaCache();
+setParameterPage(0);
+
+if (paramPagePrevBtn) {
+  paramPagePrevBtn.addEventListener("click", () => {
+    setParameterPage(currentParamPage - 1);
+  });
+}
+if (paramPageNextBtn) {
+  paramPageNextBtn.addEventListener("click", () => {
+    setParameterPage(currentParamPage + 1);
+  });
+}
 
 knobs.forEach((knob) => {
   const param = knob.dataset.param;

@@ -15,6 +15,9 @@ const MAX_SCOPE_RATE_HZ = 60;
 const COMMAND_TIMEOUT_MS = 20_000;
 const INSTALL_COMMAND_TIMEOUT_MS = 30 * 60_000;
 const STARTUP_WAIT_TIMEOUT_MS = 90_000;
+const UNRESPONSIVE_RESTART_DELAY_MS = 1500;
+const RENDERER_HEARTBEAT_TIMEOUT_MS = 8000;
+const RENDERER_HEARTBEAT_CHECK_MS = 2000;
 
 let mainWindow = null;
 let mainWindowReady = false;
@@ -27,10 +30,14 @@ let logWriteIndex = 0;
 let logCount = 0;
 let runtimeInjected = false;
 let quittingApp = false;
+let restartingApp = false;
 let sclangStartupBuffer = "";
 let shutdownPromise = null;
 let scopeStreamEnabled = true;
 let scopeRateHz = DEFAULT_SCOPE_RATE_HZ;
+let rendererUnresponsiveTimer = null;
+let rendererHeartbeatInterval = null;
+let lastRendererHeartbeatAt = 0;
 const statusSubscribers = new Set();
 
 function defaultSampleDir() {
@@ -542,6 +549,50 @@ function stopRuntimeAndCloseOsc() {
   return shutdownPromise;
 }
 
+function clearRendererUnresponsiveTimer() {
+  if (!rendererUnresponsiveTimer) return;
+  clearTimeout(rendererUnresponsiveTimer);
+  rendererUnresponsiveTimer = null;
+}
+
+function clearRendererHeartbeatWatchdog() {
+  if (!rendererHeartbeatInterval) return;
+  clearInterval(rendererHeartbeatInterval);
+  rendererHeartbeatInterval = null;
+}
+
+function markRendererHeartbeat() {
+  lastRendererHeartbeatAt = Date.now();
+}
+
+function startRendererHeartbeatWatchdog() {
+  clearRendererHeartbeatWatchdog();
+  markRendererHeartbeat();
+  rendererHeartbeatInterval = setInterval(() => {
+    if (quittingApp || restartingApp) return;
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    if (!mainWindowReady) return;
+    if ((Date.now() - lastRendererHeartbeatAt) <= RENDERER_HEARTBEAT_TIMEOUT_MS) return;
+    restartApplication("Renderer heartbeat stalled");
+  }, RENDERER_HEARTBEAT_CHECK_MS);
+}
+
+function restartApplication(reason) {
+  if (restartingApp) return;
+  restartingApp = true;
+  clearRendererUnresponsiveTimer();
+  clearRendererHeartbeatWatchdog();
+  sendLog(`[APP] ${reason}. Relaunching app process.`);
+  stopRuntimeAndCloseOsc()
+    .catch((err) => {
+      sendLog(`[APP] Shutdown before relaunch failed: ${err.message}`);
+    })
+    .finally(() => {
+      app.relaunch();
+      app.exit(0);
+    });
+}
+
 function createWindow() {
   mainWindowReady = false;
   mainWindow = new BrowserWindow({
@@ -555,16 +606,45 @@ function createWindow() {
 
   mainWindow.webContents.on("did-finish-load", () => {
     mainWindowReady = true;
+    markRendererHeartbeat();
+    startRendererHeartbeatWatchdog();
+  });
+  mainWindow.webContents.on("render-process-gone", (_event, details) => {
+    const reason = details?.reason || "unknown";
+    sendLog(`[APP] renderer process exited (${reason})`);
+    if (quittingApp) return;
+    restartApplication(`Renderer process exited (${reason})`);
+  });
+  mainWindow.on("unresponsive", () => {
+    if (quittingApp) return;
+    if (restartingApp) return;
+    sendLog("[APP] window became unresponsive");
+    if (rendererUnresponsiveTimer) return;
+    rendererUnresponsiveTimer = setTimeout(() => {
+      rendererUnresponsiveTimer = null;
+      restartApplication("Window remained unresponsive");
+    }, UNRESPONSIVE_RESTART_DELAY_MS);
+  });
+  mainWindow.on("responsive", () => {
+    if (!rendererUnresponsiveTimer) return;
+    sendLog("[APP] window responsiveness restored");
+    clearRendererUnresponsiveTimer();
   });
 
   mainWindow.loadFile(path.join(__dirname, "renderer", "index.html"));
   mainWindow.on("closed", () => {
+    clearRendererUnresponsiveTimer();
+    clearRendererHeartbeatWatchdog();
     mainWindowReady = false;
     mainWindow = null;
   });
 }
 
 function registerIpcHandlers() {
+  ipcMain.on("sc:heartbeat", () => {
+    markRendererHeartbeat();
+  });
+
   ipcMain.handle("sc:set-param", (_evt, payload) => {
     const { key, value } = payload || {};
     if (typeof key !== "string") return false;
