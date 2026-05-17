@@ -15,6 +15,7 @@
         <img class="header-wave" src="./assets/spaluter_icon.png" alt="" />
       </div>
       <div class="header-transport">
+        <div id="cpuUsage">CPU: --</div>
         <div id="status">Starting...</div>
         <button id="synthToggle" data-action="start" aria-pressed="false">Start Synth</button>
         <button data-action="reset">↺ Reset</button>
@@ -63,6 +64,20 @@
             <span id="formantWaveLabel" class="waveform-panel-meta">F1 20 Hz • F2 200 Hz</span>
           </div>
           <canvas id="formantWaveView" class="waveform-canvas" width="320" height="84" aria-label="Active formants scope preview"></canvas>
+        </div>
+        <div class="waveform-panel formant-activity-panel">
+          <div class="waveform-panel-header">
+            <span class="waveform-panel-title formant-activity-title">Formant<br />Activity</span>
+            <span id="formantActivityLabel" class="waveform-panel-meta">Static • Mask-aware</span>
+          </div>
+          <canvas id="formantActivityView" class="waveform-canvas" width="320" height="84" aria-label="Formant activity heatmap"></canvas>
+        </div>
+        <div class="waveform-panel">
+          <div class="waveform-panel-header">
+            <span class="waveform-panel-title">Mask Scope</span>
+            <span id="maskScopeLabel" class="waveform-panel-meta">Off • PF off • 0.50</span>
+          </div>
+          <canvas id="maskScopeView" class="waveform-canvas" width="320" height="84" aria-label="Mask activity scope"></canvas>
         </div>
         <div class="waveform-panel output-scope-panel output-scope-large">
           <div class="waveform-panel-header">

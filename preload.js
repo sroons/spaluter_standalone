@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld("spaluterApi", {
   getInitialState: () => ipcRenderer.invoke("sc:get-initial-state"),
   heartbeat: () => ipcRenderer.send("sc:heartbeat"),
   onStatus: (fn) => ipcRenderer.on("sc-status", (_e, msg) => fn(msg)),
+  onCpuUsage: (fn) => ipcRenderer.on("app-cpu-usage", (_e, percent) => fn(percent)),
   onLog: (fn) => ipcRenderer.on("sc-log", (_e, msg) => fn(msg)),
   onScope: (fn) => ipcRenderer.on("sc-scope", (_e, samples) => fn(samples))
 });

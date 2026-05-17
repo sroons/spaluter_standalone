@@ -1,4 +1,5 @@
 const statusEl = document.getElementById("status");
+const cpuUsageEl = document.getElementById("cpuUsage");
 const logEl = document.getElementById("log");
 const logDrawerEl = document.getElementById("logDrawer");
 const toggleLogBtn = document.getElementById("toggleLog");
@@ -20,11 +21,15 @@ const pulsaretWaveCanvas = document.getElementById("pulsaretWaveView");
 const windowWaveCanvas = document.getElementById("windowWaveView");
 const dutyWaveCanvas = document.getElementById("dutyWaveView");
 const formantWaveCanvas = document.getElementById("formantWaveView");
+const formantActivityCanvas = document.getElementById("formantActivityView");
+const maskScopeCanvas = document.getElementById("maskScopeView");
 const outputScopeLabelEl = document.getElementById("outputScopeLabel");
 const pulsaretWaveLabelEl = document.getElementById("pulsaretWaveLabel");
 const windowWaveLabelEl = document.getElementById("windowWaveLabel");
 const dutyWaveLabelEl = document.getElementById("dutyWaveLabel");
 const formantWaveLabelEl = document.getElementById("formantWaveLabel");
+const formantActivityLabelEl = document.getElementById("formantActivityLabel");
+const maskScopeLabelEl = document.getElementById("maskScopeLabel");
 const mainScreenSwitchEl = document.getElementById("mainScreenSwitch");
 const mainScreenStageEl = document.getElementById("mainScreenStage");
 const mainScreenButtons = Array.from(document.querySelectorAll(".main-screen-btn[data-view-index]"));
@@ -202,13 +207,17 @@ const WINDOW_WAVE_NAMES = [
   "triangle"
 ];
 const TWO_PI = Math.PI * 2;
-const OUTPUT_SCOPE_FRAME_SIZE = 64;
+const OUTPUT_SCOPE_FRAME_SIZE = 96;
+const OUTPUT_SCOPE_SMOOTHING_ALPHA = 0.35;
+const OUTPUT_SCOPE_ZERO_CROSSING_MIN_SLOPE = 0.02;
 const FORMANT_SCOPE_COLORS = ["rgb(235, 110, 79)", "rgb(114, 213, 142)", "rgb(199, 146, 234)"];
+const MASK_MODE_NAMES = ["Off", "Stochastic", "Burst"];
 const MIDI_STATUS_TYPE_MASK = 0xF0;
 const MIDI_STATUS_NOTE_OFF = 0x80;
 const MIDI_STATUS_NOTE_ON = 0x90;
 const MIDI_STATUS_CC = 0xB0;
 const scopeSampleBuffer = new Float64Array(OUTPUT_SCOPE_FRAME_SIZE);
+const scopeAlignedBuffer = Array.from({ length: OUTPUT_SCOPE_FRAME_SIZE }, () => 0);
 const scopeRenderBuffer = Array.from({ length: OUTPUT_SCOPE_FRAME_SIZE }, () => 0);
 let outputScopeSamples = Array.from({ length: OUTPUT_SCOPE_FRAME_SIZE }, () => 0);
 
@@ -247,6 +256,13 @@ function classifyStatus(text) {
   if (/(synth started|runtime ready)/.test(s)) return "ok";
   if (/(starting|boot|waiting|listening|stopping|quitting)/.test(s)) return "starting";
   return "ok";
+}
+
+function setCpuUsage(percent) {
+  if (!cpuUsageEl) return;
+  const numeric = Number(percent);
+  const safeValue = Number.isFinite(numeric) ? Math.max(0, numeric) : 0;
+  cpuUsageEl.textContent = `CPU: ${safeValue.toFixed(1)}%`;
 }
 
 function renderSynthToggle() {
@@ -546,6 +562,219 @@ function drawFormantWaves(canvas, formantHzValues, activeCount) {
   }
 }
 
+function maskGateState(maskMode, perFormantMask, maskAmount, burstOn, burstOff, laneIndex, step) {
+  if (maskMode <= 0) return true;
+
+  if (maskMode === 1) {
+    const seed = perFormantMask ? (step + (laneIndex * 37) + 97.13) : (step + 97.13);
+    return hashUnit(seed) > maskAmount;
+  }
+
+  const total = Math.max(1, burstOn + burstOff);
+  const offset = perFormantMask ? 0 : (laneIndex * (total / 3));
+  const burstIndex = ((step + offset) % total + total) % total;
+  return burstIndex < burstOn;
+}
+
+function drawDutyScopeWithOverlay(canvas, duty, windowType) {
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+
+  const metrics = getCanvasMetrics(canvas);
+  const {
+    dpr, drawWidth, drawHeight, leftPad, rightPad, topPad, bottomPad
+  } = metrics;
+
+  if (canvas.width !== drawWidth || canvas.height !== drawHeight) {
+    canvas.width = drawWidth;
+    canvas.height = drawHeight;
+  }
+
+  const usableWidth = Math.max(1, rightPad - leftPad);
+  const usableHeight = Math.max(1, bottomPad - topPad);
+  const dutyStart = (1 - duty) * 0.5;
+  const dutyEnd = dutyStart + duty;
+  const dutyStartX = leftPad + (dutyStart * usableWidth);
+  const dutyEndX = leftPad + (dutyEnd * usableWidth);
+
+  ctx.clearRect(0, 0, drawWidth, drawHeight);
+
+  ctx.fillStyle = "rgba(91, 169, 246, 0.16)";
+  ctx.fillRect(dutyStartX, topPad, Math.max(dpr, dutyEndX - dutyStartX), usableHeight);
+
+  ctx.lineWidth = Math.max(1, dpr);
+  ctx.strokeStyle = "rgba(169, 180, 208, 0.35)";
+  ctx.beginPath();
+  const centerY = drawHeight * 0.5;
+  ctx.moveTo(0, centerY);
+  ctx.lineTo(drawWidth, centerY);
+  ctx.stroke();
+
+  ctx.strokeStyle = "rgb(91, 169, 246)";
+  ctx.beginPath();
+  const samples = Math.max(48, Math.floor(drawWidth / 2));
+  for (let i = 0; i <= samples; i += 1) {
+    const t = i / samples;
+    const gate = (t >= dutyStart && t < dutyEnd) ? 1 : -1;
+    const normalized = (gate + 1) * 0.5;
+    const x = leftPad + (t * usableWidth);
+    const y = topPad + ((1 - normalized) * usableHeight);
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  ctx.strokeStyle = "rgb(235, 110, 79)";
+  ctx.beginPath();
+  const overlaySamples = Math.max(36, Math.floor(drawWidth / 3));
+  for (let i = 0; i <= overlaySamples; i += 1) {
+    const localT = i / overlaySamples;
+    const env = clamp(interpolatedWaveSample(windowType, 8, windowWaveSample, localT), 0, 1);
+    const x = dutyStartX + (localT * Math.max(dpr, dutyEndX - dutyStartX));
+    const y = topPad + ((1 - env) * usableHeight);
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+}
+
+function drawMaskScope(canvas, maskMode, perFormantMask, maskAmount, burstOn, burstOff, activeCount) {
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+
+  const metrics = getCanvasMetrics(canvas);
+  const {
+    dpr, drawWidth, drawHeight, leftPad, rightPad, topPad, bottomPad
+  } = metrics;
+
+  if (canvas.width !== drawWidth || canvas.height !== drawHeight) {
+    canvas.width = drawWidth;
+    canvas.height = drawHeight;
+  }
+
+  ctx.clearRect(0, 0, drawWidth, drawHeight);
+  const usableWidth = Math.max(1, rightPad - leftPad);
+  const usableHeight = Math.max(1, bottomPad - topPad);
+  const laneCount = 3;
+  const laneGap = Math.max(1, 2 * dpr);
+  const laneHeight = Math.max(2, (usableHeight - ((laneCount - 1) * laneGap)) / laneCount);
+  const cols = Math.max(40, Math.floor(drawWidth / (4 * dpr)));
+  const cellWidth = usableWidth / cols;
+
+  for (let lane = 0; lane < laneCount; lane += 1) {
+    const laneY = topPad + (lane * (laneHeight + laneGap));
+    const laneActive = lane < activeCount;
+    ctx.fillStyle = laneActive ? "rgba(26, 31, 53, 0.85)" : "rgba(18, 22, 38, 0.55)";
+    ctx.fillRect(leftPad, laneY, usableWidth, laneHeight);
+    for (let col = 0; col < cols; col += 1) {
+      const gateOn = laneActive
+        && maskGateState(maskMode, perFormantMask, maskAmount, burstOn, burstOff, lane, col);
+      const color = FORMANT_SCOPE_COLORS[lane % FORMANT_SCOPE_COLORS.length];
+      ctx.fillStyle = gateOn ? color : "rgba(80, 88, 120, 0.32)";
+      ctx.globalAlpha = gateOn ? 0.95 : 0.45;
+      ctx.fillRect(
+        leftPad + (col * cellWidth),
+        laneY,
+        Math.max(dpr, cellWidth - dpr),
+        laneHeight
+      );
+    }
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = "rgba(169, 180, 208, 0.2)";
+    ctx.lineWidth = Math.max(1, dpr);
+    ctx.strokeRect(leftPad, laneY, usableWidth, laneHeight);
+  }
+}
+
+function drawFormantActivityHeatmap(
+  canvas,
+  formantHzValues,
+  activeCount,
+  formantTrackOn,
+  maskMode,
+  perFormantMask,
+  maskAmount,
+  burstOn,
+  burstOff
+) {
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+
+  const metrics = getCanvasMetrics(canvas);
+  const {
+    dpr, drawWidth, drawHeight, leftPad, rightPad, topPad, bottomPad
+  } = metrics;
+
+  if (canvas.width !== drawWidth || canvas.height !== drawHeight) {
+    canvas.width = drawWidth;
+    canvas.height = drawHeight;
+  }
+
+  ctx.clearRect(0, 0, drawWidth, drawHeight);
+  const usableWidth = Math.max(1, rightPad - leftPad);
+  const usableHeight = Math.max(1, bottomPad - topPad);
+  const laneCount = 3;
+  const laneGap = Math.max(1, 2 * dpr);
+  const laneHeight = Math.max(2, (usableHeight - ((laneCount - 1) * laneGap)) / laneCount);
+  const cols = Math.max(44, Math.floor(drawWidth / (4 * dpr)));
+  const cellWidth = usableWidth / cols;
+
+  for (let lane = 0; lane < laneCount; lane += 1) {
+    const laneY = topPad + (lane * (laneHeight + laneGap));
+    const laneActive = lane < activeCount;
+    const hz = clamp(Number(formantHzValues[lane]) || 20, 20, 8000);
+    const hzNorm = clamp(Math.log2(hz / 20) / Math.log2(8000 / 20), 0, 1);
+    const cycleCount = 1.5 + (hzNorm * 8.5);
+    const trackBoost = formantTrackOn ? 1.12 : 1.0;
+    const laneColor = FORMANT_SCOPE_COLORS[lane % FORMANT_SCOPE_COLORS.length];
+
+    for (let col = 0; col < cols; col += 1) {
+      const phase = col / Math.max(1, cols - 1);
+      const maskOn = laneActive
+        && maskGateState(maskMode, perFormantMask, maskAmount, burstOn, burstOff, lane, col);
+      const spectral = 0.45 + (0.55 * Math.sin(((phase * cycleCount) + (lane * 0.17)) * TWO_PI));
+      const macro = 0.6 + (0.4 * Math.cos(((phase * 0.8) + (lane * 0.11)) * TWO_PI));
+      const intensity = laneActive
+        ? clamp((spectral * macro * trackBoost) * (maskOn ? 1 : 0.2), 0, 1)
+        : 0.08;
+      ctx.globalAlpha = 0.18 + (intensity * 0.82);
+      ctx.fillStyle = laneActive ? laneColor : "rgba(80, 88, 120, 0.5)";
+      ctx.fillRect(
+        leftPad + (col * cellWidth),
+        laneY,
+        Math.max(dpr, cellWidth - dpr),
+        laneHeight
+      );
+    }
+
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = "rgba(169, 180, 208, 0.22)";
+    ctx.lineWidth = Math.max(1, dpr);
+    ctx.strokeRect(leftPad, laneY, usableWidth, laneHeight);
+  }
+}
+function findScopeZeroCrossingOffset(values, length) {
+  let bestIndex = -1;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (let i = 1; i < length; i += 1) {
+    const prev = Number(values[i - 1]);
+    const curr = Number(values[i]);
+    if (!Number.isFinite(prev) || !Number.isFinite(curr)) continue;
+    if (prev > 0 || curr < 0) continue;
+    const slope = curr - prev;
+    if (slope < OUTPUT_SCOPE_ZERO_CROSSING_MIN_SLOPE) continue;
+    const distanceToZero = Math.abs(curr);
+    if (distanceToZero < bestDistance) {
+      bestDistance = distanceToZero;
+      bestIndex = i;
+    }
+  }
+  return bestIndex >= 0 ? bestIndex : 0;
+}
+
 function normalizeScopeSamples(samples) {
   if (!Array.isArray(samples)) return null;
   let sampleCount = 0;
@@ -557,11 +786,18 @@ function normalizeScopeSamples(samples) {
   }
   if (sampleCount === 0) return null;
   while (sampleCount < OUTPUT_SCOPE_FRAME_SIZE) {
-    scopeSampleBuffer[sampleCount] = 0;
+    scopeSampleBuffer[sampleCount] = scopeSampleBuffer[sampleCount - 1] ?? 0;
     sampleCount += 1;
   }
+  const offset = findScopeZeroCrossingOffset(scopeSampleBuffer, OUTPUT_SCOPE_FRAME_SIZE);
   for (let i = 0; i < OUTPUT_SCOPE_FRAME_SIZE; i += 1) {
-    scopeRenderBuffer[i] = scopeSampleBuffer[i];
+    const sourceIndex = (i + offset) % OUTPUT_SCOPE_FRAME_SIZE;
+    scopeAlignedBuffer[i] = scopeSampleBuffer[sourceIndex];
+  }
+  for (let i = 0; i < OUTPUT_SCOPE_FRAME_SIZE; i += 1) {
+    const currentValue = Number(scopeRenderBuffer[i]) || 0;
+    const targetValue = Number(scopeAlignedBuffer[i]) || 0;
+    scopeRenderBuffer[i] = currentValue + ((targetValue - currentValue) * OUTPUT_SCOPE_SMOOTHING_ALPHA);
   }
   return scopeRenderBuffer;
 }
@@ -587,7 +823,14 @@ function updateWaveformViews() {
   const pulsaret = currentParamValue("pulsaret", 2.5);
   const windowType = currentParamValue("window", 0.5);
   const duty = clamp(currentParamValue("duty", 0.5), 0.01, 1);
+  const dutyMode = currentParamValue("dutyMode", 0) > 0.5 ? "Formant" : "Manual";
   const formantCount = clamp(Math.round(currentParamValue("formantCount", 2)), 1, 3);
+  const formantTrackOn = currentParamValue("formantTrack", 0) > 0.5;
+  const maskMode = clamp(Math.round(currentParamValue("maskMode", 0)), 0, 2);
+  const perFormantMask = currentParamValue("perFormantMask", 0) > 0.5;
+  const maskAmount = clamp(currentParamValue("maskAmount", 0.5), 0, 1);
+  const burstOn = Math.max(0, Math.round(currentParamValue("burstOn", 4)));
+  const burstOff = Math.max(0, Math.round(currentParamValue("burstOff", 0)));
   const formantHzValues = [
     clamp(currentParamValue("formant1", 20), 20, 8000),
     clamp(currentParamValue("formant2", 200), 20, 8000),
@@ -601,13 +844,22 @@ function updateWaveformViews() {
     windowWaveLabelEl.textContent = `${interpolatedWaveLabel(windowType, WINDOW_WAVE_NAMES)} (${windowType.toFixed(2)})`;
   }
   if (dutyWaveLabelEl) {
-    dutyWaveLabelEl.textContent = duty.toFixed(2);
+    dutyWaveLabelEl.textContent = `${duty.toFixed(2)} • ${dutyMode}`;
   }
   if (formantWaveLabelEl) {
     const activeLabels = formantHzValues
       .slice(0, formantCount)
       .map((hz, index) => `F${index + 1} ${Math.round(hz)} Hz`);
     formantWaveLabelEl.textContent = activeLabels.join(" • ");
+  }
+  if (formantActivityLabelEl) {
+    const trackText = formantTrackOn ? "Tracked" : "Static";
+    formantActivityLabelEl.textContent = `${trackText} • Mask-aware`;
+  }
+  if (maskScopeLabelEl) {
+    const mode = MASK_MODE_NAMES[maskMode] || MASK_MODE_NAMES[0];
+    const perFormantState = perFormantMask ? "PF on" : "PF off";
+    maskScopeLabelEl.textContent = `${mode} • ${perFormantState} • ${maskAmount.toFixed(2)}`;
   }
 
   drawWaveform(
@@ -622,16 +874,36 @@ function updateWaveformViews() {
     0,
     1
   );
-  drawWaveform(
+  drawDutyScopeWithOverlay(
     dutyWaveCanvas,
-    (t) => {
-      const dutyStart = (1 - duty) * 0.5;
-      return (t >= dutyStart && t < (dutyStart + duty)) ? 1 : -1;
-    },
-    -1,
-    1
+    duty,
+    windowType
   );
-  drawFormantWaves(formantWaveCanvas, formantHzValues, formantCount);
+  drawFormantWaves(
+    formantWaveCanvas,
+    formantHzValues,
+    formantCount
+  );
+  drawFormantActivityHeatmap(
+    formantActivityCanvas,
+    formantHzValues,
+    formantCount,
+    formantTrackOn,
+    maskMode,
+    perFormantMask,
+    maskAmount,
+    burstOn,
+    burstOff
+  );
+  drawMaskScope(
+    maskScopeCanvas,
+    maskMode,
+    perFormantMask,
+    maskAmount,
+    burstOn,
+    burstOff,
+    formantCount
+  );
   drawScopeFromSamples(outputScopeCanvas, outputScopeSamples);
 }
 
@@ -1201,10 +1473,17 @@ function setParamValue(param, rawValue, send = true) {
     param === "pulsaret"
     || param === "window"
     || param === "duty"
+    || param === "dutyMode"
     || param === "formantCount"
+    || param === "formantTrack"
     || param === "formant1"
     || param === "formant2"
     || param === "formant3"
+    || param === "maskMode"
+    || param === "perFormantMask"
+    || param === "maskAmount"
+    || param === "burstOn"
+    || param === "burstOff"
   ) {
     updateWaveformViews();
   }
@@ -1666,6 +1945,10 @@ window.spaluterApi.onStatus((text) => {
   }
 });
 
+window.spaluterApi.onCpuUsage((percent) => {
+  setCpuUsage(percent);
+});
+
 window.spaluterApi.onLog((text) => {
   appendLog(text);
   if (/^\[ERR\]|ERROR:|FAILURE IN SERVER/i.test(String(text || ""))) {
@@ -1678,6 +1961,7 @@ window.spaluterApi.onScope((samples) => {
 });
 
 renderSynthToggle();
+setCpuUsage(0);
 initMainScreenSwitcher();
 initMainScreenSwipe();
 setMainView(mainScreenButtons.find((button) => button.classList.contains("active"))?.dataset.viewIndex || 0, { force: true });

@@ -18,6 +18,7 @@ const STARTUP_WAIT_TIMEOUT_MS = 90_000;
 const UNRESPONSIVE_RESTART_DELAY_MS = 1500;
 const RENDERER_HEARTBEAT_TIMEOUT_MS = 8000;
 const RENDERER_HEARTBEAT_CHECK_MS = 2000;
+const APP_CPU_SAMPLE_INTERVAL_MS = 1000;
 
 let mainWindow = null;
 let mainWindowReady = false;
@@ -38,6 +39,7 @@ let scopeRateHz = DEFAULT_SCOPE_RATE_HZ;
 let rendererUnresponsiveTimer = null;
 let rendererHeartbeatInterval = null;
 let lastRendererHeartbeatAt = 0;
+let appCpuUsageInterval = null;
 const statusSubscribers = new Set();
 
 function defaultSampleDir() {
@@ -577,11 +579,33 @@ function startRendererHeartbeatWatchdog() {
   }, RENDERER_HEARTBEAT_CHECK_MS);
 }
 
+function clearAppCpuUsageBroadcast() {
+  if (!appCpuUsageInterval) return;
+  clearInterval(appCpuUsageInterval);
+  appCpuUsageInterval = null;
+}
+
+function publishAppCpuUsage() {
+  const usage = process.getCPUUsage();
+  const percent = Number(usage?.percentCPUUsage);
+  const safePercent = Number.isFinite(percent) ? Math.max(0, percent) : 0;
+  sendRendererEvent("app-cpu-usage", safePercent);
+}
+
+function startAppCpuUsageBroadcast() {
+  clearAppCpuUsageBroadcast();
+  appCpuUsageInterval = setInterval(() => {
+    if (quittingApp || restartingApp) return;
+    publishAppCpuUsage();
+  }, APP_CPU_SAMPLE_INTERVAL_MS);
+}
+
 function restartApplication(reason) {
   if (restartingApp) return;
   restartingApp = true;
   clearRendererUnresponsiveTimer();
   clearRendererHeartbeatWatchdog();
+  clearAppCpuUsageBroadcast();
   sendLog(`[APP] ${reason}. Relaunching app process.`);
   stopRuntimeAndCloseOsc()
     .catch((err) => {
@@ -608,6 +632,7 @@ function createWindow() {
     mainWindowReady = true;
     markRendererHeartbeat();
     startRendererHeartbeatWatchdog();
+    publishAppCpuUsage();
   });
   mainWindow.webContents.on("render-process-gone", (_event, details) => {
     const reason = details?.reason || "unknown";
@@ -635,6 +660,7 @@ function createWindow() {
   mainWindow.on("closed", () => {
     clearRendererUnresponsiveTimer();
     clearRendererHeartbeatWatchdog();
+    clearAppCpuUsageBroadcast();
     mainWindowReady = false;
     mainWindow = null;
   });
@@ -742,6 +768,7 @@ async function performStartupSequence() {
 app.whenReady().then(async () => {
   registerIpcHandlers();
   createWindow();
+  startAppCpuUsageBroadcast();
   performStartupSequence().catch((err) => {
     sendLog(`[BOOT] Startup sequence failed: ${err.message}`);
     sendStatus("Startup failed; see log for details.");
@@ -752,6 +779,7 @@ app.on("before-quit", (event) => {
   if (quittingApp) return;
   quittingApp = true;
   event.preventDefault();
+  clearAppCpuUsageBroadcast();
   stopRuntimeAndCloseOsc().finally(() => app.quit());
 });
 
@@ -759,5 +787,6 @@ app.on("window-all-closed", () => {
   if (process.platform === "darwin") return;
   if (quittingApp) return;
   quittingApp = true;
+  clearAppCpuUsageBroadcast();
   stopRuntimeAndCloseOsc().finally(() => app.quit());
 });
