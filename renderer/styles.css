@@ -122,8 +122,10 @@ header {
 .main-screen-btn {
   flex: 1 1 0;
   min-width: 0;
-  padding: 4px 3px;
-  font-size: 9px;
+  min-height: 46px;
+  padding: 12px 4px;
+  font-size: 10px;
+  line-height: 1.2;
   letter-spacing: 0.15px;
   white-space: nowrap;
 }
@@ -276,6 +278,9 @@ header {
 
 .param-pagination button {
   min-width: 70px;
+  min-height: 42px;
+  padding-top: 10px;
+  padding-bottom: 10px;
 }
 
 .param-page-indicator {

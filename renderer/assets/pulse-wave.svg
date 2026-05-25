@@ -1,0 +1,185 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 320" role="img" aria-labelledby="title desc">
+  <title id="title">Pulse to waveform animation</title>
+  <desc id="desc">An abstract animation where small pulse bars transition into a continuous flowing waveform.</desc>
+
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="rgb(15,15,25)" />
+      <stop offset="52%" stop-color="rgb(28,45,74)" />
+      <stop offset="100%" stop-color="rgb(15,15,25)" />
+    </linearGradient>
+
+    <linearGradient id="pulseStroke" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="rgb(91,169,246)" />
+      <stop offset="100%" stop-color="rgb(235,110,79)" />
+    </linearGradient>
+
+    <linearGradient id="waveStroke" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="rgb(91,169,246)" />
+      <stop offset="40%" stop-color="rgb(114,213,142)" />
+      <stop offset="100%" stop-color="rgb(235,110,79)" />
+    </linearGradient>
+
+    <filter id="glow" x="-30%" y="-120%" width="160%" height="340%">
+      <feGaussianBlur stdDeviation="4" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+
+    <mask id="waveReveal">
+      <rect x="0" y="0" width="960" height="320" fill="black" />
+      <rect x="392" y="0" width="0" height="320" fill="white">
+        <animate
+          attributeName="width"
+          dur="8s"
+          repeatCount="indefinite"
+          keyTimes="0;0.2;0.55;0.85;1"
+          values="0;0;520;520;0"
+        />
+      </rect>
+    </mask>
+  </defs>
+
+  <style>
+    .frame {
+      stroke: rgba(52,55,84,0.9);
+      stroke-width: 2;
+      fill: none;
+    }
+
+    .baseline {
+      stroke: rgba(169,180,208,0.26);
+      stroke-width: 1.5;
+      stroke-linecap: round;
+    }
+
+    .pulse {
+      fill: url(#pulseStroke);
+      opacity: 0.95;
+    }
+
+    .pulse-cluster {
+      animation: pulseToWave 8s ease-in-out infinite;
+    }
+
+    .wave-cluster {
+      animation: waveFromPulse 8s ease-in-out infinite;
+    }
+
+    .wave-main {
+      fill: none;
+      stroke: url(#waveStroke);
+      stroke-width: 4.5;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      stroke-dasharray: 18 11;
+      animation: flow 2.2s linear infinite;
+    }
+
+    .wave-glow {
+      fill: none;
+      stroke: url(#waveStroke);
+      stroke-width: 9;
+      opacity: 0.35;
+      filter: url(#glow);
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      stroke-dasharray: 24 13;
+      animation: flow 2.8s linear infinite reverse;
+    }
+
+    @keyframes flow {
+      to { stroke-dashoffset: -116; }
+    }
+
+    @keyframes pulseToWave {
+      0%, 24% { opacity: 1; }
+      55%, 85% { opacity: 0.18; }
+      100% { opacity: 1; }
+    }
+
+    @keyframes waveFromPulse {
+      0%, 20% { opacity: 0.15; }
+      48%, 85% { opacity: 1; }
+      100% { opacity: 0.15; }
+    }
+  </style>
+
+  <rect width="960" height="320" fill="url(#bg)" />
+  <rect class="frame" x="14" y="14" width="932" height="292" rx="18" />
+
+  <g opacity="0.16">
+    <path d="M56 94 H904" class="baseline" />
+    <path d="M56 160 H904" class="baseline" />
+    <path d="M56 226 H904" class="baseline" />
+  </g>
+
+  <path d="M70 160 H890" class="baseline" opacity="0.38" />
+
+  <g class="pulse-cluster">
+    <rect class="pulse" x="112" y="150" width="10" height="20" rx="5">
+      <animate attributeName="y" values="150;144;150;147;150" dur="1.4s" begin="0s" repeatCount="indefinite" />
+      <animate attributeName="height" values="20;32;20;26;20" dur="1.4s" begin="0s" repeatCount="indefinite" />
+    </rect>
+    <rect class="pulse" x="138" y="152" width="10" height="16" rx="5">
+      <animate attributeName="y" values="152;145;152;149;152" dur="1.4s" begin="0.08s" repeatCount="indefinite" />
+      <animate attributeName="height" values="16;30;16;22;16" dur="1.4s" begin="0.08s" repeatCount="indefinite" />
+    </rect>
+    <rect class="pulse" x="164" y="151" width="10" height="18" rx="5">
+      <animate attributeName="y" values="151;141;151;146;151" dur="1.4s" begin="0.16s" repeatCount="indefinite" />
+      <animate attributeName="height" values="18;36;18;28;18" dur="1.4s" begin="0.16s" repeatCount="indefinite" />
+    </rect>
+    <rect class="pulse" x="190" y="153" width="10" height="14" rx="5">
+      <animate attributeName="y" values="153;146;153;149;153" dur="1.4s" begin="0.24s" repeatCount="indefinite" />
+      <animate attributeName="height" values="14;28;14;22;14" dur="1.4s" begin="0.24s" repeatCount="indefinite" />
+    </rect>
+    <rect class="pulse" x="216" y="151" width="10" height="18" rx="5">
+      <animate attributeName="y" values="151;138;151;145;151" dur="1.4s" begin="0.32s" repeatCount="indefinite" />
+      <animate attributeName="height" values="18;42;18;30;18" dur="1.4s" begin="0.32s" repeatCount="indefinite" />
+    </rect>
+    <rect class="pulse" x="242" y="152" width="10" height="16" rx="5">
+      <animate attributeName="y" values="152;144;152;148;152" dur="1.4s" begin="0.40s" repeatCount="indefinite" />
+      <animate attributeName="height" values="16;32;16;24;16" dur="1.4s" begin="0.40s" repeatCount="indefinite" />
+    </rect>
+    <rect class="pulse" x="268" y="154" width="10" height="12" rx="5">
+      <animate attributeName="y" values="154;147;154;150;154" dur="1.4s" begin="0.48s" repeatCount="indefinite" />
+      <animate attributeName="height" values="12;26;12;20;12" dur="1.4s" begin="0.48s" repeatCount="indefinite" />
+    </rect>
+    <rect class="pulse" x="294" y="152" width="10" height="16" rx="5">
+      <animate attributeName="y" values="152;143;152;147;152" dur="1.4s" begin="0.56s" repeatCount="indefinite" />
+      <animate attributeName="height" values="16;34;16;26;16" dur="1.4s" begin="0.56s" repeatCount="indefinite" />
+    </rect>
+    <rect class="pulse" x="320" y="154" width="10" height="12" rx="5">
+      <animate attributeName="y" values="154;149;154;151;154" dur="1.4s" begin="0.64s" repeatCount="indefinite" />
+      <animate attributeName="height" values="12;22;12;18;12" dur="1.4s" begin="0.64s" repeatCount="indefinite" />
+    </rect>
+    <rect class="pulse" x="346" y="155" width="10" height="10" rx="5">
+      <animate attributeName="y" values="155;151;155;152;155" dur="1.4s" begin="0.72s" repeatCount="indefinite" />
+      <animate attributeName="height" values="10;18;10;14;10" dur="1.4s" begin="0.72s" repeatCount="indefinite" />
+    </rect>
+  </g>
+
+  <g opacity="0.55" filter="url(#glow)">
+    <circle cx="382" cy="160" r="5" fill="rgb(114,213,142)">
+      <animate attributeName="cx" values="382;436;494;546" dur="8s" keyTimes="0;0.36;0.62;1" repeatCount="indefinite" />
+      <animate attributeName="opacity" values="0;0.9;0.55;0" dur="8s" keyTimes="0;0.38;0.7;1" repeatCount="indefinite" />
+    </circle>
+    <circle cx="382" cy="160" r="4" fill="rgb(91,169,246)">
+      <animate attributeName="cx" values="382;420;474;530" dur="8s" keyTimes="0;0.3;0.58;1" repeatCount="indefinite" />
+      <animate attributeName="opacity" values="0;0.75;0.35;0" dur="8s" keyTimes="0;0.34;0.64;1" repeatCount="indefinite" />
+    </circle>
+  </g>
+
+  <g mask="url(#waveReveal)" class="wave-cluster">
+    <path
+      class="wave-glow"
+      d="M400 160 C430 126 460 194 490 160 C520 126 550 194 580 160 C610 126 640 194 670 160 C700 126 730 194 760 160 C790 126 820 194 850 160"
+    />
+    <path
+      class="wave-main"
+      d="M400 160 C430 126 460 194 490 160 C520 126 550 194 580 160 C610 126 640 194 670 160 C700 126 730 194 760 160 C790 126 820 194 850 160"
+    />
+  </g>
+</svg>

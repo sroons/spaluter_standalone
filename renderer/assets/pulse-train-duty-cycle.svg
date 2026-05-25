@@ -1,0 +1,117 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 420" role="img" aria-labelledby="title desc">
+  <title id="title">Pulse train duty cycle comparison</title>
+  <desc id="desc">Simple pulse train graphic showing duty cycle at 20 percent, 50 percent, and 80 percent.</desc>
+
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="rgb(15,15,25)" />
+      <stop offset="52%" stop-color="rgb(28,45,74)" />
+      <stop offset="100%" stop-color="rgb(15,15,25)" />
+    </linearGradient>
+
+    <filter id="glow" x="-20%" y="-120%" width="140%" height="340%">
+      <feGaussianBlur stdDeviation="3.2" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  </defs>
+
+  <style>
+    .frame {
+      fill: none;
+      stroke: rgba(52,55,84,0.9);
+      stroke-width: 2;
+    }
+
+    .panel {
+      fill: rgba(18,22,38,0.84);
+      stroke: rgba(52,55,84,0.85);
+      stroke-width: 1.4;
+    }
+
+    .label {
+      fill: rgb(232,238,255);
+      font-family: "DM Sans", Inter, system-ui, sans-serif;
+      font-size: 19px;
+      font-weight: 700;
+      letter-spacing: 0.2px;
+    }
+
+    .sub {
+      fill: rgb(169,180,208);
+      font-family: "DM Sans", Inter, system-ui, sans-serif;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.25px;
+      text-transform: uppercase;
+    }
+
+    .axis {
+      stroke: rgba(169,180,208,0.28);
+      stroke-width: 1.4;
+      stroke-linecap: round;
+    }
+
+    .grid {
+      stroke: rgba(169,180,208,0.1);
+      stroke-width: 1;
+    }
+
+    .wave20 {
+      fill: none;
+      stroke: rgb(91,169,246);
+      stroke-width: 4.4;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      filter: url(#glow);
+    }
+
+    .wave50 {
+      fill: none;
+      stroke: rgb(114,213,142);
+      stroke-width: 4.4;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      filter: url(#glow);
+    }
+
+    .wave80 {
+      fill: none;
+      stroke: rgb(235,110,79);
+      stroke-width: 4.4;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      filter: url(#glow);
+    }
+  </style>
+
+  <rect width="1200" height="420" fill="url(#bg)" />
+  <rect class="frame" x="14" y="14" width="1172" height="392" rx="18" />
+
+  <text class="label" x="600" y="56" text-anchor="middle">Pulse Train Duty Cycle</text>
+  <text class="sub" x="600" y="78" text-anchor="middle">20% vs 50% vs 80%</text>
+
+  <rect class="panel" x="56" y="92" width="1088" height="90" rx="10" />
+  <rect class="panel" x="56" y="192" width="1088" height="90" rx="10" />
+  <rect class="panel" x="56" y="292" width="1088" height="90" rx="10" />
+
+  <text class="sub" x="76" y="116" fill="rgb(91,169,246)">20% duty</text>
+  <text class="sub" x="76" y="216" fill="rgb(114,213,142)">50% duty</text>
+  <text class="sub" x="76" y="316" fill="rgb(235,110,79)">80% duty</text>
+
+  <path class="grid" d="M76 147 H1124 M76 247 H1124 M76 347 H1124" />
+  <path class="axis" d="M76 160 H1124" />
+  <path class="axis" d="M76 260 H1124" />
+  <path class="axis" d="M76 360 H1124" />
+
+  <!-- 20% duty: short high, long low -->
+  <path class="wave20" d="M130 160 V124 H170 V160 H330 V124 H370 V160 H530 V124 H570 V160 H730 V124 H770 V160 H930 V124 H970 V160 H1124" />
+
+  <!-- 50% duty: equal high and low -->
+  <path class="wave50" d="M130 260 V224 H230 V260 H330 V224 H430 V260 H530 V224 H630 V260 H730 V224 H830 V260 H930 V224 H1030 V260 H1124" />
+
+  <!-- 80% duty: long high, short low -->
+  <path class="wave80" d="M130 360 V324 H290 V360 H330 V324 H490 V360 H530 V324 H690 V360 H730 V324 H890 V360 H930 V324 H1090 V360 H1124" />
+</svg>

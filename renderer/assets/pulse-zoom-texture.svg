@@ -1,0 +1,192 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 360" role="img" aria-labelledby="title desc">
+  <title id="title">Pulse zoom to dense audio texture</title>
+  <desc id="desc">An abstract modern SVG showing a single pulse zooming into a dense audio texture.</desc>
+
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="rgb(15,15,25)" />
+      <stop offset="50%" stop-color="rgb(28,45,74)" />
+      <stop offset="100%" stop-color="rgb(15,15,25)" />
+    </linearGradient>
+
+    <linearGradient id="pulseStroke" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="rgb(91,169,246)" />
+      <stop offset="100%" stop-color="rgb(235,110,79)" />
+    </linearGradient>
+
+    <linearGradient id="textureStroke" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="rgb(91,169,246)" />
+      <stop offset="50%" stop-color="rgb(114,213,142)" />
+      <stop offset="100%" stop-color="rgb(235,110,79)" />
+    </linearGradient>
+
+    <linearGradient id="beam" x1="0%" y1="50%" x2="100%" y2="50%">
+      <stop offset="0%" stop-color="rgba(91,169,246,0.35)" />
+      <stop offset="60%" stop-color="rgba(114,213,142,0.22)" />
+      <stop offset="100%" stop-color="rgba(235,110,79,0.12)" />
+    </linearGradient>
+
+    <pattern id="grain" width="8" height="8" patternUnits="userSpaceOnUse">
+      <circle cx="1.5" cy="1.5" r="0.7" fill="rgba(169,180,208,0.14)" />
+      <circle cx="6.2" cy="3.4" r="0.7" fill="rgba(169,180,208,0.12)" />
+      <circle cx="3.7" cy="6.1" r="0.6" fill="rgba(169,180,208,0.1)" />
+    </pattern>
+
+    <filter id="glow" x="-20%" y="-120%" width="140%" height="340%">
+      <feGaussianBlur stdDeviation="4.2" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+
+    <mask id="textureReveal">
+      <rect x="0" y="0" width="1200" height="360" fill="black" />
+      <rect x="570" y="0" width="0" height="360" fill="white">
+        <animate
+          attributeName="width"
+          dur="8s"
+          repeatCount="indefinite"
+          keyTimes="0;0.2;0.55;0.85;1"
+          values="0;0;560;560;0"
+        />
+      </rect>
+    </mask>
+
+    <clipPath id="texturePanel">
+      <rect x="570" y="72" width="560" height="216" rx="14" />
+    </clipPath>
+  </defs>
+
+  <style>
+    .frame {
+      stroke: rgba(52,55,84,0.9);
+      stroke-width: 2;
+      fill: none;
+    }
+
+    .baseline {
+      stroke: rgba(169,180,208,0.28);
+      stroke-width: 1.5;
+      stroke-linecap: round;
+    }
+
+    .pulse-line {
+      fill: none;
+      stroke: url(#pulseStroke);
+      stroke-width: 5;
+      stroke-linecap: round;
+      filter: url(#glow);
+    }
+
+    .pulse-core {
+      fill: rgb(114,213,142);
+      opacity: 0.9;
+      filter: url(#glow);
+    }
+
+    .zoom-window {
+      fill: rgba(91,169,246,0.08);
+      stroke: rgba(91,169,246,0.8);
+      stroke-width: 2;
+      rx: 10;
+      animation: breathe 1.9s ease-in-out infinite;
+    }
+
+    .texture-bg {
+      fill: rgba(12,16,32,0.9);
+      stroke: rgba(52,55,84,0.8);
+      stroke-width: 1.5;
+    }
+
+    .texture-grid {
+      stroke: rgba(169,180,208,0.08);
+      stroke-width: 1;
+    }
+
+    .texture-line {
+      fill: none;
+      stroke: url(#textureStroke);
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      stroke-dasharray: 16 11;
+      animation: flow 2.2s linear infinite;
+    }
+
+    .texture-line.alt {
+      stroke-dasharray: 8 10;
+      animation-duration: 2.8s;
+      animation-direction: reverse;
+    }
+
+    .texture-noise {
+      fill: url(#grain);
+      opacity: 0.45;
+      animation: shimmer 1.4s linear infinite alternate;
+    }
+
+    .beam {
+      fill: url(#beam);
+      animation: beamPulse 2.4s ease-in-out infinite;
+    }
+
+    @keyframes flow {
+      to { stroke-dashoffset: -120; }
+    }
+
+    @keyframes shimmer {
+      from { opacity: 0.32; }
+      to { opacity: 0.52; }
+    }
+
+    @keyframes breathe {
+      0%, 100% { opacity: 0.75; }
+      50% { opacity: 1; }
+    }
+
+    @keyframes beamPulse {
+      0%, 100% { opacity: 0.5; }
+      50% { opacity: 0.9; }
+    }
+  </style>
+
+  <rect width="1200" height="360" fill="url(#bg)" />
+  <rect class="frame" x="14" y="14" width="1172" height="332" rx="18" />
+
+  <path class="baseline" d="M70 180 H1130" />
+
+  <rect class="zoom-window" x="136" y="112" width="92" height="136" />
+
+  <path class="pulse-line" d="M182 180 L182 142 L192 142 L192 218 L202 218 L202 180" />
+  <circle class="pulse-core" cx="192" cy="180" r="4.8">
+    <animate attributeName="r" values="4.8;6.2;4.8" dur="1.4s" repeatCount="indefinite" />
+  </circle>
+
+  <path class="beam" d="M228 120 L570 86 L570 274 L228 240 Z" />
+
+  <g mask="url(#textureReveal)">
+    <rect class="texture-bg" x="570" y="72" width="560" height="216" rx="14" />
+
+    <g clip-path="url(#texturePanel)">
+      <path class="texture-grid" d="M570 126 H1130 M570 180 H1130 M570 234 H1130" />
+      <path class="texture-grid" d="M650 72 V288 M730 72 V288 M810 72 V288 M890 72 V288 M970 72 V288 M1050 72 V288" />
+
+      <path class="texture-line" stroke-width="4.2" d="M570 180 C590 118 610 242 630 180 C650 118 670 242 690 180 C710 118 730 242 750 180 C770 118 790 242 810 180 C830 118 850 242 870 180 C890 118 910 242 930 180 C950 118 970 242 990 180 C1010 118 1030 242 1050 180 C1070 118 1090 242 1110 180 C1122 146 1130 214 1138 180" />
+      <path class="texture-line alt" stroke-width="2.8" opacity="0.78" d="M570 160 C585 132 600 188 615 160 C630 132 645 188 660 160 C675 132 690 188 705 160 C720 132 735 188 750 160 C765 132 780 188 795 160 C810 132 825 188 840 160 C855 132 870 188 885 160 C900 132 915 188 930 160 C945 132 960 188 975 160 C990 132 1005 188 1020 160 C1035 132 1050 188 1065 160 C1080 132 1095 188 1110 160 C1120 144 1130 176 1140 160" />
+      <path class="texture-line alt" stroke-width="2.4" opacity="0.62" d="M570 200 C585 170 600 232 615 200 C630 170 645 232 660 200 C675 170 690 232 705 200 C720 170 735 232 750 200 C765 170 780 232 795 200 C810 170 825 232 840 200 C855 170 870 232 885 200 C900 170 915 232 930 200 C945 170 960 232 975 200 C990 170 1005 232 1020 200 C1035 170 1050 232 1065 200 C1080 170 1095 232 1110 200 C1120 184 1130 216 1140 200" />
+
+      <rect class="texture-noise" x="570" y="72" width="560" height="216" />
+    </g>
+  </g>
+
+  <g opacity="0.65" filter="url(#glow)">
+    <circle cx="236" cy="180" r="2.4" fill="rgb(91,169,246)">
+      <animate attributeName="cx" values="236;340;452;566" dur="8s" keyTimes="0;0.35;0.64;1" repeatCount="indefinite" />
+      <animate attributeName="opacity" values="0;0.9;0.4;0" dur="8s" keyTimes="0;0.38;0.72;1" repeatCount="indefinite" />
+    </circle>
+    <circle cx="236" cy="180" r="2.4" fill="rgb(114,213,142)">
+      <animate attributeName="cx" values="236;312;428;548" dur="8s" keyTimes="0;0.32;0.62;1" repeatCount="indefinite" />
+      <animate attributeName="opacity" values="0;0.82;0.32;0" dur="8s" keyTimes="0;0.34;0.68;1" repeatCount="indefinite" />
+    </circle>
+  </g>
+</svg>

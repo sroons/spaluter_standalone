@@ -1,0 +1,189 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 460" role="img" aria-labelledby="title desc">
+  <title id="title">Rounded vs sharp envelopes and resulting waveforms</title>
+  <desc id="desc">Side-by-side animated comparison of rounded and sharp ADSR envelopes, with smoother and sharper resulting waveforms.</desc>
+
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="rgb(15,15,25)" />
+      <stop offset="50%" stop-color="rgb(28,45,74)" />
+      <stop offset="100%" stop-color="rgb(15,15,25)" />
+    </linearGradient>
+
+    <linearGradient id="roundedStroke" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="rgb(91,169,246)" />
+      <stop offset="100%" stop-color="rgb(114,213,142)" />
+    </linearGradient>
+
+    <linearGradient id="sharpStroke" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="rgb(235,110,79)" />
+      <stop offset="100%" stop-color="rgb(232,120,126)" />
+    </linearGradient>
+
+    <filter id="glow" x="-20%" y="-120%" width="140%" height="340%">
+      <feGaussianBlur stdDeviation="4" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  </defs>
+
+  <style>
+    .frame {
+      stroke: rgba(52,55,84,0.9);
+      stroke-width: 2;
+      fill: none;
+    }
+
+    .panel {
+      fill: rgba(18,22,38,0.82);
+      stroke: rgba(52,55,84,0.85);
+      stroke-width: 1.5;
+    }
+
+    .divider {
+      stroke: rgba(52,55,84,0.85);
+      stroke-width: 2;
+    }
+
+    .label {
+      fill: rgb(232,238,255);
+      font-family: "DM Sans", Inter, system-ui, sans-serif;
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: 0.2px;
+    }
+
+    .sub {
+      fill: rgb(169,180,208);
+      font-family: "DM Sans", Inter, system-ui, sans-serif;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.25px;
+      text-transform: uppercase;
+    }
+
+    .axis {
+      stroke: rgba(169,180,208,0.3);
+      stroke-width: 1.4;
+      stroke-linecap: round;
+    }
+
+    .grid {
+      stroke: rgba(169,180,208,0.11);
+      stroke-width: 1;
+    }
+
+    .env-rounded {
+      fill: none;
+      stroke: url(#roundedStroke);
+      stroke-width: 4.8;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      filter: url(#glow);
+    }
+
+    .env-sharp {
+      fill: none;
+      stroke: url(#sharpStroke);
+      stroke-width: 4.8;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      filter: url(#glow);
+    }
+
+    .wave-smooth {
+      fill: none;
+      stroke: url(#roundedStroke);
+      stroke-width: 4.2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      stroke-dasharray: 16 11;
+      animation: flow 2.4s linear infinite;
+    }
+
+    .wave-sharp {
+      fill: none;
+      stroke: url(#sharpStroke);
+      stroke-width: 4.2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      stroke-dasharray: 10 9;
+      animation: flow 2.0s linear infinite reverse;
+    }
+
+    .playhead-rounded {
+      stroke: rgba(114,213,142,0.85);
+      stroke-width: 1.8;
+      stroke-linecap: round;
+    }
+
+    .playhead-sharp {
+      stroke: rgba(235,110,79,0.88);
+      stroke-width: 1.8;
+      stroke-linecap: round;
+    }
+
+    @keyframes flow {
+      to { stroke-dashoffset: -124; }
+    }
+  </style>
+
+  <rect width="1200" height="460" fill="url(#bg)" />
+  <rect class="frame" x="14" y="14" width="1172" height="432" rx="18" />
+
+  <line class="divider" x1="600" y1="28" x2="600" y2="432" />
+
+  <text class="label" x="300" y="58" text-anchor="middle">Rounded Envelope</text>
+  <text class="label" x="900" y="58" text-anchor="middle">Sharp Envelope</text>
+
+  <rect class="panel" x="56" y="82" width="488" height="144" rx="12" />
+  <rect class="panel" x="56" y="246" width="488" height="144" rx="12" />
+  <rect class="panel" x="656" y="82" width="488" height="144" rx="12" />
+  <rect class="panel" x="656" y="246" width="488" height="144" rx="12" />
+
+  <text class="sub" x="76" y="104">Envelope</text>
+  <text class="sub" x="76" y="268">Resulting waveform</text>
+  <text class="sub" x="676" y="104">Envelope</text>
+  <text class="sub" x="676" y="268">Resulting waveform</text>
+
+  <path class="grid" d="M76 142 H524 M76 178 H524 M76 314 H524 M76 350 H524" />
+  <path class="grid" d="M676 142 H1124 M676 178 H1124 M676 314 H1124 M676 350 H1124" />
+
+  <path class="axis" d="M76 196 H524" />
+  <path class="axis" d="M76 336 H524" />
+  <path class="axis" d="M676 196 H1124" />
+  <path class="axis" d="M676 336 H1124" />
+
+  <path id="envRoundedPath" class="env-rounded" d="M96 196 C122 104 156 96 184 124 C214 146 246 150 286 152 C334 154 374 154 414 156 C450 160 480 180 504 196" />
+  <path id="envSharpPath" class="env-sharp" d="M696 196 L734 98 L770 152 L930 152 L1002 196" />
+
+  <path id="smoothWavePath" class="wave-smooth" d="M96 336 C112 300 128 372 144 336 C160 300 176 372 192 336 C208 304 224 368 240 336 C256 308 272 364 288 336 C304 312 320 360 336 336 C352 314 368 358 384 336 C400 316 416 356 432 336 C448 318 464 354 480 336 C488 328 496 344 504 336" />
+  <path id="sharpWavePath" class="wave-sharp" d="M696 336 L712 282 L728 336 L744 368 L760 336 L776 286 L792 336 L808 370 L824 336 L840 282 L856 336 L872 370 L888 336 L904 284 L920 336 L936 368 L952 336 L968 282 L984 336 L1000 370 L1016 336 L1032 284 L1048 336 L1064 368 L1080 336 L1096 284 L1112 336" />
+
+  <line class="playhead-rounded" x1="96" y1="110" x2="96" y2="388">
+    <animate attributeName="x1" values="96;504;96" dur="4.5s" repeatCount="indefinite" />
+    <animate attributeName="x2" values="96;504;96" dur="4.5s" repeatCount="indefinite" />
+  </line>
+
+  <line class="playhead-sharp" x1="696" y1="110" x2="696" y2="388">
+    <animate attributeName="x1" values="696;1112;696" dur="4.5s" repeatCount="indefinite" />
+    <animate attributeName="x2" values="696;1112;696" dur="4.5s" repeatCount="indefinite" />
+  </line>
+
+  <circle r="4.4" fill="rgb(114,213,142)" filter="url(#glow)">
+    <animateMotion dur="4.5s" repeatCount="indefinite" path="M96 196 C122 104 156 96 184 124 C214 146 246 150 286 152 C334 154 374 154 414 156 C450 160 480 180 504 196" />
+  </circle>
+
+  <circle r="4.4" fill="rgb(235,110,79)" filter="url(#glow)">
+    <animateMotion dur="4.5s" repeatCount="indefinite" path="M696 196 L734 98 L770 152 L930 152 L1002 196" />
+  </circle>
+
+  <circle r="4.2" fill="rgb(91,169,246)" filter="url(#glow)">
+    <animateMotion dur="2.4s" repeatCount="indefinite" path="M96 336 C112 300 128 372 144 336 C160 300 176 372 192 336 C208 304 224 368 240 336 C256 308 272 364 288 336 C304 312 320 360 336 336 C352 314 368 358 384 336 C400 316 416 356 432 336 C448 318 464 354 480 336 C488 328 496 344 504 336" />
+  </circle>
+
+  <circle r="4.2" fill="rgb(232,120,126)" filter="url(#glow)">
+    <animateMotion dur="2s" repeatCount="indefinite" path="M696 336 L712 282 L728 336 L744 368 L760 336 L776 286 L792 336 L808 370 L824 336 L840 282 L856 336 L872 370 L888 336 L904 284 L920 336 L936 368 L952 336 L968 282 L984 336 L1000 370 L1016 336 L1032 284 L1048 336 L1064 368 L1080 336 L1096 284 L1112 336" />
+  </circle>
+</svg>
