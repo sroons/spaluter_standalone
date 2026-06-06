@@ -25,17 +25,17 @@ s.waitForBoot {
         |out=0, amp=0.2, gate=1, trigIn=0,
         gateMode=1, basePitch=32.7032, voiceCount=1, chordType=0,
         pulsaret=2.5, window=0.5, duty=0.5, dutyMode=0,
-        formantCount=2, formant1=20, formant2=200, formant3=400, formantTrack=0,
+        formantCount=3, formant1=20, formant2=200, formant3=400, formantTrack=0,
         maskMode=0, maskAmount=0.5, burstOn=4, burstOff=4, perFormantMask=0,
         attackMs=10, releaseMs=200, glideMs=0, drive=1.0,
-        pan1=0, pan2=(-0.5), pan3=0.5,
+        pan1=0, pan2=0.5, pan3=(-0.5),
         ampJitter=0, timingJitter=0, glisson=0,
         useSample=0, bufnum=0, sampleRate=1.0,
         scopeEnabled=1, scopeRate=20|
 
         var atk, rel, glid, vc, fc, mode, ctype, bPitch;
         var fHzArr, panArr, voices, sig;
-        var scopeMono, scopeFrames, scopeBuf, scopeWritePos, scopeReadPos, scopeValues, scopeTrig;
+        var scopeFrames, scopeBufL, scopeBufR, scopeWritePos, scopeReadPos, scopeValuesL, scopeValuesR, scopeTrig;
 
         atk = attackMs.max(0.1) * 0.001;
         rel = releaseMs.max(1.0) * 0.001;
@@ -167,15 +167,17 @@ s.waitForBoot {
 
         sig = voices / vc.max(1);
         sig = tanh(sig * drive.clip(0.1, 4.0));
-        scopeMono = Mix(sig) * 0.9;
-        scopeFrames = 64;
-        scopeBuf = LocalBuf(scopeFrames, 1);
+        scopeFrames = 128;
+        scopeBufL = LocalBuf(scopeFrames, 1);
+        scopeBufR = LocalBuf(scopeFrames, 1);
         scopeWritePos = Phasor.ar(0, 1, 0, scopeFrames, 0);
-        BufWr.ar(scopeMono, scopeBuf, scopeWritePos, loop: 1);
+        BufWr.ar(sig[0] * 0.9, scopeBufL, scopeWritePos, loop: 1);
+        BufWr.ar(sig[1] * 0.9, scopeBufR, scopeWritePos, loop: 1);
         scopeReadPos = (scopeWritePos - Array.series(scopeFrames, scopeFrames - 1, -1)).wrap(0, scopeFrames - 1);
-        scopeValues = BufRd.ar(1, scopeBuf, scopeReadPos, loop: 1, interpolation: 1);
+        scopeValuesL = BufRd.ar(1, scopeBufL, scopeReadPos, loop: 1, interpolation: 1);
+        scopeValuesR = BufRd.ar(1, scopeBufR, scopeReadPos, loop: 1, interpolation: 1);
         scopeTrig = Impulse.kr(scopeRate.clip(1, 60)) * (scopeEnabled > 0);
-        SendReply.kr(scopeTrig, "/spaluter/scope", scopeValues);
+        SendReply.kr(scopeTrig, "/spaluter/scope", scopeValuesL ++ scopeValuesR);
         Out.ar(out, sig * amp);
     }).add;
     s.sync;
@@ -190,10 +192,13 @@ s.waitForBoot {
             \pulsaret, 2.5,
             \window, 0.5,
             \duty, 0.5,
-            \formantCount, 2,
+            \formantCount, 3,
             \formant1, 20,
             \formant2, 200,
-            \formant3, 400
+            \formant3, 400,
+            \pan1, 0,
+            \pan2, 0.5,
+            \pan3, -0.5
         ]);
     };
 
@@ -349,7 +354,8 @@ s.waitForBoot {
                 applyParams.([
                     \amp, 0.25, \basePitch, 32.7032, \voiceCount, 1, \chordType, 0,
                     \gateMode, 1, \pulsaret, 2.5, \window, 0.5, \duty, 0.5,
-                    \formantCount, 2, \formant1, 20, \formant2, 200, \formant3, 400,
+                    \formantCount, 3, \formant1, 20, \formant2, 200, \formant3, 400,
+                    \pan1, 0, \pan2, 0.5, \pan3, -0.5,
                     \drive, 1.0, \maskMode, 0, \maskAmount, 0.5,
                     \ampJitter, 0.0, \timingJitter, 0.0, \glisson, 0.0
                 ]);
@@ -365,7 +371,7 @@ s.waitForBoot {
         mkLabelSlider.("Pulsaret", 0, 9, 2.5, \pulsaret);
         mkLabelSlider.("Window", 0, 8, 0.5, \window);
         mkLabelSlider.("Duty", 0.01, 1.0, 0.5, \duty);
-        mkLabelSlider.("Formants", 1, 3, 2, \formantCount, 1);
+        mkLabelSlider.("Formants", 1, 3, 3, \formantCount, 1);
         mkLabelSlider.("Formant 1 Hz", 20, 3000, 20, \formant1);
         mkLabelSlider.("Formant 2 Hz", 20, 3000, 200, \formant2);
         mkLabelSlider.("Formant 3 Hz", 20, 3000, 400, \formant3);

@@ -79,12 +79,34 @@
           </div>
           <canvas id="maskScopeView" class="waveform-canvas" width="320" height="84" aria-label="Mask activity scope"></canvas>
         </div>
+        <div class="scope-side-stack" aria-label="Output analysis scopes">
+          <div class="waveform-panel">
+            <div class="waveform-panel-header">
+              <span class="waveform-panel-title">Stereo Peak</span>
+              <span id="peakMeterLabel" class="waveform-panel-meta">L -inf dB • R -inf dB</span>
+            </div>
+            <canvas id="peakMeterView" class="waveform-canvas" width="320" height="120" aria-label="Stereo peak hold meter"></canvas>
+          </div>
+          <div class="waveform-panel">
+            <div class="waveform-panel-header">
+              <span class="waveform-panel-title">Stereo Corr</span>
+              <span id="stereoCorrScopeLabel" class="waveform-panel-meta">+0.00</span>
+            </div>
+            <canvas id="stereoCorrScopeView" class="waveform-canvas" width="320" height="120" aria-label="Stereo correlation scope"></canvas>
+          </div>
+        </div>
         <div class="waveform-panel output-scope-panel output-scope-large">
           <div class="waveform-panel-header">
             <span class="waveform-panel-title">Output Scope</span>
-            <span id="outputScopeLabel" class="waveform-panel-meta">Waiting for synth...</span>
+            <div class="output-scope-header-right">
+              <span class="scope-color-legend" aria-label="Scope channel colors">
+                <span class="scope-color-legend-item"><span class="scope-color-chip scope-color-chip-left"></span>L</span>
+                <span class="scope-color-legend-item"><span class="scope-color-chip scope-color-chip-right"></span>R</span>
+              </span>
+              <span id="outputScopeLabel" class="waveform-panel-meta">Waiting for synth...</span>
+            </div>
           </div>
-          <canvas id="outputScopeView" class="waveform-canvas" width="320" height="160" aria-label="Output waveform scope"></canvas>
+          <canvas id="outputScopeView" class="waveform-canvas" width="320" height="235" aria-label="Output stereo waveform scope"></canvas>
         </div>
         </div>
       </section>
@@ -148,7 +170,7 @@
       <div class="tab-panel" data-tab="wave">
         <div class="controls-row">
           <div class="control"><label for="dutyMode">Duty Mode</label><select id="dutyMode" data-param="dutyMode"><option value="0" selected>Manual</option><option value="1">Formant</option></select></div>
-          <div class="control"><label for="formantCount">Formants</label><select id="formantCount" data-param="formantCount"><option value="1">1</option><option value="2" selected>2</option><option value="3">3</option></select></div>
+          <div class="control"><label for="formantCount">Formants</label><select id="formantCount" data-param="formantCount"><option value="1">1</option><option value="2">2</option><option value="3" selected>3</option></select></div>
           <div class="control"><label for="formantTrack">Formant Track</label><select id="formantTrack" data-param="formantTrack"><option value="0" selected>Off</option><option value="1">On</option></select></div>
         </div>
         <div class="split-row">
@@ -164,8 +186,8 @@
             <div class="section-title orange">Stereo Pan</div>
             <div class="knob-grid">
               <div class="knob-control"><div class="knob" data-param="pan1" data-min="-1" data-max="1" data-step="0.01" data-value="0"><div class="knob-pointer"></div></div><div class="knob-label">Pan 1</div><div class="knob-value">0.00</div></div>
-              <div class="knob-control"><div class="knob" data-param="pan2" data-min="-1" data-max="1" data-step="0.01" data-value="-0.5"><div class="knob-pointer"></div></div><div class="knob-label">Pan 2</div><div class="knob-value">-0.50</div></div>
-              <div class="knob-control"><div class="knob" data-param="pan3" data-min="-1" data-max="1" data-step="0.01" data-value="0.5"><div class="knob-pointer"></div></div><div class="knob-label">Pan 3</div><div class="knob-value">0.50</div></div>
+              <div class="knob-control"><div class="knob" data-param="pan2" data-min="-1" data-max="1" data-step="0.01" data-value="0.5"><div class="knob-pointer"></div></div><div class="knob-label">Pan 2</div><div class="knob-value">0.50</div></div>
+              <div class="knob-control"><div class="knob" data-param="pan3" data-min="-1" data-max="1" data-step="0.01" data-value="-0.5"><div class="knob-pointer"></div></div><div class="knob-label">Pan 3</div><div class="knob-value">-0.50</div></div>
             </div>
           </div>
         </div>
