@@ -48,6 +48,12 @@ s.options.numOutputBusChannels = 2;
 // Do not force sampleRate here; let OS/default device choose a valid rate.
 s.options.numWireBufs = 4096;
 s.options.bindAddress = "127.0.0.1";
+// Pin scsynth to the pisound ALSA device on Linux/Patchbox so it bypasses
+// the `plug` conversion layer in /etc/asound.conf. Only applied on Linux
+// — setting an unknown device name on macOS/Windows would prevent boot.
+if(thisProcess.platform.name == \linux) {
+    s.options.device = "pisound";
+};
 
 thisProcess.openUDPPort(57130);
 status.value("Listening OSC on 57130");
@@ -123,7 +129,7 @@ s.doWhenBooted({
                 ~spaluter.free;
                 ~spaluter = nil;
             };
-            forwardScope.value(Array.fill(64, 0.0));
+            forwardScope.value(Array.fill(256, 0.0));
             status.value("Synth stopped");
         }.defer;
     };
@@ -135,6 +141,7 @@ s.doWhenBooted({
                     \amp, 0.25, \basePitch, 32.7032, \voiceCount, 1, \chordType, 0,
                     \gateMode, 1, \pulsaret, 2.5, \window, 0.5, \duty, 0.5,
                     \formantCount, 2, \formant1, 20, \formant2, 200, \formant3, 400,
+                    \pan1, 0, \pan2, 0, \pan3, 0,
                     \drive, 1.0, \maskMode, 0, \maskAmount, 0.5,
                     \ampJitter, 0.0, \timingJitter, 0.0, \glisson, 0.0
                 );
@@ -198,8 +205,13 @@ s.doWhenBooted({
     }, "/spaluter/load-sample");
 
     OSCdef(\spaluterScopeDirect, { |msg|
-        if(msg.size > 1) {
-            forwardScope.value(msg.copyRange(1, msg.size - 1));
+        // SendReply prepends [nodeID, replyID] to the args, so the actual
+        // scope sample floats start at msg[3]. Forwarding msg[1..] (the old
+        // behaviour) leaked the nodeID/replyID into the renderer as if they
+        // were the first two L-channel samples, which made the L peak meter
+        // peg at full scale and made the L trace look much hotter than R.
+        if(msg.size > 3) {
+            forwardScope.value(msg.copyRange(3, msg.size - 1));
         };
     }, "/spaluter/scope");
 
@@ -208,8 +220,9 @@ s.doWhenBooted({
         cmdIdx = msg.detectIndex({ |item|
             item.notNil and: { item.asString == "/spaluter/scope" }
         });
-        if(cmdIdx.notNil and: { msg.size > (cmdIdx + 1) }) {
-            forwardScope.value(msg.copyRange(cmdIdx + 1, msg.size - 1));
+        // Same SendReply offset: skip nodeID + replyID after the cmdName.
+        if(cmdIdx.notNil and: { msg.size > (cmdIdx + 3) }) {
+            forwardScope.value(msg.copyRange(cmdIdx + 3, msg.size - 1));
         };
     }, "/reply");
 
