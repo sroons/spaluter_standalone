@@ -296,7 +296,7 @@ function createOscClient() {
         } else if (msg.address === "/spaluter/scope") {
           const rawArgs = Array.isArray(msg.args) ? msg.args : [];
           const samples = [];
-          for (let i = 0; i < rawArgs.length && samples.length < 128; i += 1) {
+          for (let i = 0; i < rawArgs.length && samples.length < 512; i += 1) {
             const arg = rawArgs[i];
             const raw = (arg && typeof arg === "object" && Object.prototype.hasOwnProperty.call(arg, "value"))
               ? arg.value

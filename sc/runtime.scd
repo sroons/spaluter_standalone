@@ -140,8 +140,8 @@ s.doWhenBooted({
                 ~spaluter.set(
                     \amp, 0.25, \basePitch, 32.7032, \voiceCount, 1, \chordType, 0,
                     \gateMode, 1, \pulsaret, 2.5, \window, 0.5, \duty, 0.5,
-                    \formantCount, 2, \formant1, 20, \formant2, 200, \formant3, 400,
-                    \pan1, 0, \pan2, 0, \pan3, 0,
+                    \formantCount, 3, \formant1, 20, \formant2, 200, \formant3, 400,
+                    \pan1, 0, \pan2, 0.5, \pan3, -0.5,
                     \drive, 1.0, \maskMode, 0, \maskAmount, 0.5,
                     \ampJitter, 0.0, \timingJitter, 0.0, \glisson, 0.0
                 );

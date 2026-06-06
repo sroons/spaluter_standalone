@@ -17,6 +17,8 @@ const refreshSamplesBtn = document.getElementById("refreshSamples");
 const loadSampleBtn = document.getElementById("loadSample");
 const synthToggleBtn = document.getElementById("synthToggle");
 const outputScopeCanvas = document.getElementById("outputScopeView");
+const peakMeterCanvas = document.getElementById("peakMeterView");
+const stereoCorrScopeCanvas = document.getElementById("stereoCorrScopeView");
 const pulsaretWaveCanvas = document.getElementById("pulsaretWaveView");
 const windowWaveCanvas = document.getElementById("windowWaveView");
 const dutyWaveCanvas = document.getElementById("dutyWaveView");
@@ -24,6 +26,8 @@ const formantWaveCanvas = document.getElementById("formantWaveView");
 const formantActivityCanvas = document.getElementById("formantActivityView");
 const maskScopeCanvas = document.getElementById("maskScopeView");
 const outputScopeLabelEl = document.getElementById("outputScopeLabel");
+const peakMeterLabelEl = document.getElementById("peakMeterLabel");
+const stereoCorrScopeLabelEl = document.getElementById("stereoCorrScopeLabel");
 const pulsaretWaveLabelEl = document.getElementById("pulsaretWaveLabel");
 const windowWaveLabelEl = document.getElementById("windowWaveLabel");
 const dutyWaveLabelEl = document.getElementById("dutyWaveLabel");
@@ -228,19 +232,51 @@ const WINDOW_WAVE_NAMES = [
   "triangle"
 ];
 const TWO_PI = Math.PI * 2;
-const OUTPUT_SCOPE_FRAME_SIZE = 96;
+const OUTPUT_SCOPE_FRAME_SIZE = 128;
 const OUTPUT_SCOPE_SMOOTHING_ALPHA = 0.35;
 const OUTPUT_SCOPE_ZERO_CROSSING_MIN_SLOPE = 0.02;
+const OUTPUT_SCOPE_COMPAND_GAMMA = 0.45;
+const OUTPUT_SCOPE_COMPAND_MIX = 0.75;
+const OUTPUT_ANALYSIS_HISTORY_SIZE = 96;
+const STEREO_PEAK_HOLD_FRAMES = 14;
+const STEREO_PEAK_DECAY_PER_FRAME = 0.03;
+const STEREO_HOLD_DECAY_PER_FRAME = 0.012;
 const FORMANT_SCOPE_COLORS = ["rgb(235, 110, 79)", "rgb(114, 213, 142)", "rgb(199, 146, 234)"];
 const MASK_MODE_NAMES = ["Off", "Stochastic", "Burst"];
 const MIDI_STATUS_TYPE_MASK = 0xF0;
 const MIDI_STATUS_NOTE_OFF = 0x80;
 const MIDI_STATUS_NOTE_ON = 0x90;
 const MIDI_STATUS_CC = 0xB0;
-const scopeSampleBuffer = new Float64Array(OUTPUT_SCOPE_FRAME_SIZE);
-const scopeAlignedBuffer = Array.from({ length: OUTPUT_SCOPE_FRAME_SIZE }, () => 0);
-const scopeRenderBuffer = Array.from({ length: OUTPUT_SCOPE_FRAME_SIZE }, () => 0);
-let outputScopeSamples = Array.from({ length: OUTPUT_SCOPE_FRAME_SIZE }, () => 0);
+const scopeSampleBuffers = [
+  new Float64Array(OUTPUT_SCOPE_FRAME_SIZE),
+  new Float64Array(OUTPUT_SCOPE_FRAME_SIZE)
+];
+const scopeAlignedBuffers = [
+  new Float64Array(OUTPUT_SCOPE_FRAME_SIZE),
+  new Float64Array(OUTPUT_SCOPE_FRAME_SIZE)
+];
+const scopeRenderBuffers = [
+  new Float64Array(OUTPUT_SCOPE_FRAME_SIZE),
+  new Float64Array(OUTPUT_SCOPE_FRAME_SIZE)
+];
+let outputScopeSamples = {
+  left: scopeRenderBuffers[0],
+  right: null
+};
+const stereoCorrHistory = new Float64Array(OUTPUT_ANALYSIS_HISTORY_SIZE);
+let stereoPeakDisplayL = 0;
+let stereoPeakDisplayR = 0;
+let stereoPeakHoldL = 0;
+let stereoPeakHoldR = 0;
+let stereoPeakHoldAgeL = 0;
+let stereoPeakHoldAgeR = 0;
+
+function pushHistoryValue(history, value) {
+  for (let i = 0; i < history.length - 1; i += 1) {
+    history[i] = history[i + 1];
+  }
+  history[history.length - 1] = value;
+}
 
 function appendLogLine(line) {
   if (!logEl) return;
@@ -521,19 +557,246 @@ function drawWaveform(canvas, sampleFn, minValue = -1, maxValue = 1) {
   ctx.stroke();
 }
 
-function drawScopeFromSamples(canvas, samples) {
-  if (!Array.isArray(samples) || samples.length === 0) {
-    drawWaveform(canvas, () => 0, -1, 1);
-    return;
-  }
-  const values = samples;
-  drawWaveform(canvas, (t) => {
+function drawScopeTrace(ctx, values, metrics, color) {
+  if (!values || values.length === 0) return;
+  const {
+    dpr, drawWidth, drawHeight, leftPad, rightPad, topPad, bottomPad
+  } = metrics;
+  const usableWidth = Math.max(1, rightPad - leftPad);
+  const usableHeight = Math.max(1, bottomPad - topPad);
+  const sampleAt = (t) => {
     const idx = t * (values.length - 1);
     const lo = Math.floor(idx);
     const hi = Math.min(values.length - 1, lo + 1);
     const mix = idx - lo;
     return (values[lo] * (1 - mix)) + (values[hi] * mix);
-  }, -1, 1);
+  };
+  const shapeScopeSample = (sample) => {
+    const dry = clamp(Number(sample) || 0, -1, 1);
+    const mag = Math.abs(dry);
+    const wet = Math.sign(dry) * Math.pow(mag, OUTPUT_SCOPE_COMPAND_GAMMA);
+    return (dry * (1 - OUTPUT_SCOPE_COMPAND_MIX)) + (wet * OUTPUT_SCOPE_COMPAND_MIX);
+  };
+  ctx.lineWidth = Math.max(1, dpr);
+  ctx.strokeStyle = color;
+  ctx.beginPath();
+  const samples = Math.max(48, Math.floor(drawWidth / 2));
+  for (let i = 0; i <= samples; i += 1) {
+    const t = i / samples;
+    const sample = shapeScopeSample(sampleAt(t));
+    const normalized = clamp((sample + 1) * 0.5, 0, 1);
+    const x = leftPad + (t * usableWidth);
+    const y = topPad + ((1 - normalized) * usableHeight);
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+}
+
+function drawOutputScope(canvas, left, right = null) {
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  const metrics = getCanvasMetrics(canvas);
+  const {
+    dpr, drawWidth, drawHeight
+  } = metrics;
+
+  if (canvas.width !== drawWidth || canvas.height !== drawHeight) {
+    canvas.width = drawWidth;
+    canvas.height = drawHeight;
+  }
+
+  ctx.clearRect(0, 0, drawWidth, drawHeight);
+  ctx.lineWidth = Math.max(1, dpr);
+  ctx.strokeStyle = "rgba(169, 180, 208, 0.35)";
+  ctx.beginPath();
+  const centerY = drawHeight * 0.5;
+  ctx.moveTo(0, centerY);
+  ctx.lineTo(drawWidth, centerY);
+  ctx.stroke();
+
+  // Use additive ("lighter") compositing so that when L and R are identical
+  // (e.g. mono signal at centre pan) the overlapping blue + green strokes
+  // sum to a bright cyan that's clearly visible. Without this, the second
+  // trace would fully paint over the first and the user would think one
+  // channel had disappeared. Alpha < 1 lets the colours mix instead of
+  // saturating to white.
+  const prevComposite = ctx.globalCompositeOperation;
+  const prevAlpha = ctx.globalAlpha;
+  ctx.globalCompositeOperation = "lighter";
+  ctx.globalAlpha = 0.85;
+  drawScopeTrace(ctx, left, metrics, "rgb(91, 169, 246)");
+  if (right && right.length > 0) {
+    drawScopeTrace(ctx, right, metrics, "rgb(114, 213, 142)");
+  }
+  ctx.globalAlpha = prevAlpha;
+  ctx.globalCompositeOperation = prevComposite;
+}
+
+function drawHistoryScope(canvas, values, minValue, maxValue, color) {
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  const metrics = getCanvasMetrics(canvas);
+  const {
+    dpr, drawWidth, drawHeight, leftPad, rightPad, topPad, bottomPad
+  } = metrics;
+
+  if (canvas.width !== drawWidth || canvas.height !== drawHeight) {
+    canvas.width = drawWidth;
+    canvas.height = drawHeight;
+  }
+
+  ctx.clearRect(0, 0, drawWidth, drawHeight);
+  ctx.lineWidth = Math.max(1, dpr);
+  ctx.strokeStyle = "rgba(169, 180, 208, 0.3)";
+  ctx.beginPath();
+  const centerY = topPad + ((1 - clamp((0 - minValue) / (maxValue - minValue || 1), 0, 1)) * Math.max(1, bottomPad - topPad));
+  ctx.moveTo(0, centerY);
+  ctx.lineTo(drawWidth, centerY);
+  ctx.stroke();
+
+  const usableWidth = Math.max(1, rightPad - leftPad);
+  const usableHeight = Math.max(1, bottomPad - topPad);
+  const range = maxValue - minValue || 1;
+  ctx.strokeStyle = color;
+  ctx.beginPath();
+  for (let i = 0; i < values.length; i += 1) {
+    const t = values.length <= 1 ? 0 : i / (values.length - 1);
+    const normalized = clamp((values[i] - minValue) / range, 0, 1);
+    const x = leftPad + (t * usableWidth);
+    const y = topPad + ((1 - normalized) * usableHeight);
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+}
+
+function computeScopePeaksFromPayload(samples) {
+  if (!Array.isArray(samples) || samples.length === 0) return { leftPeak: 0, rightPeak: 0 };
+  let leftPeak = 0;
+  let rightPeak = 0;
+  let rightCount = 0;
+  const leftLimit = Math.min(samples.length, OUTPUT_SCOPE_FRAME_SIZE);
+  for (let i = 0; i < leftLimit; i += 1) {
+    const l = Math.abs(Number(samples[i]) || 0);
+    leftPeak = Math.max(leftPeak, l);
+  }
+  const rightStart = OUTPUT_SCOPE_FRAME_SIZE;
+  const rightLimit = Math.min(samples.length, rightStart + OUTPUT_SCOPE_FRAME_SIZE);
+  for (let i = rightStart; i < rightLimit; i += 1) {
+    const r = Math.abs(Number(samples[i]) || 0);
+    rightPeak = Math.max(rightPeak, r);
+    rightCount += 1;
+  }
+  if (rightCount === 0) rightPeak = leftPeak;
+  return { leftPeak: clamp(leftPeak, 0, 1), rightPeak: clamp(rightPeak, 0, 1) };
+}
+
+function computeFrameCorrelation(left, right = null) {
+  if (!left || !right || left.length === 0 || right.length === 0) return 0;
+  const n = Math.min(left.length, right.length);
+  let dot = 0;
+  let ll = 0;
+  let rr = 0;
+  for (let i = 0; i < n; i += 1) {
+    const l = Number(left[i]) || 0;
+    const r = Number(right[i]) || 0;
+    dot += l * r;
+    ll += l * l;
+    rr += r * r;
+  }
+  const denom = Math.sqrt(ll * rr);
+  if (!Number.isFinite(denom) || denom <= 1e-9) return 0;
+  return clamp(dot / denom, -1, 1);
+}
+
+function updateStereoPeakState(leftPeak, rightPeak) {
+  stereoPeakDisplayL = Math.max(leftPeak, stereoPeakDisplayL - STEREO_PEAK_DECAY_PER_FRAME);
+  stereoPeakDisplayR = Math.max(rightPeak, stereoPeakDisplayR - STEREO_PEAK_DECAY_PER_FRAME);
+
+  if (leftPeak >= stereoPeakHoldL) {
+    stereoPeakHoldL = leftPeak;
+    stereoPeakHoldAgeL = 0;
+  } else {
+    stereoPeakHoldAgeL += 1;
+    if (stereoPeakHoldAgeL > STEREO_PEAK_HOLD_FRAMES) {
+      stereoPeakHoldL = Math.max(stereoPeakDisplayL, stereoPeakHoldL - STEREO_HOLD_DECAY_PER_FRAME);
+    }
+  }
+
+  if (rightPeak >= stereoPeakHoldR) {
+    stereoPeakHoldR = rightPeak;
+    stereoPeakHoldAgeR = 0;
+  } else {
+    stereoPeakHoldAgeR += 1;
+    if (stereoPeakHoldAgeR > STEREO_PEAK_HOLD_FRAMES) {
+      stereoPeakHoldR = Math.max(stereoPeakDisplayR, stereoPeakHoldR - STEREO_HOLD_DECAY_PER_FRAME);
+    }
+  }
+}
+
+function linearToDb(level) {
+  const v = Math.max(1e-4, Number(level) || 0);
+  return 20 * Math.log10(v);
+}
+
+function drawStereoPeakMeter(canvas) {
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  const metrics = getCanvasMetrics(canvas);
+  const {
+    dpr, drawWidth, drawHeight, leftPad, rightPad, topPad, bottomPad
+  } = metrics;
+  if (canvas.width !== drawWidth || canvas.height !== drawHeight) {
+    canvas.width = drawWidth;
+    canvas.height = drawHeight;
+  }
+  ctx.clearRect(0, 0, drawWidth, drawHeight);
+
+  const usableWidth = Math.max(1, rightPad - leftPad);
+  const usableHeight = Math.max(1, bottomPad - topPad);
+  const laneGap = Math.max(3 * dpr, usableHeight * 0.08);
+  const laneHeight = Math.max(6 * dpr, (usableHeight - laneGap) * 0.5);
+  const laneY = [topPad, topPad + laneHeight + laneGap];
+  const levels = [stereoPeakDisplayL, stereoPeakDisplayR];
+  const holds = [stereoPeakHoldL, stereoPeakHoldR];
+  const laneColors = ["rgb(91, 169, 246)", "rgb(114, 213, 142)"];
+  const labels = ["L", "R"];
+
+  for (let i = 0; i < 2; i += 1) {
+    const y = laneY[i];
+    const level = clamp(levels[i], 0, 1);
+    const hold = clamp(holds[i], 0, 1);
+    const fillW = level * usableWidth;
+
+    ctx.fillStyle = "rgba(52, 55, 84, 0.4)";
+    ctx.fillRect(leftPad, y, usableWidth, laneHeight);
+
+    ctx.fillStyle = laneColors[i];
+    ctx.fillRect(leftPad, y, fillW, laneHeight);
+
+    const holdX = leftPad + (hold * usableWidth);
+    ctx.strokeStyle = "rgba(240, 245, 255, 0.9)";
+    ctx.lineWidth = Math.max(1, dpr);
+    ctx.beginPath();
+    ctx.moveTo(holdX, y);
+    ctx.lineTo(holdX, y + laneHeight);
+    ctx.stroke();
+
+    ctx.fillStyle = "rgba(220, 228, 250, 0.9)";
+    ctx.font = `${Math.max(9, Math.round(9 * dpr))}px sans-serif`;
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.fillText(labels[i], leftPad + (3 * dpr), y + (laneHeight * 0.5));
+  }
+}
+
+function drawOutputAnalysisScopes() {
+  drawStereoPeakMeter(peakMeterCanvas);
+  drawHistoryScope(stereoCorrScopeCanvas, stereoCorrHistory, -1, 1, "rgb(170, 146, 240)");
 }
 
 function drawFormantWaves(canvas, formantHzValues, activeCount) {
@@ -796,48 +1059,81 @@ function findScopeZeroCrossingOffset(values, length) {
   return bestIndex >= 0 ? bestIndex : 0;
 }
 
-function normalizeScopeSamples(samples) {
+function normalizeScopeSamples(samples, channelIndex = 0, sourceOffset = 0) {
   if (!Array.isArray(samples)) return null;
+  const sampleBuffer = scopeSampleBuffers[channelIndex];
+  const alignedBuffer = scopeAlignedBuffers[channelIndex];
+  const renderBuffer = scopeRenderBuffers[channelIndex];
   let sampleCount = 0;
-  for (let i = 0; i < samples.length && sampleCount < OUTPUT_SCOPE_FRAME_SIZE; i += 1) {
+  for (
+    let i = sourceOffset;
+    i < samples.length && sampleCount < OUTPUT_SCOPE_FRAME_SIZE;
+    i += 1
+  ) {
     const value = Number(samples[i]);
     if (!Number.isFinite(value)) continue;
-    scopeSampleBuffer[sampleCount] = value;
+    sampleBuffer[sampleCount] = value;
     sampleCount += 1;
   }
   if (sampleCount === 0) return null;
   while (sampleCount < OUTPUT_SCOPE_FRAME_SIZE) {
-    scopeSampleBuffer[sampleCount] = scopeSampleBuffer[sampleCount - 1] ?? 0;
+    sampleBuffer[sampleCount] = sampleBuffer[sampleCount - 1] ?? 0;
     sampleCount += 1;
   }
-  const offset = findScopeZeroCrossingOffset(scopeSampleBuffer, OUTPUT_SCOPE_FRAME_SIZE);
+  const offset = findScopeZeroCrossingOffset(sampleBuffer, OUTPUT_SCOPE_FRAME_SIZE);
   for (let i = 0; i < OUTPUT_SCOPE_FRAME_SIZE; i += 1) {
     const sourceIndex = (i + offset) % OUTPUT_SCOPE_FRAME_SIZE;
-    scopeAlignedBuffer[i] = scopeSampleBuffer[sourceIndex];
+    alignedBuffer[i] = sampleBuffer[sourceIndex];
   }
   for (let i = 0; i < OUTPUT_SCOPE_FRAME_SIZE; i += 1) {
-    const currentValue = Number(scopeRenderBuffer[i]) || 0;
-    const targetValue = Number(scopeAlignedBuffer[i]) || 0;
-    scopeRenderBuffer[i] = currentValue + ((targetValue - currentValue) * OUTPUT_SCOPE_SMOOTHING_ALPHA);
+    const currentValue = Number(renderBuffer[i]) || 0;
+    const targetValue = Number(alignedBuffer[i]) || 0;
+    renderBuffer[i] = currentValue + ((targetValue - currentValue) * OUTPUT_SCOPE_SMOOTHING_ALPHA);
   }
-  return scopeRenderBuffer;
+  return renderBuffer;
 }
 
 function setOutputScopeSamples(samples, label = "Live output") {
-  const normalized = normalizeScopeSamples(samples);
-  if (!normalized) return;
-  outputScopeSamples = normalized;
+  const peaks = computeScopePeaksFromPayload(samples);
+  const left = normalizeScopeSamples(samples, 0, 0);
+  if (!left) return;
+  const right = samples.length >= (OUTPUT_SCOPE_FRAME_SIZE * 2)
+    ? normalizeScopeSamples(samples, 1, OUTPUT_SCOPE_FRAME_SIZE)
+    : null;
+  outputScopeSamples = { left, right };
+  const corr = computeFrameCorrelation(outputScopeSamples.left, outputScopeSamples.right);
+  updateStereoPeakState(peaks.leftPeak, peaks.rightPeak);
+  pushHistoryValue(stereoCorrHistory, corr);
+  if (peakMeterLabelEl) {
+    peakMeterLabelEl.textContent = `L ${linearToDb(peaks.leftPeak).toFixed(1)} dB • R ${linearToDb(peaks.rightPeak).toFixed(1)} dB`;
+  }
+  if (stereoCorrScopeLabelEl) stereoCorrScopeLabelEl.textContent = corr >= 0 ? `+${corr.toFixed(2)}` : `${corr.toFixed(2)}`;
   if (outputScopeLabelEl) outputScopeLabelEl.textContent = label;
-  drawScopeFromSamples(outputScopeCanvas, outputScopeSamples);
+  drawOutputScope(outputScopeCanvas, outputScopeSamples.left, outputScopeSamples.right);
+  drawOutputAnalysisScopes();
 }
 
 function clearOutputScope(label = "Waiting for synth...") {
-  for (let i = 0; i < OUTPUT_SCOPE_FRAME_SIZE; i += 1) {
-    scopeRenderBuffer[i] = 0;
+  for (let ch = 0; ch < scopeRenderBuffers.length; ch += 1) {
+    for (let i = 0; i < OUTPUT_SCOPE_FRAME_SIZE; i += 1) {
+      scopeRenderBuffers[ch][i] = 0;
+    }
   }
-  outputScopeSamples = scopeRenderBuffer;
+  for (let i = 0; i < OUTPUT_ANALYSIS_HISTORY_SIZE; i += 1) {
+    stereoCorrHistory[i] = 0;
+  }
+  stereoPeakDisplayL = 0;
+  stereoPeakDisplayR = 0;
+  stereoPeakHoldL = 0;
+  stereoPeakHoldR = 0;
+  stereoPeakHoldAgeL = 0;
+  stereoPeakHoldAgeR = 0;
+  outputScopeSamples = { left: scopeRenderBuffers[0], right: scopeRenderBuffers[1] };
+  if (peakMeterLabelEl) peakMeterLabelEl.textContent = "L -inf dB • R -inf dB";
+  if (stereoCorrScopeLabelEl) stereoCorrScopeLabelEl.textContent = "+0.00";
   if (outputScopeLabelEl) outputScopeLabelEl.textContent = label;
-  drawScopeFromSamples(outputScopeCanvas, outputScopeSamples);
+  drawOutputScope(outputScopeCanvas, outputScopeSamples.left, outputScopeSamples.right);
+  drawOutputAnalysisScopes();
 }
 
 function updateWaveformViews() {
@@ -925,7 +1221,8 @@ function updateWaveformViews() {
     burstOff,
     formantCount
   );
-  drawScopeFromSamples(outputScopeCanvas, outputScopeSamples);
+  drawOutputScope(outputScopeCanvas, outputScopeSamples.left, outputScopeSamples.right);
+  drawOutputAnalysisScopes();
 }
 
 function defaultMidiMappingsForCurrentParams() {
@@ -1530,6 +1827,24 @@ function normalizeParamValue(param, rawValue) {
   return value;
 }
 
+function balancedPanDefaultsForFormantCount(formantCountRaw) {
+  const count = clamp(Math.round(Number(formantCountRaw) || 3), 1, 3);
+  if (count <= 1) {
+    return { pan1: 0, pan2: 0, pan3: 0 };
+  }
+  if (count === 2) {
+    return { pan1: 0, pan2: 0, pan3: 0 };
+  }
+  return { pan1: 0, pan2: 0.5, pan3: -0.5 };
+}
+
+function applyBalancedPansForFormantCount(formantCount, send = true) {
+  const defaults = balancedPanDefaultsForFormantCount(formantCount);
+  setParamValue("pan1", defaults.pan1, send);
+  setParamValue("pan2", defaults.pan2, send);
+  setParamValue("pan3", defaults.pan3, send);
+}
+
 function scheduleWaveformViewsRedraw() {
   if (waveformViewsRafId) return;
   waveformViewsDirty = true;
@@ -1591,6 +1906,10 @@ function setParamValue(param, rawValue, send = true) {
   ) {
     // Phase 1.2: was a synchronous updateWaveformViews() call per event.
     scheduleWaveformViewsRedraw();
+  }
+
+  if (param === "formantCount") {
+    applyBalancedPansForFormantCount(value, send);
   }
 
   updateRealtimeParamValue(param, value);
@@ -1678,7 +1997,11 @@ function collectCurrentParams() {
 
 function applyPresetParams(params) {
   if (!params || typeof params !== "object") return;
+  if (Object.prototype.hasOwnProperty.call(params, "formantCount")) {
+    setParamValue("formantCount", Number(params.formantCount), true);
+  }
   Object.entries(params).forEach(([param, value]) => {
+    if (param === "formantCount") return;
     setParamValue(param, Number(value), true);
   });
 }

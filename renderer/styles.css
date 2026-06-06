@@ -196,6 +196,38 @@ header {
   gap: 6px;
 }
 
+.output-scope-header-right {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.scope-color-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 9px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.scope-color-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.scope-color-chip {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+}
+
+.scope-color-chip-left { background: rgb(91, 169, 246); }
+.scope-color-chip-right { background: rgb(114, 213, 142); }
+
 .waveform-panel-title { font-size: 10px; font-weight: 600; color: var(--text); }
 .waveform-panel-meta { font-size: 9px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .output-scope-panel .waveform-panel-title,
@@ -222,11 +254,24 @@ header {
 }
 
 .output-scope-large {
-  grid-column: 1 / -1;
+  grid-column: 2 / 4;
+  grid-row: 3 / span 2;
+}
+
+.scope-side-stack {
+  grid-column: 1 / 2;
+  grid-row: 3 / span 2;
+  display: grid;
+  grid-template-rows: 1fr 1fr;
+  gap: 6px;
+}
+
+.scope-side-stack .waveform-canvas {
+  height: 120px;
 }
 
 .output-scope-large .waveform-canvas {
-  height: 180px;
+  height: 255px;
 }
 
 .waveform-canvas {
