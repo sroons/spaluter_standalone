@@ -150,6 +150,27 @@ function buildParameterPages() {
 const PARAM_PAGES = buildParameterPages();
 const MAIN_VIEW_COUNT = 1 + PARAM_PAGES.length;
 const midiUiByParam = new Map();
+// Phase 1.1: per-param last-sent value so we can early-out on no-op set-events
+// (CCs at rest re-send the same 7-bit value many times/sec).
+const lastSentValueByParam = new Map();
+// Phase 1.2: dirty flag + rAF token for waveform redraws so we coalesce
+// per-event redraws to at most one per animation frame.
+let waveformViewsDirty = false;
+let waveformViewsRafId = 0;
+// Phase 2.3b: pending CC stream as an ordered array of [param, value] tuples.
+// We preserve EVERY value (no per-param coalescing) so the synth receives the
+// full resolution of the incoming MIDI stream. Batching is done at the
+// event-loop tick boundary via a microtask, which groups events that arrived
+// together in the same Web MIDI burst into a single fire-and-forget IPC, but
+// does not throttle to the renderer's vsync cadence.
+const pendingCcEvents = [];
+let ccDrainScheduled = false;
+// Phase 2.3: count raw incoming MIDI events between IPC reports so the
+// main process can derive raw-vs-flushed compression. We coalesce the
+// report to the same animation frame so the counter itself doesn't add
+// per-event IPC traffic.
+let midiRawCountWindow = 0;
+let midiRawReportRafId = 0;
 const PREFERRED_MIDI_CC_BY_PARAM = Object.freeze({
   amp: 7,
   drive: 71,
@@ -1216,13 +1237,24 @@ function releaseActiveMidiNote(noteNumber) {
 }
 
 function applyMidiNotePitch(noteNumber) {
-  setParamValue("basePitch", midiNoteToHz(noteNumber), true);
+  // Phase 1.4: route note-derived basePitch through the same staging map as
+  // gate/trigIn so all three land in the same coalesced batch on next rAF.
+  // Per-note-event latency is bounded by one frame (~16 ms at 60 Hz) which
+  // is well below perceptual attack-time thresholds and below scsynth's
+  // own control-block granularity for typical envelopes.
+  const value = normalizeParamValue("basePitch", midiNoteToHz(noteNumber));
+  if (value === null) return;
+  stagePendingParam("basePitch", value);
 }
 
 function updateGateFromMidiNotes() {
+  // Phase 1.4: collapse the prior two ipcRenderer.invoke calls (one for
+  // `gate`, one for `trigIn`) into staged entries that drain together on
+  // the next rAF. Once Phase 2 lands, the drain will emit a single
+  // setParamMany() IPC + OSC bundle, fully closing the 2x amplification.
   const gateValue = activeMidiNotes.length > 0 ? 1 : 0;
-  window.spaluterApi.setParam("gate", gateValue);
-  window.spaluterApi.setParam("trigIn", gateValue);
+  stagePendingParam("gate", gateValue);
+  stagePendingParam("trigIn", gateValue);
 }
 
 function ensureMidiNoteEnvelopeMode() {
@@ -1355,12 +1387,60 @@ function setupMidiMappingControls() {
   document.addEventListener("click", () => closeMidiPanels(null));
 }
 
+function scheduleCcDrain() {
+  if (ccDrainScheduled) return;
+  ccDrainScheduled = true;
+  queueMicrotask(() => {
+    ccDrainScheduled = false;
+    if (pendingCcEvents.length === 0) return;
+    // Snapshot and clear so events that arrive during this drain stage in
+    // a fresh batch.
+    const events = pendingCcEvents.splice(0, pendingCcEvents.length);
+    const flushBatch = [];
+    for (let i = 0; i < events.length; i += 1) {
+      const [param, value] = events[i];
+      // Skip true no-ops (same value as previous) but never drop intermediate
+      // distinct values: every CC step the controller emitted reaches sclang.
+      const previousSent = lastSentValueByParam.get(param);
+      if (previousSent === value) continue;
+      const applied = setParamValue(param, value, false);
+      if (!applied) continue;
+      lastSentValueByParam.set(param, value);
+      flushBatch.push([param, value]);
+    }
+    if (flushBatch.length > 0) {
+      window.spaluterApi.setParamMany(flushBatch);
+    }
+  });
+}
+
+function stagePendingParam(param, value) {
+  pendingCcEvents.push([param, value]);
+  scheduleCcDrain();
+}
+
+function scheduleMidiRawReport() {
+  if (midiRawReportRafId) return;
+  midiRawReportRafId = window.requestAnimationFrame(() => {
+    midiRawReportRafId = 0;
+    if (midiRawCountWindow === 0) return;
+    const n = midiRawCountWindow;
+    midiRawCountWindow = 0;
+    window.spaluterApi.reportMidiRawCount(n);
+  });
+}
+
 function handleMidiMessage(event) {
   const data = event?.data;
   if (!data || data.length < 3) return;
-  const status = Number(data[0]);
-  const data1 = Number(data[1]);
-  const data2 = Number(data[2]);
+  // Phase 2.3 telemetry: count every raw incoming MIDI message so main can
+  // compute the (raw vs flushed) compression ratio. Coalesced via the same
+  // rAF tick as the CC drain to avoid one IPC per event.
+  midiRawCountWindow += 1;
+  scheduleMidiRawReport();
+  const status = data[0] | 0;
+  const data1 = data[1] | 0;
+  const data2 = data[2] | 0;
   const messageType = status & MIDI_STATUS_TYPE_MASK;
 
   if (messageType === MIDI_STATUS_CC) {
@@ -1368,15 +1448,21 @@ function handleMidiMessage(event) {
     const ccValue = data2;
     const mappedParams = midiParamsByCc.get(cc);
     if (!Array.isArray(mappedParams) || mappedParams.length === 0) return;
-    mappedParams.forEach((param) => {
+    // Phase 1.3: stage latest-value-per-param; rAF drain applies them once
+    // per frame. No CC value is dropped; the value at frame boundary is
+    // whatever the controller sent most recently for that CC.
+    for (let i = 0; i < mappedParams.length; i += 1) {
+      const param = mappedParams[i];
       const value = valueFromMidiCc(param, ccValue);
-      if (value === null) return;
-      setParamValue(param, value, true);
-    });
+      if (value === null) continue;
+      stagePendingParam(param, value);
+    }
     return;
   }
 
   if (messageType === MIDI_STATUS_NOTE_ON || messageType === MIDI_STATUS_NOTE_OFF) {
+    // Notes are NOT coalesced. Per the plan, ordering and per-event timing
+    // are preserved end-to-end.
     handleMidiNoteMessage(status, data1, data2);
   }
 }
@@ -1444,9 +1530,27 @@ function normalizeParamValue(param, rawValue) {
   return value;
 }
 
+function scheduleWaveformViewsRedraw() {
+  if (waveformViewsRafId) return;
+  waveformViewsDirty = true;
+  waveformViewsRafId = window.requestAnimationFrame(() => {
+    waveformViewsRafId = 0;
+    if (!waveformViewsDirty) return;
+    waveformViewsDirty = false;
+    updateWaveformViews();
+  });
+}
+
 function setParamValue(param, rawValue, send = true) {
   const value = normalizeParamValue(param, rawValue);
   if (value === null) return false;
+
+  // Phase 1.1: no-op early-out when the normalized value matches what we
+  // last sent for this param. Skips DOM, IPC, and the waveform redraw.
+  // Bypassed when send=false so external state-restore callers still update UI.
+  if (send && lastSentValueByParam.get(param) === value) {
+    return true;
+  }
 
   const knob = knobByParam.get(param);
   if (knob) {
@@ -1485,11 +1589,15 @@ function setParamValue(param, rawValue, send = true) {
     || param === "burstOn"
     || param === "burstOff"
   ) {
-    updateWaveformViews();
+    // Phase 1.2: was a synchronous updateWaveformViews() call per event.
+    scheduleWaveformViewsRedraw();
   }
 
   updateRealtimeParamValue(param, value);
-  if (send) window.spaluterApi.setParam(param, value);
+  if (send) {
+    lastSentValueByParam.set(param, value);
+    window.spaluterApi.setParam(param, value);
+  }
   return true;
 }
 
@@ -1982,6 +2090,20 @@ window.addEventListener("beforeunload", () => {
   if (rendererHeartbeatTimer) {
     clearInterval(rendererHeartbeatTimer);
     rendererHeartbeatTimer = null;
+  }
+  if (waveformViewsRafId) {
+    window.cancelAnimationFrame(waveformViewsRafId);
+    waveformViewsRafId = 0;
+  }
+  if (ccDrainScheduled) {
+    // Microtask drain self-clears; just drop staged events so we don't
+    // emit IPC during teardown.
+    pendingCcEvents.length = 0;
+    ccDrainScheduled = false;
+  }
+  if (midiRawReportRafId) {
+    window.cancelAnimationFrame(midiRawReportRafId);
+    midiRawReportRafId = 0;
   }
 });
 

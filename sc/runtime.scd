@@ -179,11 +179,12 @@ s.doWhenBooted({
         var key, value;
         key = msg[1];
         value = msg[2];
-        {
-            if(~spaluter.notNil and: { key.notNil }) {
-                ~spaluter.set(key.asSymbol, value.asFloat);
-            };
-        }.defer;
+        // Phase 3a: no .defer — calling ~spaluter.set just emits /n_set to
+        // scsynth and is thread-safe. Deferring onto AppClock added ~one
+        // language-frame of latency per CC and frame-quantized the response.
+        if(~spaluter.notNil and: { key.notNil }) {
+            ~spaluter.set(key.asSymbol, value.asFloat);
+        };
     }, "/spaluter/set");
 
     OSCdef(\spaluterLoadSample, { |msg|

@@ -2,6 +2,13 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("spaluterApi", {
   setParam: (key, value) => ipcRenderer.invoke("sc:set-param", { key, value }),
+  // Phase 2.1: fire-and-forget single param (no Promise plumbing).
+  setParamFast: (key, value) => ipcRenderer.send("sc:set-param-fast", { key, value }),
+  // Phase 2.1: batched fire-and-forget. entries = [[key, value], ...]
+  setParamMany: (entries) => ipcRenderer.send("sc:set-param-many", entries),
+  // Phase 2.3 telemetry: report raw incoming MIDI event count so main can
+  // compute (raw vs flushed) compression ratio.
+  reportMidiRawCount: (count) => ipcRenderer.send("midi:raw-count", count),
   trigger: (action) => ipcRenderer.invoke("sc:trigger", action),
   setScope: (enabled, rate) => ipcRenderer.invoke("sc:set-scope", { enabled, rate }),
   listSamples: (dirPath) => ipcRenderer.invoke("samples:list", dirPath),

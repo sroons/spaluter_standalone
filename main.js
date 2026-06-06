@@ -367,9 +367,58 @@ function sendRendererEvent(channel, payload) {
   }
 }
 
+// MIDI/OSC diagnostics: counts per-second rates for /spaluter/set traffic
+// so Phase 0 baseline and Phase 1+ effects can be measured. Logged once/sec.
+let oscSetCountWindow = 0;
+let oscSetCountTotal = 0;
+let oscSetCountPeakPerSec = 0;
+let setParamInFlight = 0;
+let setParamInFlightPeak = 0;
+// Phase 2.3 telemetry: raw incoming MIDI event count reported by renderer.
+let midiRawCountWindow = 0;
+let midiRawCountTotal = 0;
+// Phase 2.2 telemetry: count flush batches and their sizes.
+let setManyBatchesWindow = 0;
+let setManyMaxBatchWindow = 0;
+setInterval(() => {
+  if (oscSetCountWindow > 0 || setParamInFlight > 0 || midiRawCountWindow > 0) {
+    if (oscSetCountWindow > oscSetCountPeakPerSec) oscSetCountPeakPerSec = oscSetCountWindow;
+    const compression = midiRawCountWindow > 0
+      ? (1 - (oscSetCountWindow / midiRawCountWindow)) * 100
+      : 0;
+    const line = `[MIDI-DIAG] raw=${midiRawCountWindow}/s set=${oscSetCountWindow}/s peak=${oscSetCountPeakPerSec}/s compress=${compression.toFixed(0)}% batches=${setManyBatchesWindow}/s maxBatch=${setManyMaxBatchWindow} inflight=${setParamInFlight} inflight-peak=${setParamInFlightPeak} totals: raw=${midiRawCountTotal} set=${oscSetCountTotal}`;
+    console.log(line);
+    sendLog(line);
+  }
+  oscSetCountWindow = 0;
+  midiRawCountWindow = 0;
+  setManyBatchesWindow = 0;
+  setManyMaxBatchWindow = 0;
+}, 1000);
+
 function sendOsc(address, args = []) {
   if (!oscPort) return;
+  if (address === "/spaluter/set") {
+    oscSetCountWindow += 1;
+    oscSetCountTotal += 1;
+  }
   oscPort.send({ address, args });
+}
+
+// Phase 3.1 preview: a true OSC bundle helper. Currently unused (Phase 2
+// emits the batch as separate /spaluter/set messages so SC's existing
+// OSCdef keeps working). Phase 3 wires this in alongside a new
+// /spaluter/set-many OSCdef in runtime.scd.
+function sendOscBundle(packets) {
+  if (!oscPort || !Array.isArray(packets) || packets.length === 0) return;
+  for (let i = 0; i < packets.length; i += 1) {
+    const p = packets[i];
+    if (p && p.address === "/spaluter/set") {
+      oscSetCountWindow += 1;
+      oscSetCountTotal += 1;
+    }
+  }
+  oscPort.send({ timeTag: osc.timeTag(0), packets });
 }
 
 function waitForSynthStartup(timeoutMs = STARTUP_WAIT_TIMEOUT_MS) {
@@ -672,10 +721,62 @@ function registerIpcHandlers() {
   });
 
   ipcMain.handle("sc:set-param", (_evt, payload) => {
+    setParamInFlight += 1;
+    if (setParamInFlight > setParamInFlightPeak) setParamInFlightPeak = setParamInFlight;
+    try {
+      const { key, value } = payload || {};
+      if (typeof key !== "string") return false;
+      sendOsc("/spaluter/set", [key, Number(value)]);
+      return true;
+    } finally {
+      setParamInFlight -= 1;
+    }
+  });
+
+  // Phase 2.2: fire-and-forget single param. No Promise round-trip, no
+  // reply correlation. Renderer's hot path uses this (or set-many).
+  ipcMain.on("sc:set-param-fast", (_evt, payload) => {
     const { key, value } = payload || {};
-    if (typeof key !== "string") return false;
+    if (typeof key !== "string") return;
     sendOsc("/spaluter/set", [key, Number(value)]);
-    return true;
+  });
+
+  // Phase 2.2: batched fire-and-forget. Phase 2 still emits each entry
+  // Phase 3b: send the full batch as a single OSC bundle. Each entry is
+  // still a /spaluter/set so sclang's existing OSCdef handles it without
+  // change (bundled messages dispatch to their per-address responders).
+  // One UDP packet replaces N: fewer syscalls in node-osc, fewer packets
+  // crossing loopback, and SuperCollider applies all messages from the
+  // same bundle in one language-thread pass.
+  ipcMain.on("sc:set-param-many", (_evt, entries) => {
+    if (!Array.isArray(entries) || entries.length === 0) return;
+    setManyBatchesWindow += 1;
+    if (entries.length > setManyMaxBatchWindow) setManyMaxBatchWindow = entries.length;
+    const packets = [];
+    for (let i = 0; i < entries.length; i += 1) {
+      const entry = entries[i];
+      if (!Array.isArray(entry) || entry.length < 2) continue;
+      const key = entry[0];
+      const value = entry[1];
+      if (typeof key !== "string") continue;
+      packets.push({ address: "/spaluter/set", args: [key, Number(value)] });
+    }
+    if (packets.length === 1) {
+      // Single-entry batches are cheaper as a plain message (no bundle wrapper).
+      const p = packets[0];
+      sendOsc(p.address, p.args);
+    } else if (packets.length > 1) {
+      sendOscBundle(packets);
+    }
+  });
+
+  // Phase 2.3: renderer reports raw incoming MIDI events so main can
+  // compute the compression ratio (raw vs flushed).
+  ipcMain.on("midi:raw-count", (_evt, count) => {
+    const n = Number(count);
+    if (!Number.isFinite(n) || n <= 0) return;
+    midiRawCountWindow += n;
+    midiRawCountTotal += n;
   });
 
   ipcMain.handle("sc:trigger", (_evt, action) => {
