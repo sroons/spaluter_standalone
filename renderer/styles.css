@@ -822,28 +822,9 @@ pre#log {
   letter-spacing: 0.04em;
 }
 
-.modulation-master {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 11px;
-  color: var(--text-muted);
-  cursor: pointer;
-}
-
 .modulation-toolbar-group label {
   font-size: 11px;
   color: var(--text-muted);
-}
-
-.modulation-toolbar-group input[type="number"] {
-  width: 58px;
-  background: var(--surface);
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  padding: 3px 6px;
-  font-size: 12px;
 }
 
 .modulation-hint { font-size: 10px; color: var(--text-muted); }

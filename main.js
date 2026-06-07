@@ -824,10 +824,6 @@ function registerIpcHandlers() {
     if (args.length > 0) sendOsc("/spaluter/lfo/set-many", args);
   });
 
-  ipcMain.on("sc:lfo-enable", (_evt, on) => {
-    sendOsc("/spaluter/lfo/enable", [on ? 1 : 0]);
-  });
-
   ipcMain.handle("sc:trigger", (_evt, action) => {
     if (action === "start") sendOsc("/spaluter/start", []);
     if (action === "stop") sendOsc("/spaluter/stop", []);

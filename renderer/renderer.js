@@ -1999,14 +1999,12 @@ let lfoConfigs = Array.from({ length: LFO_MAX }, defaultLfoConfig);
 // All 16 LFOs are always presented and always live on the engine; each one's
 // `enabled` flag (not the count) decides whether it actually runs.
 let lfoCount = LFO_MAX;
-let modEnabled = false;
 let lfoCursorRafId = 0;
 let lfoCursorLast = 0;
 
 const lfoOverviewEl = document.getElementById("lfoOverview");
 const lfoStripListEl = document.getElementById("lfoStripList");
 const lfoCountHintEl = document.getElementById("lfoCountHint");
-const modMasterEnableEl = document.getElementById("modMasterEnable");
 const lfoStripEls = [];
 
 function lfoCapFor(targetName) {
@@ -2304,20 +2302,12 @@ function sendAllLfos() {
 function syncLfosToEngine() {
   window.spaluterApi.setLfoCount(lfoCount);
   sendAllLfos();
-  window.spaluterApi.setModEnabled(modEnabled);
-}
-
-function setModEnabledUi(on, options = {}) {
-  modEnabled = Boolean(on);
-  if (modMasterEnableEl) modMasterEnableEl.checked = modEnabled;
-  if (options.send !== false) window.spaluterApi.setModEnabled(modEnabled);
 }
 
 function collectLfoState() {
   return {
     version: LFO_CONFIG_VERSION,
     count: lfoCount,
-    enabled: modEnabled,
     configs: lfoConfigs.map((c) => ({
       target: c.target,
       rate: c.rate,
@@ -2347,7 +2337,6 @@ function applyLfoState(state) {
     }
     syncLfoStripFromConfig(i);
   }
-  setModEnabledUi(state && state.enabled, { send: false });
   updateLfoHint();
   rebuildLfoOverview();
   syncLfosToEngine();
@@ -2390,9 +2379,6 @@ function handleMainScreenEntered(targetScreen) {
 
 function initModulationUi() {
   buildLfoStrips();
-  if (modMasterEnableEl) {
-    modMasterEnableEl.addEventListener("change", () => setModEnabledUi(modMasterEnableEl.checked));
-  }
   lfoStripEls.forEach((r) => refreshLfoStrip(r.index));
   updateLfoHint();
   rebuildLfoOverview();

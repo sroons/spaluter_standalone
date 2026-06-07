@@ -32,7 +32,7 @@ s.waitForBoot {
         ampJitter=0, timingJitter=0, glisson=0,
         useSample=0, bufnum=0, sampleRate=1.0,
         scopeEnabled=1, scopeRate=20,
-        modBus=0, modEnabled=0|
+        modBus=0|
 
         var atk, rel, glid, vc, fc, mode, ctype, bPitch;
         var fHzArr, panArr, voices, sig, mod;
@@ -47,12 +47,13 @@ s.waitForBoot {
         ctype = chordType.clip(0, 13);
         bPitch = basePitch.max(0.1);
 
-        // Internal LFO modulation: read a 16-channel control bus, gated by
-        // modEnabled (0 => all mod[] are 0 => identical to pre-mod behaviour).
-        // Channel order mirrors `modParams` in sc/runtime.scd. Continuous
-        // params add mod[i] before their existing clip; basePitch modulates
-        // multiplicatively in semitones via midiratio.
-        mod = In.kr(modBus, 16) * modEnabled;
+        // Internal LFO modulation: read a 16-channel control bus. Each LFO
+        // synth writes to its target channel only while enabled; idle channels
+        // are held at 0 by \modClear, so an all-idle bus is identical to
+        // pre-mod behaviour. Channel order mirrors `modParams` in
+        // sc/runtime.scd. Continuous params add mod[i] before their existing
+        // clip; basePitch modulates multiplicatively in semitones via midiratio.
+        mod = In.kr(modBus, 16);
         bPitch = bPitch * mod[15].midiratio;
 
         fHzArr = [formant1 + mod[5], formant2 + mod[6], formant3 + mod[7]].collect({ |x| x.clip(20, 8000) });

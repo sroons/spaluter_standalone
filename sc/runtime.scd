@@ -15,7 +15,7 @@ Boots local scsynth, loads patch file, and exposes OSC control:
 (
     var patchPath, appPort, appAddr, status, startSynth, stopSynth, resetSynth, waitForPatch, waitForSynthDef, silentBuf, booted, loadSample, forwardScope;
     var patchWaitRetries, synthDefWaitRetries, scopeRate, scopeEnabled, applyScopeConfig;
-    var modBus, lfoGroup, modClearSynth, lfoSynths, lfoConfigs, lfoCount, modEnabledState, maxLfo;
+    var modBus, lfoGroup, modClearSynth, lfoSynths, lfoConfigs, lfoCount, maxLfo;
     var modParams, modParamIndex, modDepthCap, setupModulation, spawnLfo, releaseLfo, setLfoCount, applyLfo, rebuildLfos, lfoWarn, lfoWarnLast, lfoWarnCount;
 
 patchPath = ~spaluterPatchPath;
@@ -129,7 +129,6 @@ s.doWhenBooted({
     });
     lfoSynths = Array.fill(maxLfo, { nil });
     lfoCount = 0;
-    modEnabledState = 0;
     lfoWarnLast = 0;
     lfoWarnCount = 0;
 
@@ -236,9 +235,6 @@ s.doWhenBooted({
                     if(~spaluter.notNil) { ~spaluter.free; };
                     setupModulation.value;
                     ~spaluter = ~spaluterStart.(0, modBus.index, lfoGroup, \addAfter);
-                    if(~spaluter.notNil) {
-                        ~spaluter.set(\modEnabled, modEnabledState);
-                    };
                     if(~spaluter.notNil and: { silentBuf.notNil }) {
                         ~spaluter.set(\bufnum, silentBuf.bufnum);
                         applyScopeConfig.value;
@@ -341,12 +337,6 @@ s.doWhenBooted({
             applyLfo.value(msg[b], msg[b+1], msg[b+2], msg[b+3], msg[b+4], msg[b+5], msg[b+6]);
         };
     }, "/spaluter/lfo/set-many");
-
-    OSCdef(\spaluterLfoEnable, { |msg|
-        modEnabledState = (msg[1] ? 0).asInteger.clip(0, 1);
-        if(~spaluter.notNil) { ~spaluter.set(\modEnabled, modEnabledState); };
-        status.value("Modulation " ++ (if(modEnabledState > 0) { "enabled" } { "disabled" }));
-    }, "/spaluter/lfo/enable");
 
     OSCdef(\spaluterLoadSample, { |msg|
         var filePath;
