@@ -1996,14 +1996,15 @@ function defaultLfoConfig() {
 }
 
 let lfoConfigs = Array.from({ length: LFO_MAX }, defaultLfoConfig);
-let lfoCount = 0;
+// All 16 LFOs are always presented and always live on the engine; each one's
+// `enabled` flag (not the count) decides whether it actually runs.
+let lfoCount = LFO_MAX;
 let modEnabled = false;
 let lfoCursorRafId = 0;
 let lfoCursorLast = 0;
 
 const lfoOverviewEl = document.getElementById("lfoOverview");
 const lfoStripListEl = document.getElementById("lfoStripList");
-const lfoCountInputEl = document.getElementById("lfoCount");
 const lfoCountHintEl = document.getElementById("lfoCountHint");
 const modMasterEnableEl = document.getElementById("modMasterEnable");
 const lfoStripEls = [];
@@ -2212,11 +2213,21 @@ function refreshLfoStrip(index) {
   if (!r) return;
   const c = lfoConfigs[index];
   const tgt = LFO_TARGET_BY_NAME.get(c.target);
-  r.strip.classList.toggle("lfo-disabled", !lfoIsActive(c));
+  r.strip.classList.toggle("lfo-disabled", !c.enabled);
   r.metaEl.textContent = `${tgt ? tgt.label : "none"} • ${LFO_SHAPE_NAMES[c.shape]} • ${c.rate.toFixed(2)} Hz`;
   if (r.rateLabelVal) r.rateLabelVal.textContent = `${c.rate.toFixed(2)} Hz`;
   if (r.depthLabelVal) r.depthLabelVal.textContent = `${Math.round(lfoDepthFractionSigned(c) * 100)}%`;
   drawLfoThumb(r.canvas, c, index);
+}
+
+function lfoActiveCount() {
+  let n = 0;
+  for (let i = 0; i < LFO_MAX; i += 1) if (lfoConfigs[i].enabled) n += 1;
+  return n;
+}
+
+function updateLfoHint() {
+  if (lfoCountHintEl) lfoCountHintEl.textContent = `${lfoActiveCount()} of ${LFO_MAX} active`;
 }
 
 function syncLfoStripFromConfig(index) {
@@ -2234,8 +2245,9 @@ function syncLfoStripFromConfig(index) {
 function rebuildLfoOverview() {
   if (!lfoOverviewEl) return;
   lfoOverviewEl.innerHTML = "";
-  for (let i = 0; i < lfoCount; i += 1) {
+  for (let i = 0; i < LFO_MAX; i += 1) {
     const c = lfoConfigs[i];
+    if (!c.enabled) continue;
     const tgt = LFO_TARGET_BY_NAME.get(c.target);
     const card = document.createElement("div");
     card.className = "lfo-overview-card";
@@ -2259,7 +2271,7 @@ function rebuildLfoOverview() {
 
 function redrawAllLfoViews() {
   for (let i = 0; i < LFO_MAX; i += 1) {
-    if (i < lfoCount && lfoStripEls[i]) refreshLfoStrip(i);
+    if (lfoStripEls[i]) refreshLfoStrip(i);
   }
   rebuildLfoOverview();
 }
@@ -2279,12 +2291,13 @@ function lfoToIpc(index) {
 
 function sendLfo(index) {
   window.spaluterApi.setLfo(index, lfoToIpc(index));
+  updateLfoHint();
   rebuildLfoOverview();
 }
 
 function sendAllLfos() {
   const list = [];
-  for (let i = 0; i < lfoCount; i += 1) list.push(lfoToIpc(i));
+  for (let i = 0; i < LFO_MAX; i += 1) list.push(lfoToIpc(i));
   if (list.length > 0) window.spaluterApi.setLfoMany(list);
 }
 
@@ -2292,21 +2305,6 @@ function syncLfosToEngine() {
   window.spaluterApi.setLfoCount(lfoCount);
   sendAllLfos();
   window.spaluterApi.setModEnabled(modEnabled);
-}
-
-function applyLfoCount(rawCount, options = {}) {
-  const send = options.send !== false;
-  lfoCount = clamp(Math.round(Number(rawCount) || 0), 0, LFO_MAX);
-  if (lfoCountInputEl) lfoCountInputEl.value = String(lfoCount);
-  lfoStripEls.forEach((r, i) => {
-    r.strip.style.display = i < lfoCount ? "" : "none";
-  });
-  if (lfoCountHintEl) lfoCountHintEl.textContent = `${lfoCount} running`;
-  rebuildLfoOverview();
-  if (send) {
-    window.spaluterApi.setLfoCount(lfoCount);
-    sendAllLfos();
-  }
 }
 
 function setModEnabledUi(on, options = {}) {
@@ -2350,7 +2348,8 @@ function applyLfoState(state) {
     syncLfoStripFromConfig(i);
   }
   setModEnabledUi(state && state.enabled, { send: false });
-  applyLfoCount(state ? state.count : 0, { send: false });
+  updateLfoHint();
+  rebuildLfoOverview();
   syncLfosToEngine();
 }
 
@@ -2364,7 +2363,7 @@ function lfoCursorTick(timestamp) {
   if (timestamp - lfoCursorLast >= 50) {
     lfoCursorLast = timestamp;
     const now = performance.now() / 1000;
-    for (let i = 0; i < lfoCount; i += 1) {
+    for (let i = 0; i < LFO_MAX; i += 1) {
       const r = lfoStripEls[i];
       const c = lfoConfigs[i];
       if (!r || !lfoIsActive(c)) continue;
@@ -2391,14 +2390,12 @@ function handleMainScreenEntered(targetScreen) {
 
 function initModulationUi() {
   buildLfoStrips();
-  if (lfoCountInputEl) {
-    lfoCountInputEl.addEventListener("change", () => applyLfoCount(lfoCountInputEl.value));
-  }
   if (modMasterEnableEl) {
     modMasterEnableEl.addEventListener("change", () => setModEnabledUi(modMasterEnableEl.checked));
   }
   lfoStripEls.forEach((r) => refreshLfoStrip(r.index));
-  applyLfoCount(0, { send: false });
+  updateLfoHint();
+  rebuildLfoOverview();
 }
 
 function defaultPresetName(index) {
