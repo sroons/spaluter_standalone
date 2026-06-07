@@ -1177,21 +1177,22 @@ function clearOutputScope(label = "Waiting for synth...") {
 }
 
 function updateWaveformViews() {
-  const pulsaret = currentParamValue("pulsaret", 2.5);
-  const windowType = currentParamValue("window", 0.5);
-  const duty = clamp(currentParamValue("duty", 0.5), 0.01, 1);
+  const nowSec = performance.now() / 1000;
+  const pulsaret = currentParamValue("pulsaret", 2.5) + lfoModOffset("pulsaret", nowSec);
+  const windowType = currentParamValue("window", 0.5) + lfoModOffset("window", nowSec);
+  const duty = clamp(currentParamValue("duty", 0.5) + lfoModOffset("duty", nowSec), 0.01, 1);
   const dutyMode = currentParamValue("dutyMode", 0) > 0.5 ? "Formant" : "Manual";
   const formantCount = clamp(Math.round(currentParamValue("formantCount", 2)), 1, 3);
   const formantTrackOn = currentParamValue("formantTrack", 0) > 0.5;
   const maskMode = clamp(Math.round(currentParamValue("maskMode", 0)), 0, 2);
   const perFormantMask = currentParamValue("perFormantMask", 0) > 0.5;
-  const maskAmount = clamp(currentParamValue("maskAmount", 0.5), 0, 1);
+  const maskAmount = clamp(currentParamValue("maskAmount", 0.5) + lfoModOffset("maskAmount", nowSec), 0, 1);
   const burstOn = Math.max(0, Math.round(currentParamValue("burstOn", 4)));
   const burstOff = Math.max(0, Math.round(currentParamValue("burstOff", 0)));
   const formantHzValues = [
-    clamp(currentParamValue("formant1", 20), 20, 8000),
-    clamp(currentParamValue("formant2", 200), 20, 8000),
-    clamp(currentParamValue("formant3", 400), 20, 8000)
+    clamp(currentParamValue("formant1", 20) + lfoModOffset("formant1", nowSec), 20, 8000),
+    clamp(currentParamValue("formant2", 200) + lfoModOffset("formant2", nowSec), 20, 8000),
+    clamp(currentParamValue("formant3", 400) + lfoModOffset("formant3", nowSec), 20, 8000)
   ];
 
   if (pulsaretWaveLabelEl) {
@@ -2030,6 +2031,59 @@ function lfoIsActive(cfg) {
   return Boolean(cfg.enabled) && cfg.target !== "none" && Math.abs(cfg.depth) > 0;
 }
 
+// Parameters that have a synthetic (client-rendered) scope preview which is
+// computed from the knob value rather than live audio. These previews must add
+// the LFO offset so the modulation is visible. amp/drive/pan/jitter etc. show
+// up in the real audio output scope already, so they are intentionally absent.
+const LFO_SYNTH_VIEW_TARGETS = new Set([
+  "pulsaret", "window", "duty", "formant1", "formant2", "formant3", "maskAmount"
+]);
+
+// Live modulation offset (native units) applied to `param` at time nowSec,
+// summing every enabled LFO that targets it. Mirrors the engine: each LFO adds
+// depth * shape(phase) to its target's mod-bus channel. Random shapes are
+// seeded by LFO index for a stable-looking preview (character, not phase-lock).
+function lfoModOffset(param, nowSec) {
+  let sum = 0;
+  for (let i = 0; i < LFO_MAX; i += 1) {
+    const c = lfoConfigs[i];
+    if (!c.enabled || c.target !== param || c.depth === 0) continue;
+    const phase01 = ((((nowSec * c.rate) + c.phase) % 1) + 1) % 1;
+    sum += c.depth * lfoShapeSample(c.shape, phase01, i);
+  }
+  return sum;
+}
+
+function anyActiveLfoTargetsSynthView() {
+  for (let i = 0; i < LFO_MAX; i += 1) {
+    const c = lfoConfigs[i];
+    if (lfoIsActive(c) && LFO_SYNTH_VIEW_TARGETS.has(c.target)) return true;
+  }
+  return false;
+}
+
+// Animation driver that keeps the parameter-page scopes re-rendering while an
+// LFO is sweeping one of the synthetic-view params. Self-gates on screen +
+// active state and throttles to ~20 fps to protect the Pi.
+let paramModRafId = 0;
+let paramModLast = 0;
+
+function paramModTick(timestamp) {
+  paramModRafId = 0;
+  const active = currentMainScreen === "parameters" && anyActiveLfoTargetsSynthView();
+  if (timestamp - paramModLast >= 50) {
+    paramModLast = timestamp;
+    updateWaveformViews();
+  }
+  if (active) scheduleParamModAnim();
+}
+
+function scheduleParamModAnim() {
+  if (paramModRafId) return;
+  if (currentMainScreen !== "parameters" || !anyActiveLfoTargetsSynthView()) return;
+  paramModRafId = window.requestAnimationFrame(paramModTick);
+}
+
 function drawLfoCursor(canvas, cursorT) {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
@@ -2291,6 +2345,10 @@ function sendLfo(index) {
   window.spaluterApi.setLfo(index, lfoToIpc(index));
   updateLfoHint();
   rebuildLfoOverview();
+  // Re-evaluate the parameter-page animation: starts it when a synthetic-view
+  // target becomes active, and lets it settle the static scope when it stops.
+  scheduleParamModAnim();
+  if (currentMainScreen === "parameters") scheduleWaveformViewsRedraw();
 }
 
 function sendAllLfos() {
@@ -2340,6 +2398,8 @@ function applyLfoState(state) {
   updateLfoHint();
   rebuildLfoOverview();
   syncLfosToEngine();
+  scheduleParamModAnim();
+  if (currentMainScreen === "parameters") scheduleWaveformViewsRedraw();
 }
 
 function isModulationScreenActive() {
@@ -2374,6 +2434,8 @@ function handleMainScreenEntered(targetScreen) {
   } else if (targetScreen === "modulation") {
     redrawAllLfoViews();
     scheduleLfoCursor();
+  } else if (targetScreen === "parameters") {
+    scheduleParamModAnim();
   }
 }
 
