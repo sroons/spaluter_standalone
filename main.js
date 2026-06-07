@@ -5,6 +5,18 @@ const fs = require("fs/promises");
 const { spawn } = require("child_process");
 const osc = require("osc");
 
+// On the Pi's Xorg kiosk (openbox, no compositor) Chromium's native-window
+// occlusion detection frequently mis-flags the fullscreen window as occluded and
+// stops presenting frames, throttling ALL rendering (rAF, timers, and even
+// IPC-driven repaints) to ~1 fps. backgroundThrottling:false does not cover
+// occlusion, so disable the occlusion/backgrounding features at the app level and
+// lift the frame-rate cap so animations present at the display rate.
+app.commandLine.appendSwitch("disable-features", "CalculateNativeWinOcclusion");
+app.commandLine.appendSwitch("disable-renderer-backgrounding");
+app.commandLine.appendSwitch("disable-backgrounding-occluded-windows");
+app.commandLine.appendSwitch("disable-gpu-vsync");
+app.commandLine.appendSwitch("disable-frame-rate-limit");
+
 const SC_OSC_PORT = 57130;
 const APP_OSC_RECV_PORT_CANDIDATES = [57131, 57132, 57133, 57134];
 const LOG_BUFFER_LIMIT = 400;
@@ -40,6 +52,11 @@ let rendererUnresponsiveTimer = null;
 let rendererHeartbeatInterval = null;
 let lastRendererHeartbeatAt = 0;
 let appCpuUsageInterval = null;
+let scopeRecvWindow = 0;
+let lastRendererFps = 0;
+let paramAnimActive = false;
+let paramAnimInterval = null;
+let paramAnimTickMs = 33;
 const statusSubscribers = new Set();
 
 function defaultSampleDir() {
@@ -305,6 +322,7 @@ function createOscClient() {
             if (Number.isFinite(value)) samples.push(value);
           }
           if (samples.length > 0 && mainWindow) {
+            scopeRecvWindow += 1;
             mainWindow.webContents.send("sc-scope", samples);
           }
         } else {
@@ -381,12 +399,12 @@ let midiRawCountTotal = 0;
 let setManyBatchesWindow = 0;
 let setManyMaxBatchWindow = 0;
 setInterval(() => {
-  if (oscSetCountWindow > 0 || setParamInFlight > 0 || midiRawCountWindow > 0) {
+  if (oscSetCountWindow > 0 || setParamInFlight > 0 || midiRawCountWindow > 0 || scopeRecvWindow > 0 || lastRendererFps > 0) {
     if (oscSetCountWindow > oscSetCountPeakPerSec) oscSetCountPeakPerSec = oscSetCountWindow;
     const compression = midiRawCountWindow > 0
       ? (1 - (oscSetCountWindow / midiRawCountWindow)) * 100
       : 0;
-    const line = `[MIDI-DIAG] raw=${midiRawCountWindow}/s set=${oscSetCountWindow}/s peak=${oscSetCountPeakPerSec}/s compress=${compression.toFixed(0)}% batches=${setManyBatchesWindow}/s maxBatch=${setManyMaxBatchWindow} inflight=${setParamInFlight} inflight-peak=${setParamInFlightPeak} totals: raw=${midiRawCountTotal} set=${oscSetCountTotal}`;
+    const line = `[MIDI-DIAG] raw=${midiRawCountWindow}/s set=${oscSetCountWindow}/s peak=${oscSetCountPeakPerSec}/s compress=${compression.toFixed(0)}% batches=${setManyBatchesWindow}/s maxBatch=${setManyMaxBatchWindow} inflight=${setParamInFlight} inflight-peak=${setParamInFlightPeak} scope=${scopeRecvWindow}/s fps=${lastRendererFps} totals: raw=${midiRawCountTotal} set=${oscSetCountTotal}`;
     console.log(line);
     sendLog(line);
   }
@@ -394,7 +412,38 @@ setInterval(() => {
   midiRawCountWindow = 0;
   setManyBatchesWindow = 0;
   setManyMaxBatchWindow = 0;
+  scopeRecvWindow = 0;
 }, 1000);
+
+// Synthetic scope preview animation is driven from the main process: the renderer's
+// own setInterval/requestAnimationFrame are throttled to ~1 Hz on the Pi's
+// occluded Xorg kiosk window, but IPC-receipt callbacks in the renderer paint at
+// the full push rate (the live output scope proves this). The renderer can
+// request a tick rate (default ~30 fps, responsive mode ~60 fps).
+// So we push a
+// tick that the renderer turns into a redraw. Only runs while the renderer asks
+// for it (on the scopes page with an active synth-view LFO).
+function setParamAnimTicker(active, tickMs = 33) {
+  paramAnimActive = Boolean(active);
+  const parsedTickMs = Number(tickMs);
+  const nextTickMs = Number.isFinite(parsedTickMs) ? Math.max(8, Math.min(100, Math.round(parsedTickMs))) : 33;
+  const rateChanged = nextTickMs !== paramAnimTickMs;
+  paramAnimTickMs = nextTickMs;
+  if (rateChanged && paramAnimInterval) {
+    clearInterval(paramAnimInterval);
+    paramAnimInterval = null;
+  }
+  if (paramAnimActive && !paramAnimInterval) {
+    paramAnimInterval = setInterval(() => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send("param-anim-tick");
+      }
+    }, paramAnimTickMs);
+  } else if (!paramAnimActive && paramAnimInterval) {
+    clearInterval(paramAnimInterval);
+    paramAnimInterval = null;
+  }
+}
 
 function sendOsc(address, args = []) {
   if (!oscPort) return;
@@ -673,7 +722,11 @@ function createWindow() {
     height: 480,
     fullscreen: process.platform === "linux",
     webPreferences: {
-      preload: path.join(__dirname, "preload.js")
+      preload: path.join(__dirname, "preload.js"),
+      // Kiosk fullscreen under Xorg with no compositor can be treated as
+      // occluded, which makes Electron throttle requestAnimationFrame and
+      // timers to ~1 Hz. Disable so renderer animations run at full rate.
+      backgroundThrottling: false
     }
   });
 
@@ -718,6 +771,18 @@ function createWindow() {
 function registerIpcHandlers() {
   ipcMain.on("sc:heartbeat", () => {
     markRendererHeartbeat();
+  });
+
+  ipcMain.on("paramAnim:active", (_evt, payload) => {
+    if (payload && typeof payload === "object") {
+      setParamAnimTicker(payload.active, payload.tickMs);
+      return;
+    }
+    setParamAnimTicker(payload);
+  });
+
+  ipcMain.on("diag:fps", (_evt, fps) => {
+    lastRendererFps = Number(fps) || 0;
   });
 
   ipcMain.handle("sc:set-param", (_evt, payload) => {

@@ -18,7 +18,6 @@ const loadSampleBtn = document.getElementById("loadSample");
 const synthToggleBtn = document.getElementById("synthToggle");
 const outputScopeCanvas = document.getElementById("outputScopeView");
 const peakMeterCanvas = document.getElementById("peakMeterView");
-const stereoCorrScopeCanvas = document.getElementById("stereoCorrScopeView");
 const pulsaretWaveCanvas = document.getElementById("pulsaretWaveView");
 const windowWaveCanvas = document.getElementById("windowWaveView");
 const dutyWaveCanvas = document.getElementById("dutyWaveView");
@@ -27,7 +26,6 @@ const formantActivityCanvas = document.getElementById("formantActivityView");
 const maskScopeCanvas = document.getElementById("maskScopeView");
 const outputScopeLabelEl = document.getElementById("outputScopeLabel");
 const peakMeterLabelEl = document.getElementById("peakMeterLabel");
-const stereoCorrScopeLabelEl = document.getElementById("stereoCorrScopeLabel");
 const pulsaretWaveLabelEl = document.getElementById("pulsaretWaveLabel");
 const windowWaveLabelEl = document.getElementById("windowWaveLabel");
 const dutyWaveLabelEl = document.getElementById("dutyWaveLabel");
@@ -66,6 +64,10 @@ const LOG_LINE_LIMIT = 400;
 const RESIZE_DEBOUNCE_MS = 120;
 const MIN_SCOPE_RATE_HZ = 2;
 const ACTIVE_SCOPE_RATE_HZ = 20;
+const PARAM_ANIM_TICK_MS_DEFAULT = 33;
+const PARAM_ANIM_TICK_MS_RESPONSIVE = 22;
+const RESPONSIVE_PREVIEW_MODE_STORAGE_KEY = "spaluter-responsive-preview-v1";
+const DEFAULT_RESPONSIVE_PREVIEW_MODE = true;
 const MAIN_SCREENS = ["scopes", "parameters"];
 const SCREEN_SLIDE_MS = 240;
 const SWIPE_MIN_DISTANCE_PX = 60;
@@ -88,6 +90,7 @@ let rendererHeartbeatTimer = null;
 let activeKnobDrag = null;
 let logLineCount = 0;
 let scopeStreamingEnabled = true;
+let scopeStreamingRateHz = ACTIVE_SCOPE_RATE_HZ;
 let currentMainScreen = "scopes";
 let currentViewIndex = 0;
 let screenTransitionTimer = null;
@@ -96,6 +99,7 @@ let currentParamPage = 0;
 let lastMidiInputCount = -1;
 let lastMidiStateLogAt = 0;
 let lastMidiStateKey = "";
+let responsivePreviewMode = DEFAULT_RESPONSIVE_PREVIEW_MODE;
 const controlMetaByParam = new Map();
 const paramValueElByParam = new Map();
 const paramSliderByParam = new Map();
@@ -131,6 +135,16 @@ const PARAM_PAGE_DEFINITIONS = Object.freeze([
     params: ["useSample", "sampleRate"]
   }
 ]);
+
+function loadResponsivePreviewMode() {
+  try {
+    const raw = localStorage.getItem(RESPONSIVE_PREVIEW_MODE_STORAGE_KEY);
+    if (raw === null) return DEFAULT_RESPONSIVE_PREVIEW_MODE;
+    return raw === "1" || raw === "true";
+  } catch {
+    return DEFAULT_RESPONSIVE_PREVIEW_MODE;
+  }
+}
 
 function buildParameterPages() {
   const availableParams = new Set(allParamNames);
@@ -238,7 +252,6 @@ const OUTPUT_SCOPE_SMOOTHING_ALPHA = 0.35;
 const OUTPUT_SCOPE_ZERO_CROSSING_MIN_SLOPE = 0.02;
 const OUTPUT_SCOPE_COMPAND_GAMMA = 0.45;
 const OUTPUT_SCOPE_COMPAND_MIX = 0.75;
-const OUTPUT_ANALYSIS_HISTORY_SIZE = 96;
 const STEREO_PEAK_HOLD_FRAMES = 14;
 const STEREO_PEAK_DECAY_PER_FRAME = 0.03;
 const STEREO_HOLD_DECAY_PER_FRAME = 0.012;
@@ -264,20 +277,12 @@ let outputScopeSamples = {
   left: scopeRenderBuffers[0],
   right: null
 };
-const stereoCorrHistory = new Float64Array(OUTPUT_ANALYSIS_HISTORY_SIZE);
 let stereoPeakDisplayL = 0;
 let stereoPeakDisplayR = 0;
 let stereoPeakHoldL = 0;
 let stereoPeakHoldR = 0;
 let stereoPeakHoldAgeL = 0;
 let stereoPeakHoldAgeR = 0;
-
-function pushHistoryValue(history, value) {
-  for (let i = 0; i < history.length - 1; i += 1) {
-    history[i] = history[i + 1];
-  }
-  history[history.length - 1] = value;
-}
 
 function appendLogLine(line) {
   if (!logEl) return;
@@ -674,45 +679,6 @@ function drawOutputScope(canvas, left, right = null) {
   ctx.globalCompositeOperation = prevComposite;
 }
 
-function drawHistoryScope(canvas, values, minValue, maxValue, color) {
-  if (!canvas) return;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return;
-  const metrics = getCanvasMetrics(canvas);
-  const {
-    dpr, drawWidth, drawHeight, leftPad, rightPad, topPad, bottomPad
-  } = metrics;
-
-  if (canvas.width !== drawWidth || canvas.height !== drawHeight) {
-    canvas.width = drawWidth;
-    canvas.height = drawHeight;
-  }
-
-  ctx.clearRect(0, 0, drawWidth, drawHeight);
-  ctx.lineWidth = Math.max(1, dpr);
-  ctx.strokeStyle = "rgba(169, 180, 208, 0.3)";
-  ctx.beginPath();
-  const centerY = topPad + ((1 - clamp((0 - minValue) / (maxValue - minValue || 1), 0, 1)) * Math.max(1, bottomPad - topPad));
-  ctx.moveTo(0, centerY);
-  ctx.lineTo(drawWidth, centerY);
-  ctx.stroke();
-
-  const usableWidth = Math.max(1, rightPad - leftPad);
-  const usableHeight = Math.max(1, bottomPad - topPad);
-  const range = maxValue - minValue || 1;
-  ctx.strokeStyle = color;
-  ctx.beginPath();
-  for (let i = 0; i < values.length; i += 1) {
-    const t = values.length <= 1 ? 0 : i / (values.length - 1);
-    const normalized = clamp((values[i] - minValue) / range, 0, 1);
-    const x = leftPad + (t * usableWidth);
-    const y = topPad + ((1 - normalized) * usableHeight);
-    if (i === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
-  }
-  ctx.stroke();
-}
-
 function computeScopePeaksFromPayload(samples) {
   if (!Array.isArray(samples) || samples.length === 0) return { leftPeak: 0, rightPeak: 0 };
   let leftPeak = 0;
@@ -732,24 +698,6 @@ function computeScopePeaksFromPayload(samples) {
   }
   if (rightCount === 0) rightPeak = leftPeak;
   return { leftPeak: clamp(leftPeak, 0, 1), rightPeak: clamp(rightPeak, 0, 1) };
-}
-
-function computeFrameCorrelation(left, right = null) {
-  if (!left || !right || left.length === 0 || right.length === 0) return 0;
-  const n = Math.min(left.length, right.length);
-  let dot = 0;
-  let ll = 0;
-  let rr = 0;
-  for (let i = 0; i < n; i += 1) {
-    const l = Number(left[i]) || 0;
-    const r = Number(right[i]) || 0;
-    dot += l * r;
-    ll += l * l;
-    rr += r * r;
-  }
-  const denom = Math.sqrt(ll * rr);
-  if (!Number.isFinite(denom) || denom <= 1e-9) return 0;
-  return clamp(dot / denom, -1, 1);
 }
 
 function updateStereoPeakState(leftPeak, rightPeak) {
@@ -836,7 +784,6 @@ function drawStereoPeakMeter(canvas) {
 
 function drawOutputAnalysisScopes() {
   drawStereoPeakMeter(peakMeterCanvas);
-  drawHistoryScope(stereoCorrScopeCanvas, stereoCorrHistory, -1, 1, "rgb(170, 146, 240)");
 }
 
 function drawFormantWaves(canvas, formantHzValues, activeCount) {
@@ -1141,13 +1088,10 @@ function setOutputScopeSamples(samples, label = "Live output") {
     ? normalizeScopeSamples(samples, 1, OUTPUT_SCOPE_FRAME_SIZE)
     : null;
   outputScopeSamples = { left, right };
-  const corr = computeFrameCorrelation(outputScopeSamples.left, outputScopeSamples.right);
   updateStereoPeakState(peaks.leftPeak, peaks.rightPeak);
-  pushHistoryValue(stereoCorrHistory, corr);
   if (peakMeterLabelEl) {
     peakMeterLabelEl.textContent = `L ${linearToDb(peaks.leftPeak).toFixed(1)} dB • R ${linearToDb(peaks.rightPeak).toFixed(1)} dB`;
   }
-  if (stereoCorrScopeLabelEl) stereoCorrScopeLabelEl.textContent = corr >= 0 ? `+${corr.toFixed(2)}` : `${corr.toFixed(2)}`;
   if (outputScopeLabelEl) outputScopeLabelEl.textContent = label;
   drawOutputScope(outputScopeCanvas, outputScopeSamples.left, outputScopeSamples.right);
   drawOutputAnalysisScopes();
@@ -1159,9 +1103,6 @@ function clearOutputScope(label = "Waiting for synth...") {
       scopeRenderBuffers[ch][i] = 0;
     }
   }
-  for (let i = 0; i < OUTPUT_ANALYSIS_HISTORY_SIZE; i += 1) {
-    stereoCorrHistory[i] = 0;
-  }
   stereoPeakDisplayL = 0;
   stereoPeakDisplayR = 0;
   stereoPeakHoldL = 0;
@@ -1170,98 +1111,112 @@ function clearOutputScope(label = "Waiting for synth...") {
   stereoPeakHoldAgeR = 0;
   outputScopeSamples = { left: scopeRenderBuffers[0], right: scopeRenderBuffers[1] };
   if (peakMeterLabelEl) peakMeterLabelEl.textContent = "L -inf dB • R -inf dB";
-  if (stereoCorrScopeLabelEl) stereoCorrScopeLabelEl.textContent = "+0.00";
   if (outputScopeLabelEl) outputScopeLabelEl.textContent = label;
   drawOutputScope(outputScopeCanvas, outputScopeSamples.left, outputScopeSamples.right);
   drawOutputAnalysisScopes();
 }
 
-function updateWaveformViews() {
-  const nowSec = performance.now() / 1000;
-  const pulsaret = currentParamValue("pulsaret", 2.5) + lfoModOffset("pulsaret", nowSec);
-  const windowType = currentParamValue("window", 0.5) + lfoModOffset("window", nowSec);
-  const duty = clamp(currentParamValue("duty", 0.5) + lfoModOffset("duty", nowSec), 0.01, 1);
-  const dutyMode = currentParamValue("dutyMode", 0) > 0.5 ? "Formant" : "Manual";
-  const formantCount = clamp(Math.round(currentParamValue("formantCount", 2)), 1, 3);
-  const formantTrackOn = currentParamValue("formantTrack", 0) > 0.5;
-  const maskMode = clamp(Math.round(currentParamValue("maskMode", 0)), 0, 2);
-  const perFormantMask = currentParamValue("perFormantMask", 0) > 0.5;
-  const maskAmount = clamp(currentParamValue("maskAmount", 0.5) + lfoModOffset("maskAmount", nowSec), 0, 1);
-  const burstOn = Math.max(0, Math.round(currentParamValue("burstOn", 4)));
-  const burstOff = Math.max(0, Math.round(currentParamValue("burstOff", 0)));
-  const formantHzValues = [
-    clamp(currentParamValue("formant1", 20) + lfoModOffset("formant1", nowSec), 20, 8000),
-    clamp(currentParamValue("formant2", 200) + lfoModOffset("formant2", nowSec), 20, 8000),
-    clamp(currentParamValue("formant3", 400) + lfoModOffset("formant3", nowSec), 20, 8000)
-  ];
+function computeWaveformValues(nowSec) {
+  return {
+    pulsaret: currentParamValue("pulsaret", 2.5) + lfoModOffset("pulsaret", nowSec),
+    windowType: currentParamValue("window", 0.5) + lfoModOffset("window", nowSec),
+    duty: clamp(currentParamValue("duty", 0.5) + lfoModOffset("duty", nowSec), 0.01, 1),
+    dutyMode: currentParamValue("dutyMode", 0) > 0.5 ? "Formant" : "Manual",
+    formantCount: clamp(Math.round(currentParamValue("formantCount", 2)), 1, 3),
+    formantTrackOn: currentParamValue("formantTrack", 0) > 0.5,
+    maskMode: clamp(Math.round(currentParamValue("maskMode", 0)), 0, 2),
+    perFormantMask: currentParamValue("perFormantMask", 0) > 0.5,
+    maskAmount: clamp(currentParamValue("maskAmount", 0.5) + lfoModOffset("maskAmount", nowSec), 0, 1),
+    burstOn: Math.max(0, Math.round(currentParamValue("burstOn", 4))),
+    burstOff: Math.max(0, Math.round(currentParamValue("burstOff", 0))),
+    formantHzValues: [
+      clamp(currentParamValue("formant1", 20) + lfoModOffset("formant1", nowSec), 20, 8000),
+      clamp(currentParamValue("formant2", 200) + lfoModOffset("formant2", nowSec), 20, 8000),
+      clamp(currentParamValue("formant3", 400) + lfoModOffset("formant3", nowSec), 20, 8000)
+    ]
+  };
+}
 
+function drawPulsaretView(v) {
   if (pulsaretWaveLabelEl) {
-    pulsaretWaveLabelEl.textContent = `${interpolatedWaveLabel(pulsaret, PULSARET_WAVE_NAMES)} (${pulsaret.toFixed(2)})`;
+    pulsaretWaveLabelEl.textContent = `${interpolatedWaveLabel(v.pulsaret, PULSARET_WAVE_NAMES)} (${v.pulsaret.toFixed(2)})`;
   }
+  drawWaveform(
+    pulsaretWaveCanvas,
+    (t) => interpolatedWaveSample(v.pulsaret, 9, pulsaretWaveSample, t),
+    -1,
+    1
+  );
+}
+
+function drawWindowView(v) {
   if (windowWaveLabelEl) {
-    windowWaveLabelEl.textContent = `${interpolatedWaveLabel(windowType, WINDOW_WAVE_NAMES)} (${windowType.toFixed(2)})`;
+    windowWaveLabelEl.textContent = `${interpolatedWaveLabel(v.windowType, WINDOW_WAVE_NAMES)} (${v.windowType.toFixed(2)})`;
   }
+  drawWaveform(
+    windowWaveCanvas,
+    (t) => interpolatedWaveSample(v.windowType, 8, windowWaveSample, t),
+    0,
+    1
+  );
+}
+
+function drawDutyView(v) {
   if (dutyWaveLabelEl) {
-    dutyWaveLabelEl.textContent = `${duty.toFixed(2)} • ${dutyMode}`;
+    dutyWaveLabelEl.textContent = `${v.duty.toFixed(2)} • ${v.dutyMode}`;
   }
+  drawDutyScopeWithOverlay(dutyWaveCanvas, v.duty, v.windowType);
+}
+
+function drawFormantViews(v) {
   if (formantWaveLabelEl) {
-    const activeLabels = formantHzValues
-      .slice(0, formantCount)
+    const activeLabels = v.formantHzValues
+      .slice(0, v.formantCount)
       .map((hz, index) => `F${index + 1} ${Math.round(hz)} Hz`);
     formantWaveLabelEl.textContent = activeLabels.join(" • ");
   }
   if (formantActivityLabelEl) {
-    const trackText = formantTrackOn ? "Tracked" : "Static";
+    const trackText = v.formantTrackOn ? "Tracked" : "Static";
     formantActivityLabelEl.textContent = `${trackText} • Mask-aware`;
   }
-  if (maskScopeLabelEl) {
-    const mode = MASK_MODE_NAMES[maskMode] || MASK_MODE_NAMES[0];
-    const perFormantState = perFormantMask ? "PF on" : "PF off";
-    maskScopeLabelEl.textContent = `${mode} • ${perFormantState} • ${maskAmount.toFixed(2)}`;
-  }
-
-  drawWaveform(
-    pulsaretWaveCanvas,
-    (t) => interpolatedWaveSample(pulsaret, 9, pulsaretWaveSample, t),
-    -1,
-    1
-  );
-  drawWaveform(
-    windowWaveCanvas,
-    (t) => interpolatedWaveSample(windowType, 8, windowWaveSample, t),
-    0,
-    1
-  );
-  drawDutyScopeWithOverlay(
-    dutyWaveCanvas,
-    duty,
-    windowType
-  );
-  drawFormantWaves(
-    formantWaveCanvas,
-    formantHzValues,
-    formantCount
-  );
+  drawFormantWaves(formantWaveCanvas, v.formantHzValues, v.formantCount);
   drawFormantActivityHeatmap(
     formantActivityCanvas,
-    formantHzValues,
-    formantCount,
-    formantTrackOn,
-    maskMode,
-    perFormantMask,
-    maskAmount,
-    burstOn,
-    burstOff
+    v.formantHzValues,
+    v.formantCount,
+    v.formantTrackOn,
+    v.maskMode,
+    v.perFormantMask,
+    v.maskAmount,
+    v.burstOn,
+    v.burstOff
   );
+}
+
+function drawMaskView(v) {
+  if (maskScopeLabelEl) {
+    const mode = MASK_MODE_NAMES[v.maskMode] || MASK_MODE_NAMES[0];
+    const perFormantState = v.perFormantMask ? "PF on" : "PF off";
+    maskScopeLabelEl.textContent = `${mode} • ${perFormantState} • ${v.maskAmount.toFixed(2)}`;
+  }
   drawMaskScope(
     maskScopeCanvas,
-    maskMode,
-    perFormantMask,
-    maskAmount,
-    burstOn,
-    burstOff,
-    formantCount
+    v.maskMode,
+    v.perFormantMask,
+    v.maskAmount,
+    v.burstOn,
+    v.burstOff,
+    v.formantCount
   );
+}
+
+function updateWaveformViews() {
+  const v = computeWaveformValues(performance.now() / 1000);
+  drawPulsaretView(v);
+  drawWindowView(v);
+  drawDutyView(v);
+  drawFormantViews(v);
+  drawMaskView(v);
   drawOutputScope(outputScopeCanvas, outputScopeSamples.left, outputScopeSamples.right);
   drawOutputAnalysisScopes();
 }
@@ -2062,27 +2017,87 @@ function anyActiveLfoTargetsSynthView() {
   return false;
 }
 
-// Animation driver that keeps the parameter-page scopes re-rendering while an
-// LFO is sweeping one of the synthetic-view params. Self-gates on screen +
-// active state and throttles to ~20 fps to protect the Pi.
-let paramModRafId = 0;
-let paramModLast = 0;
-
-function paramModTick(timestamp) {
-  paramModRafId = 0;
-  const active = currentMainScreen === "parameters" && anyActiveLfoTargetsSynthView();
-  if (timestamp - paramModLast >= 50) {
-    paramModLast = timestamp;
-    updateWaveformViews();
+// True if any enabled LFO targets one of `params`.
+function anyActiveLfoTargets(params) {
+  for (let i = 0; i < LFO_MAX; i += 1) {
+    const c = lfoConfigs[i];
+    if (lfoIsActive(c) && params.has(c.target)) return true;
   }
-  if (active) scheduleParamModAnim();
+  return false;
+}
+
+const FORMANT_MOD_TARGETS = new Set(["formant1", "formant2", "formant3"]);
+const PULSARET_MOD = new Set(["pulsaret"]);
+const WINDOW_MOD = new Set(["window"]);
+const DUTY_MOD = new Set(["duty"]);
+const MASK_MOD = new Set(["maskAmount"]);
+
+// Redraw ONLY the synthetic-view canvases whose params are currently being
+// modulated, keeping per-frame cost proportional to what's actually moving
+// (the formant heatmap is the only heavy draw and is skipped unless a
+// formant/mask LFO is active). The live audio output scope/analysis are driven
+// separately by incoming scope data, so they're not touched here.
+function redrawModulatedParamViews() {
+  const v = computeWaveformValues(performance.now() / 1000);
+  const formantActive = anyActiveLfoTargets(FORMANT_MOD_TARGETS);
+  const maskActive = anyActiveLfoTargets(MASK_MOD);
+  if (anyActiveLfoTargets(PULSARET_MOD)) drawPulsaretView(v);
+  if (anyActiveLfoTargets(WINDOW_MOD)) {
+    drawWindowView(v);
+    drawDutyView(v); // duty overlay renders the window curve
+  }
+  if (anyActiveLfoTargets(DUTY_MOD)) drawDutyView(v);
+  if (formantActive) drawFormantViews(v);
+  if (maskActive) {
+    drawMaskView(v);
+    if (!formantActive) drawFormantViews(v); // heatmap is mask-aware
+  }
+}
+
+// Animation driver for the synthetic scope previews while an LFO sweeps a
+// synthetic-view param. The clock comes from the MAIN process over IPC
+// ("param-anim-tick"): the renderer's own setInterval/requestAnimationFrame are
+// throttled to ~1 Hz on the Pi's occluded Xorg kiosk window, but IPC-receipt
+// callbacks paint at the full push rate (the live output scope proves this).
+// Self-gates on the active screen + LFO state and stops (after one settling
+// redraw) otherwise.
+let paramModActive = false;
+
+function paramModNeedsAnim() {
+  return currentMainScreen === "scopes" && anyActiveLfoTargetsSynthView();
+}
+
+function desiredParamAnimTickMs() {
+  return responsivePreviewMode ? PARAM_ANIM_TICK_MS_RESPONSIVE : PARAM_ANIM_TICK_MS_DEFAULT;
 }
 
 function scheduleParamModAnim() {
-  if (paramModRafId) return;
-  if (currentMainScreen !== "parameters" || !anyActiveLfoTargetsSynthView()) return;
-  paramModRafId = window.requestAnimationFrame(paramModTick);
+  refreshScopeStreamingState();
+  if (!paramModNeedsAnim()) return;
+  const tickMs = desiredParamAnimTickMs();
+  if (paramModActive) {
+    window.spaluterApi.setParamAnimActive(true, tickMs);
+    return;
+  }
+  paramModActive = true;
+  window.spaluterApi.setParamAnimActive(true, tickMs);
 }
+
+function stopParamModAnim() {
+  if (!paramModActive) return;
+  paramModActive = false;
+  window.spaluterApi.setParamAnimActive(false);
+  refreshScopeStreamingState();
+}
+
+window.spaluterApi.onParamAnimTick(() => {
+  if (!paramModNeedsAnim()) {
+    stopParamModAnim();
+    updateWaveformViews(); // settle scopes back to their static value
+    return;
+  }
+  redrawModulatedParamViews();
+});
 
 function drawLfoCursor(canvas, cursorT) {
   const ctx = canvas.getContext("2d");
@@ -2345,10 +2360,10 @@ function sendLfo(index) {
   window.spaluterApi.setLfo(index, lfoToIpc(index));
   updateLfoHint();
   rebuildLfoOverview();
-  // Re-evaluate the parameter-page animation: starts it when a synthetic-view
+  // Re-evaluate synthetic scope-preview animation: starts it when a synthetic-view
   // target becomes active, and lets it settle the static scope when it stops.
   scheduleParamModAnim();
-  if (currentMainScreen === "parameters") scheduleWaveformViewsRedraw();
+  if (currentMainScreen === "scopes") scheduleWaveformViewsRedraw();
 }
 
 function sendAllLfos() {
@@ -2399,7 +2414,7 @@ function applyLfoState(state) {
   rebuildLfoOverview();
   syncLfosToEngine();
   scheduleParamModAnim();
-  if (currentMainScreen === "parameters") scheduleWaveformViewsRedraw();
+  if (currentMainScreen === "scopes") scheduleWaveformViewsRedraw();
 }
 
 function isModulationScreenActive() {
@@ -2431,12 +2446,12 @@ function scheduleLfoCursor() {
 function handleMainScreenEntered(targetScreen) {
   if (targetScreen === "scopes") {
     scheduleWaveformResizeRefresh();
+    scheduleParamModAnim();
   } else if (targetScreen === "modulation") {
     redrawAllLfoViews();
     scheduleLfoCursor();
-  } else if (targetScreen === "parameters") {
-    scheduleParamModAnim();
   }
+  refreshScopeStreamingState();
 }
 
 function initModulationUi() {
@@ -2591,6 +2606,7 @@ async function loadSelectedSample() {
 
 let presets = loadPresets();
 midiMappings = loadMidiMappings();
+responsivePreviewMode = loadResponsivePreviewMode();
 
 function syncPresetNameField() {
   if (!presetNameEl || !presetSlotEl) return;
@@ -2879,10 +2895,11 @@ function initMainScreenSwipe() {
 
 function setScopeStreaming(enabled) {
   const nextEnabled = Boolean(enabled);
-  if (scopeStreamingEnabled === nextEnabled) return;
+  const nextRate = nextEnabled ? ACTIVE_SCOPE_RATE_HZ : MIN_SCOPE_RATE_HZ;
+  if (scopeStreamingEnabled === nextEnabled && scopeStreamingRateHz === nextRate) return;
   scopeStreamingEnabled = nextEnabled;
-  const scopeRate = nextEnabled ? ACTIVE_SCOPE_RATE_HZ : MIN_SCOPE_RATE_HZ;
-  window.spaluterApi.setScope(nextEnabled, scopeRate).catch(() => {
+  scopeStreamingRateHz = nextRate;
+  window.spaluterApi.setScope(nextEnabled, nextRate).catch(() => {
     appendLog("[SCOPE] Failed to update scope streaming state.");
   });
 }
@@ -2941,7 +2958,26 @@ window.addEventListener("blur", refreshScopeStreamingState);
 rendererHeartbeatTimer = window.setInterval(() => {
   window.spaluterApi.heartbeat();
 }, RENDERER_HEARTBEAT_MS);
+
+// Diagnostic: measure actual requestAnimationFrame frame rate and report it once
+// per second so the main process can log whether rendering is occlusion-throttled.
+let fpsFrameCount = 0;
+let fpsWindowStart = performance.now();
+function fpsProbe() {
+  fpsFrameCount += 1;
+  const now = performance.now();
+  const elapsed = now - fpsWindowStart;
+  if (elapsed >= 1000) {
+    const fps = Math.round((fpsFrameCount * 1000) / elapsed);
+    if (window.spaluterApi.reportFps) window.spaluterApi.reportFps(fps);
+    fpsFrameCount = 0;
+    fpsWindowStart = now;
+  }
+  window.requestAnimationFrame(fpsProbe);
+}
+window.requestAnimationFrame(fpsProbe);
 window.addEventListener("beforeunload", () => {
+  stopParamModAnim();
   if (midiRebindTimer) {
     clearTimeout(midiRebindTimer);
     midiRebindTimer = null;
@@ -3146,8 +3182,5 @@ window.spaluterApi.getInitialState().then((state) => {
   const defaultDir = String(state.sampleDefaultDir || sampleDefaultDir);
   sampleDefaultDir = defaultDir || sampleDefaultDir;
   refreshSampleList(defaultDir, "");
-  window.spaluterApi.setScope(true, ACTIVE_SCOPE_RATE_HZ).catch(() => {
-    appendLog("[SCOPE] Failed to initialize scope streaming.");
-  });
   refreshScopeStreamingState();
 });

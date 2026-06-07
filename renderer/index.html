@@ -59,55 +59,33 @@
           </div>
           <canvas id="dutyWaveView" class="waveform-canvas" width="320" height="84" aria-label="Duty waveform preview"></canvas>
         </div>
-        <div class="waveform-panel formant-scope-panel">
+        <div class="waveform-panel formant-scope-panel equal-height-scope-panel">
           <div class="waveform-panel-header">
             <span class="waveform-panel-title">Formants</span>
             <span id="formantWaveLabel" class="waveform-panel-meta">F1 20 Hz • F2 200 Hz</span>
           </div>
-          <canvas id="formantWaveView" class="waveform-canvas" width="320" height="84" aria-label="Active formants scope preview"></canvas>
+          <canvas id="formantWaveView" class="waveform-canvas" width="320" height="52" aria-label="Active formants scope preview"></canvas>
         </div>
         <div class="waveform-panel formant-activity-panel">
           <div class="waveform-panel-header">
-            <span class="waveform-panel-title formant-activity-title">Formant<br />Activity</span>
+            <span class="waveform-panel-title">Formant Activity</span>
             <span id="formantActivityLabel" class="waveform-panel-meta">Static • Mask-aware</span>
           </div>
           <canvas id="formantActivityView" class="waveform-canvas" width="320" height="84" aria-label="Formant activity heatmap"></canvas>
         </div>
-        <div class="waveform-panel">
+        <div class="waveform-panel equal-height-scope-panel">
           <div class="waveform-panel-header">
             <span class="waveform-panel-title">Mask Scope</span>
             <span id="maskScopeLabel" class="waveform-panel-meta">Off • PF off • 0.50</span>
           </div>
           <canvas id="maskScopeView" class="waveform-canvas" width="320" height="84" aria-label="Mask activity scope"></canvas>
         </div>
-        <div class="scope-side-stack" aria-label="Output analysis scopes">
-          <div class="waveform-panel">
-            <div class="waveform-panel-header">
-              <span class="waveform-panel-title">Stereo Peak</span>
-              <span id="peakMeterLabel" class="waveform-panel-meta">L -inf dB • R -inf dB</span>
-            </div>
-            <canvas id="peakMeterView" class="waveform-canvas" width="320" height="120" aria-label="Stereo peak hold meter"></canvas>
-          </div>
-          <div class="waveform-panel">
-            <div class="waveform-panel-header">
-              <span class="waveform-panel-title">Stereo Corr</span>
-              <span id="stereoCorrScopeLabel" class="waveform-panel-meta">+0.00</span>
-            </div>
-            <canvas id="stereoCorrScopeView" class="waveform-canvas" width="320" height="120" aria-label="Stereo correlation scope"></canvas>
-          </div>
-        </div>
-        <div class="waveform-panel output-scope-panel output-scope-large">
+        <div class="waveform-panel equal-height-scope-panel peak-meter-panel">
           <div class="waveform-panel-header">
-            <span class="waveform-panel-title">Output Scope</span>
-            <div class="output-scope-header-right">
-              <span class="scope-color-legend" aria-label="Scope channel colors">
-                <span class="scope-color-legend-item"><span class="scope-color-chip scope-color-chip-left"></span>L</span>
-                <span class="scope-color-legend-item"><span class="scope-color-chip scope-color-chip-right"></span>R</span>
-              </span>
-              <span id="outputScopeLabel" class="waveform-panel-meta">Waiting for synth...</span>
-            </div>
+            <span class="waveform-panel-title">Stereo Peak</span>
+            <span id="peakMeterLabel" class="waveform-panel-meta">L -inf dB • R -inf dB</span>
           </div>
-          <canvas id="outputScopeView" class="waveform-canvas" width="320" height="235" aria-label="Output stereo waveform scope"></canvas>
+          <canvas id="peakMeterView" class="waveform-canvas" width="320" height="52" aria-label="Stereo peak hold meter"></canvas>
         </div>
         </div>
       </section>
