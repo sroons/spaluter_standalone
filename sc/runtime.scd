@@ -15,6 +15,8 @@ Boots local scsynth, loads patch file, and exposes OSC control:
 (
     var patchPath, appPort, appAddr, status, startSynth, stopSynth, resetSynth, waitForPatch, waitForSynthDef, silentBuf, booted, loadSample, forwardScope;
     var patchWaitRetries, synthDefWaitRetries, scopeRate, scopeEnabled, applyScopeConfig;
+    var modBus, lfoGroup, modClearSynth, lfoSynths, lfoConfigs, lfoCount, modEnabledState, maxLfo;
+    var modParams, modParamIndex, modDepthCap, setupModulation, spawnLfo, releaseLfo, setLfoCount, applyLfo, rebuildLfos, lfoWarn, lfoWarnLast, lfoWarnCount;
 
 patchPath = ~spaluterPatchPath;
 if(patchPath.isNil) {
@@ -103,12 +105,140 @@ s.doWhenBooted({
         };
     };
 
+    // ----- Internal LFO modulation -----
+    // Canonical order of modulatable params; index = channel on the mod bus.
+    // MUST match the mod[] indices applied in the \spaluterSC SynthDef.
+    maxLfo = 32;
+    modParams = [
+        \amp, \drive, \pulsaret, \window, \duty,
+        \formant1, \formant2, \formant3, \maskAmount,
+        \pan1, \pan2, \pan3,
+        \ampJitter, \timingJitter, \glisson, \basePitch
+    ];
+    modParamIndex = IdentityDictionary.new;
+    modParams.do { |name, i| modParamIndex[name] = i };
+    // Per-param depth caps (native units) to avoid clip-slamming bounded params.
+    modDepthCap = IdentityDictionary.newFrom([
+        \amp, 0.5, \drive, 0.5, \pulsaret, 2.0, \window, 0.5, \duty, 0.5,
+        \formant1, 1000, \formant2, 1000, \formant3, 1000, \maskAmount, 0.5,
+        \pan1, 1.0, \pan2, 1.0, \pan3, 1.0,
+        \ampJitter, 0.5, \timingJitter, 0.5, \glisson, 0.5, \basePitch, 12
+    ]);
+    lfoConfigs = Array.fill(maxLfo, {
+        (target: \none, rate: 1.0, depth: 0.0, shape: 0, enabled: 0, phase: 0.0)
+    });
+    lfoSynths = Array.fill(maxLfo, { nil });
+    lfoCount = 0;
+    modEnabledState = 0;
+    lfoWarnLast = 0;
+    lfoWarnCount = 0;
+
+    lfoWarn = { |txt|
+        var now = SystemClock.seconds;
+        lfoWarnCount = lfoWarnCount + 1;
+        if((now - lfoWarnLast) > 1.0) {
+            lfoWarnLast = now;
+            status.value("[LFO] " ++ txt.asString);
+        };
+    };
+
+    // Lazily allocate the mod bus + LFO group (idempotent across synth
+    // restarts). The group holds \modClear (head) then the LFO synths; the
+    // main synth is created \addAfter this group so it reads summed mod values.
+    setupModulation = {
+        if(modBus.isNil) { modBus = Bus.control(s, 16); };
+        if(lfoGroup.isNil) {
+            lfoGroup = Group.new(s);
+            modClearSynth = Synth(\modClear, [\modBus, modBus.index], lfoGroup, \addToHead);
+            rebuildLfos.value;
+        };
+    };
+
+    releaseLfo = { |idx|
+        var old = lfoSynths[idx];
+        if(old.notNil) {
+            // ramp the LFO to 0 (its internal Lag) then free, avoiding a click.
+            old.set(\enabled, 0);
+            AppClock.sched(0.12, { old.free; nil });
+            lfoSynths[idx] = nil;
+        };
+    };
+
+    // Free + respawn LFO synth `idx` from its stored config. Retarget/param
+    // changes route through here (cheap, human-rate).
+    spawnLfo = { |idx|
+        var cfg, tIdx;
+        releaseLfo.value(idx);
+        cfg = lfoConfigs[idx];
+        tIdx = modParamIndex[cfg[\target]];
+        if(lfoGroup.notNil
+            and: { idx < lfoCount }
+            and: { tIdx.notNil }
+            and: { cfg[\enabled] > 0 }) {
+            lfoSynths[idx] = Synth(\spaluterLfo, [
+                \modBus, modBus.index,
+                \targetIdx, tIdx,
+                \rate, cfg[\rate],
+                \depth, cfg[\depth],
+                \shape, cfg[\shape],
+                \phase, cfg[\phase],
+                \enabled, 1
+            ], lfoGroup, \addToTail);
+        };
+    };
+
+    rebuildLfos = {
+        lfoCount.do { |i| spawnLfo.value(i) };
+    };
+
+    setLfoCount = { |n|
+        var oldCount, newCount;
+        oldCount = lfoCount;
+        newCount = n.asInteger.clip(0, maxLfo);
+        if(newCount < oldCount) {
+            (newCount .. (oldCount - 1)).do { |i| releaseLfo.value(i) };
+        };
+        lfoCount = newCount;
+        if(newCount > oldCount) {
+            (oldCount .. (newCount - 1)).do { |i| spawnLfo.value(i) };
+        };
+    };
+
+    // Validate + clamp one LFO config, store it, and respawn that LFO.
+    applyLfo = { |idx, name, rate, depth, shape, enabled, phase|
+        var i, tgt, cap, en, cfg;
+        i = idx.asInteger;
+        if((i < 0) or: { i >= maxLfo }) {
+            lfoWarn.value("idx out of range: " ++ idx.asString);
+        } {
+            tgt = name.asSymbol;
+            en = enabled.asInteger.clip(0, 1);
+            if(modParamIndex[tgt].isNil) {
+                lfoWarn.value("invalid target: " ++ name.asString);
+                tgt = \none; en = 0;
+            };
+            cap = (modDepthCap[tgt] ? 1).asFloat;
+            cfg = lfoConfigs[i];
+            cfg[\target] = tgt;
+            cfg[\rate] = rate.asFloat.clip(0.001, 50);
+            cfg[\depth] = depth.asFloat.clip(cap.neg, cap);
+            cfg[\shape] = shape.asInteger.clip(0, 6);
+            cfg[\enabled] = en;
+            cfg[\phase] = phase.asFloat.wrap(0, 1);
+            spawnLfo.value(i);
+        };
+    };
+
     startSynth = {
         waitForPatch.value({
             waitForSynthDef.value({
                 {
                     if(~spaluter.notNil) { ~spaluter.free; };
-                    ~spaluter = ~spaluterStart.();
+                    setupModulation.value;
+                    ~spaluter = ~spaluterStart.(0, modBus.index, lfoGroup, \addAfter);
+                    if(~spaluter.notNil) {
+                        ~spaluter.set(\modEnabled, modEnabledState);
+                    };
                     if(~spaluter.notNil and: { silentBuf.notNil }) {
                         ~spaluter.set(\bufnum, silentBuf.bufnum);
                         applyScopeConfig.value;
@@ -193,6 +323,30 @@ s.doWhenBooted({
             ~spaluter.set(key.asSymbol, value.asFloat);
         };
     }, "/spaluter/set");
+
+    OSCdef(\spaluterLfoCount, { |msg|
+        setLfoCount.value(msg[1] ? 0);
+    }, "/spaluter/lfo/count");
+
+    OSCdef(\spaluterLfoSet, { |msg|
+        // [idx, targetName, rate, depth, shape, enabled, phase]
+        applyLfo.value(msg[1], msg[2], msg[3], msg[4], msg[5], msg[6], msg[7]);
+    }, "/spaluter/lfo/set");
+
+    OSCdef(\spaluterLfoSetMany, { |msg|
+        // 7 args per LFO entry, packed after the address.
+        var entries = (msg.size - 1) div: 7;
+        entries.do { |k|
+            var b = 1 + (k * 7);
+            applyLfo.value(msg[b], msg[b+1], msg[b+2], msg[b+3], msg[b+4], msg[b+5], msg[b+6]);
+        };
+    }, "/spaluter/lfo/set-many");
+
+    OSCdef(\spaluterLfoEnable, { |msg|
+        modEnabledState = (msg[1] ? 0).asInteger.clip(0, 1);
+        if(~spaluter.notNil) { ~spaluter.set(\modEnabled, modEnabledState); };
+        status.value("Modulation " ++ (if(modEnabledState > 0) { "enabled" } { "disabled" }));
+    }, "/spaluter/lfo/enable");
 
     OSCdef(\spaluterLoadSample, { |msg|
         var filePath;

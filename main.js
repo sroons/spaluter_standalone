@@ -779,6 +779,55 @@ function registerIpcHandlers() {
     midiRawCountTotal += n;
   });
 
+  // Internal LFO modulation: fire-and-forget IPC → OSC. Config changes are
+  // low-rate and human-driven, so there is no hot-path impact.
+  ipcMain.on("sc:lfo-count", (_evt, n) => {
+    const count = Number(n);
+    if (!Number.isFinite(count)) return;
+    sendOsc("/spaluter/lfo/count", [Math.max(0, Math.round(count))]);
+  });
+
+  ipcMain.on("sc:lfo-set", (_evt, cfg) => {
+    if (!cfg || typeof cfg !== "object") return;
+    const idx = Number(cfg.idx);
+    const target = typeof cfg.target === "string" ? cfg.target : "none";
+    if (!Number.isFinite(idx)) return;
+    sendOsc("/spaluter/lfo/set", [
+      Math.round(idx),
+      target,
+      Number(cfg.rate),
+      Number(cfg.depth),
+      Math.round(Number(cfg.shape)),
+      cfg.enabled ? 1 : 0,
+      Number(cfg.phase) || 0
+    ]);
+  });
+
+  ipcMain.on("sc:lfo-set-many", (_evt, list) => {
+    if (!Array.isArray(list) || list.length === 0) return;
+    const args = [];
+    for (let i = 0; i < list.length; i += 1) {
+      const cfg = list[i];
+      if (!cfg || typeof cfg !== "object") continue;
+      const idx = Number(cfg.idx);
+      if (!Number.isFinite(idx)) continue;
+      args.push(
+        Math.round(idx),
+        typeof cfg.target === "string" ? cfg.target : "none",
+        Number(cfg.rate),
+        Number(cfg.depth),
+        Math.round(Number(cfg.shape)),
+        cfg.enabled ? 1 : 0,
+        Number(cfg.phase) || 0
+      );
+    }
+    if (args.length > 0) sendOsc("/spaluter/lfo/set-many", args);
+  });
+
+  ipcMain.on("sc:lfo-enable", (_evt, on) => {
+    sendOsc("/spaluter/lfo/enable", [on ? 1 : 0]);
+  });
+
   ipcMain.handle("sc:trigger", (_evt, action) => {
     if (action === "start") sendOsc("/spaluter/start", []);
     if (action === "stop") sendOsc("/spaluter/stop", []);

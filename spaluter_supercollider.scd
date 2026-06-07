@@ -31,10 +31,11 @@ s.waitForBoot {
         pan1=0, pan2=0.5, pan3=(-0.5),
         ampJitter=0, timingJitter=0, glisson=0,
         useSample=0, bufnum=0, sampleRate=1.0,
-        scopeEnabled=1, scopeRate=20|
+        scopeEnabled=1, scopeRate=20,
+        modBus=0, modEnabled=0|
 
         var atk, rel, glid, vc, fc, mode, ctype, bPitch;
-        var fHzArr, panArr, voices, sig;
+        var fHzArr, panArr, voices, sig, mod;
         var scopeFrames, scopeBufL, scopeBufR, scopeWritePos, scopeReadPos, scopeValuesL, scopeValuesR, scopeTrig;
 
         atk = attackMs.max(0.1) * 0.001;
@@ -46,8 +47,16 @@ s.waitForBoot {
         ctype = chordType.clip(0, 13);
         bPitch = basePitch.max(0.1);
 
-        fHzArr = [formant1, formant2, formant3].collect({ |x| x.clip(20, 8000) });
-        panArr = [pan1, pan2, pan3].collect({ |x| x.clip(-1, 1) });
+        // Internal LFO modulation: read a 16-channel control bus, gated by
+        // modEnabled (0 => all mod[] are 0 => identical to pre-mod behaviour).
+        // Channel order mirrors `modParams` in sc/runtime.scd. Continuous
+        // params add mod[i] before their existing clip; basePitch modulates
+        // multiplicatively in semitones via midiratio.
+        mod = In.kr(modBus, 16) * modEnabled;
+        bPitch = bPitch * mod[15].midiratio;
+
+        fHzArr = [formant1 + mod[5], formant2 + mod[6], formant3 + mod[7]].collect({ |x| x.clip(20, 8000) });
+        panArr = [pan1 + mod[9], pan2 + mod[10], pan3 + mod[11]].collect({ |x| x.clip(-1, 1) });
 
         voices = Mix.fill(4, { |vi|
             var vActive, ratio, targetFreq, freq, jitMul, pulseFreq, trig;
@@ -59,7 +68,7 @@ s.waitForBoot {
             freq = Lag.kr(targetFreq, glid).max(0.1);
 
             // Approximate per-pulse timing jitter
-            jitMul = 1 + (LFNoise0.kr(freq.max(0.5)) * (0.2 * timingJitter.clip(0, 1)));
+            jitMul = 1 + (LFNoise0.kr(freq.max(0.5)) * (0.2 * (timingJitter + mod[13]).clip(0, 1)));
             pulseFreq = (freq * jitMul).clip(0.1, 14000);
             trig = Impulse.ar(pulseFreq);
 
@@ -68,7 +77,7 @@ s.waitForBoot {
             env = SelectX.ar(mode, [K2A.ar(envASR), envPulse, K2A.ar(envASR)]);
 
             // Per-pulse amplitude jitter (only attenuates, like original)
-            ampJ = 1 - TRand.ar(0, ampJitter.clip(0, 1), trig);
+            ampJ = 1 - TRand.ar(0, (ampJitter + mod[12]).clip(0, 1), trig);
             pulseCount = PulseCount.ar(trig);
 
             formants = Mix.fill(3, { |fi|
@@ -83,7 +92,7 @@ s.waitForBoot {
                 fEff = Select.kr(formantTrack > 0.5, [fBase, fTracked]).clip(20, 12000);
 
                 dutyF = Select.kr(dutyMode > 0.5, [
-                    duty.clip(0.01, 1),
+                    (duty + mod[4]).clip(0.01, 1),
                     (freq / fEff).clip(0.01, 1)
                 ]);
 
@@ -93,7 +102,7 @@ s.waitForBoot {
                 tp = ((phase - dutyStart) / dutyF.max(0.001)).clip(0, 1);
 
                 ratioF = fEff / freq.max(0.1);
-                sweepMul = 2.pow(glisson.clip(-2, 2) * (tp - 0.5));
+                sweepMul = 2.pow((glisson + mod[14]).clip(-2, 2) * (tp - 0.5));
                 wphase = (tp * ratioF * sweepMul).wrap(0, 1);
                 x = (wphase * 2pi);
 
@@ -113,7 +122,7 @@ s.waitForBoot {
                     (Hasher.ar(wphase * 1234.567) * 2 - 1)                 // noise
                 ];
 
-                synthWave = SelectX.ar(pulsaret.clip(0, 9), pulsaretWaves);
+                synthWave = SelectX.ar((pulsaret + mod[2]).clip(0, 9), pulsaretWaves);
                 sampleWave = BufRd.ar(
                     1, bufnum,
                     (wphase * BufFrames.kr(bufnum) * sampleRate).wrap(0, BufFrames.kr(bufnum).max(2) - 1),
@@ -141,12 +150,12 @@ s.waitForBoot {
                     (((1 - tp) * 4).neg.exp),                                      // reverse exp
                     (1 - (2 * (tp - 0.5).abs)).clip(0, 1)                         // triangle
                 ];
-                win = SelectX.ar(window.clip(0, 8), winWaves);
+                win = SelectX.ar((window + mod[3]).clip(0, 8), winWaves);
 
                 randShared = Hasher.ar(pulseCount + (vi * 101));
                 randForm = Hasher.ar(pulseCount + (vi * 101) + (fi * 37));
                 rsel = Select.ar(perFormantMask > 0.5, [randShared, randForm]);
-                maskStoch = (rsel > maskAmount.clip(0, 1));
+                maskStoch = (rsel > (maskAmount + mod[8]).clip(0, 1));
 
                 total = (burstOn + burstOff).max(1);
                 burstOffset = Select.kr(perFormantMask > 0.5, [0, fi * (total / 3)]);
@@ -166,7 +175,7 @@ s.waitForBoot {
         });
 
         sig = voices / vc.max(1);
-        sig = tanh(sig * drive.clip(0.1, 4.0));
+        sig = tanh(sig * (drive + mod[1]).clip(0.1, 4.0));
         scopeFrames = 128;
         scopeBufL = LocalBuf(scopeFrames, 1);
         scopeBufR = LocalBuf(scopeFrames, 1);
@@ -178,13 +187,40 @@ s.waitForBoot {
         scopeValuesR = BufRd.ar(1, scopeBufR, scopeReadPos, loop: 1, interpolation: 1);
         scopeTrig = Impulse.kr(scopeRate.clip(1, 60)) * (scopeEnabled > 0);
         SendReply.kr(scopeTrig, "/spaluter/scope", scopeValuesL ++ scopeValuesR);
-        Out.ar(out, sig * amp);
+        Out.ar(out, sig * (amp + mod[0]).max(0));
+    }).add;
+
+    // Zeroes the 16-channel modulation bus each control block so the LFO
+    // synths (which use additive Out.kr) sum cleanly. Runs at the head of the
+    // LFO group, before any LFO and before the main synth reads the bus.
+    SynthDef(\modClear, { |modBus=0|
+        ReplaceOut.kr(modBus, DC.kr(0) ! 16);
+    }).add;
+
+    // One internal LFO. Writes its bipolar output * depth additively into one
+    // channel (targetIdx) of the modulation bus. Shape selects waveform; all
+    // shapes derive from a shared 0..1 phasor so `phase` is uniform. Retarget
+    // is done by free + respawn in runtime.scd (targetIdx fixed per instance).
+    SynthDef(\spaluterLfo, { |modBus=0, targetIdx=0, rate=1, depth=0, shape=0, phase=0, enabled=1, lag=0.02|
+        var ph, sine, tri, sawU, sawD, sqr, sh, rnd, osc, sig;
+        ph = (LFSaw.kr(rate, 0).range(0, 1) + phase).wrap(0, 1);
+        sine = (2pi * ph).sin;
+        tri  = 1 - (4 * (ph - 0.5).abs);
+        sawU = (2 * ph) - 1;
+        sawD = 1 - (2 * ph);
+        sqr  = ((ph < 0.5) * 2) - 1;
+        sh   = LFNoise0.kr(rate);
+        rnd  = LFNoise2.kr(rate);
+        osc  = Select.kr(shape.clip(0, 6), [sine, tri, sawU, sawD, sqr, sh, rnd]);
+        sig  = Lag.kr(osc * depth * enabled, lag);
+        Out.kr(modBus + targetIdx, sig);
     }).add;
     s.sync;
 
-    ~spaluterStart = { |out=0|
+    ~spaluterStart = { |out=0, modBus=0, target, addAction=\addToHead|
         Synth(\spaluterSC, [
             \out, out,
+            \modBus, modBus,
             \amp, 0.25,
             \gateMode, 1,
             \voiceCount, 1,
@@ -199,7 +235,7 @@ s.waitForBoot {
             \pan1, 0,
             \pan2, 0.5,
             \pan3, -0.5
-        ]);
+        ], target, addAction);
     };
 
     ~spaluterGui = {

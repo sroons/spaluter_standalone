@@ -32,6 +32,7 @@
       <button class="main-screen-btn" data-view-index="4" type="button" aria-pressed="false">PARAMETERS P4</button>
       <button class="main-screen-btn" data-view-index="5" type="button" aria-pressed="false">PARAMETERS P5</button>
       <button class="main-screen-btn" data-view-index="6" type="button" aria-pressed="false">PARAMETERS P6</button>
+      <button class="main-screen-btn" data-view-index="7" type="button" aria-pressed="false">MODULATION</button>
     </div>
 
     <div id="mainScreenStage" class="main-screen-stage">
@@ -244,6 +245,25 @@
       </div>
 
         </div>
+      </section>
+
+      <section class="main-screen" data-screen="modulation" aria-label="Modulation screen">
+        <div class="modulation-toolbar">
+          <div class="modulation-toolbar-group">
+            <span class="modulation-title">Internal LFOs</span>
+            <label class="modulation-master">
+              <input type="checkbox" id="modMasterEnable" />
+              <span>Modulation ON</span>
+            </label>
+          </div>
+          <div class="modulation-toolbar-group">
+            <label for="lfoCount">Active LFOs</label>
+            <input type="number" id="lfoCount" min="0" max="16" step="1" value="0" />
+            <span id="lfoCountHint" class="modulation-hint">0 running</span>
+          </div>
+        </div>
+        <div class="lfo-overview" id="lfoOverview" aria-label="Active LFO overview"></div>
+        <div class="lfo-strip-list" id="lfoStripList" aria-label="LFO controls"></div>
       </section>
     </div>
 
