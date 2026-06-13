@@ -1,0 +1,119 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<link rel="stylesheet" href="bt.css"><script src="bt.js"></script></head>
+<body><div class="screen">
+
+  <div class="ghost" style="left:-16px; top:116px; font-size:250px;">PRESETS</div>
+  <div class="ghost r" style="left:1006px; top:600px; font-size:104px;">SNAPSHOT·BANK·SAVE/RECALL</div>
+  <div class="grain"></div><div class="scan"></div><div class="vig"></div>
+  <div class="marg" style="left:14px; bottom:64px;">STORE spaluter-presets-v1 · 32 SLOTS · LOCAL</div>
+  <div class="marg v" style="right:3px; top:170px;">SAVE · RECALL · RENAME · CLEAR</div>
+
+  <div class="hdr">
+    <div class="brand">
+      <div style="position:relative;"><span class="echo">SPILUTER</span><span class="mark">S<span class="o">PI</span>LUTER</span></div>
+      <div class="tag">MODE&nbsp;<b>PRESETS</b><br>32&nbsp;SLOTS&nbsp;·&nbsp;9&nbsp;SAVED</div>
+    </div>
+    <div class="hdr-right">
+      <div class="chips">
+        <div class="chip ok"><div class="k">MIDI</div><div class="s"><span class="dot"></span><span class="lbl">LIVE</span></div></div>
+        <div class="chip ok"><div class="k">SCLANG</div><div class="s"><span class="dot"></span><span class="lbl">RUN</span></div></div>
+        <div class="chip ok"><div class="k">AUDIO</div><div class="s"><span class="dot"></span><span class="lbl">−6dB</span></div></div>
+        <div class="chip ok"><div class="k">POWER</div><div class="s"><span class="dot"></span><span class="lbl">5.1V</span></div></div>
+      </div>
+      <div class="cpu">CPU&nbsp;<b>39.4</b>%<br>LFO&nbsp;04/16<br>XRUN&nbsp;0</div>
+    </div>
+  </div>
+
+  <div style="position:absolute; left:14px; right:14px; top:88px; bottom:64px; display:flex; gap:10px; z-index:10;">
+
+    <!-- PRESET BANK -->
+    <div class="panel pbank" style="flex:1.25;">
+      <div class="ph"><span class="t">Preset Bank</span><span class="m">SHOWING&nbsp;01–11&nbsp;/&nbsp;32&nbsp;·&nbsp;SCROLL</span></div>
+      <div class="list">
+        <div class="prow"><span class="pn">01</span>
+          <div class="info"><span class="nm">Init Patch</span><span class="meta">30P · 0 LFO</span></div>
+          <canvas class="sig" id="s1"></canvas><span class="dot"></span></div>
+        <div class="prow"><span class="pn">02</span>
+          <div class="info"><span class="nm">Glass Formants</span><span class="meta">30P · 2 LFO</span></div>
+          <canvas class="sig" id="s2"></canvas><span class="dot"></span></div>
+        <div class="prow on"><span class="pn">03</span>
+          <div class="info"><span class="nm">Tidal Drone</span><span class="meta">30P · 4 LFO · SMPL</span></div>
+          <canvas class="sig" id="s3"></canvas><span class="dot"></span></div>
+        <div class="prow"><span class="pn">04</span>
+          <div class="info"><span class="nm">Vox Choir</span><span class="meta">30P · 3 LFO</span></div>
+          <canvas class="sig" id="s4"></canvas><span class="dot"></span></div>
+        <div class="prow"><span class="pn">05</span>
+          <div class="info"><span class="nm">Grain Storm</span><span class="meta">30P · 6 LFO · SMPL</span></div>
+          <canvas class="sig" id="s5"></canvas><span class="dot"></span></div>
+        <div class="prow empty"><span class="pn">06</span>
+          <div class="info"><span class="nm">— empty —</span><span class="meta">available</span></div>
+          <span></span><span class="dot"></span></div>
+        <div class="prow"><span class="pn">07</span>
+          <div class="info"><span class="nm">Sub Pulse</span><span class="meta">30P · 1 LFO</span></div>
+          <canvas class="sig" id="s7"></canvas><span class="dot"></span></div>
+        <div class="prow"><span class="pn">08</span>
+          <div class="info"><span class="nm">Metallic Swarm</span><span class="meta">30P · 5 LFO</span></div>
+          <canvas class="sig" id="s8"></canvas><span class="dot"></span></div>
+        <div class="prow empty"><span class="pn">09</span>
+          <div class="info"><span class="nm">— empty —</span><span class="meta">available</span></div>
+          <span></span><span class="dot"></span></div>
+        <div class="prow"><span class="pn">10</span>
+          <div class="info"><span class="nm">Whisper Bed</span><span class="meta">30P · 2 LFO · SMPL</span></div>
+          <canvas class="sig" id="s10"></canvas><span class="dot"></span></div>
+        <div class="prow"><span class="pn">11</span>
+          <div class="info"><span class="nm">Chord Stab</span><span class="meta">30P · 0 LFO</span></div>
+          <canvas class="sig" id="s11"></canvas><span class="dot"></span></div>
+      </div>
+    </div>
+
+    <!-- SLOT DETAIL / ACTIONS -->
+    <div class="panel pdetail" style="flex:1;">
+      <div class="ph"><span class="t">Slot Detail</span><span class="num">03</span></div>
+      <div class="pdbody">
+        <div class="pdtop">
+          <div class="big">03</div>
+          <div class="who">
+            <div class="nm">Tidal Drone</div>
+            <div class="sub">SAVED 2026-06-13 14:51 · 4.2 KB · v1</div>
+          </div>
+        </div>
+
+        <div class="psig-big"><span class="tag">SNAPSHOT SIGNATURE · OUTPUT</span><canvas id="bigsig"></canvas></div>
+
+        <div class="pcap">
+          <div class="cell"><div class="k">Parameters</div><div class="v"><b>30</b> / 30 captured</div></div>
+          <div class="cell"><div class="k">LFO Bus</div><div class="v"><b>4</b> active routes</div></div>
+          <div class="cell"><div class="k">Sample</div><div class="v">ocean_loop.wav</div></div>
+          <div class="cell"><div class="k">Macros</div><div class="v">M01–05 mapped</div></div>
+        </div>
+
+        <div class="pfield"><span class="k">Name</span><span class="input">TIDAL DRONE</span><span class="caret"></span></div>
+
+        <div class="pact">
+          <div class="pbtn primary"><span class="ic">↺</span>RECALL</div>
+          <div class="pbtn"><span class="ic">⤓</span>SAVE&nbsp;HERE</div>
+          <div class="pbtn"><span class="ic">✎</span>RENAME</div>
+          <div class="pbtn danger"><span class="ic">✕</span>CLEAR</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="nav">
+    <div class="tab"><span class="ix">[01]</span><span class="nm">Perform</span></div>
+    <div class="tab"><span class="ix">[02]</span><span class="nm">Edit</span></div>
+    <div class="tab"><span class="ix">[03]</span><span class="nm">Mods</span></div>
+    <div class="tab on"><span class="ix">[04]</span><span class="nm">Presets</span></div>
+    <div class="kill"><span class="sq"></span><span class="nm">Stop Synth</span><span class="sub">EMERGENCY · HELD</span></div>
+  </div>
+
+</div>
+<script>window.__draw=function(){
+  drawWave('s1','sine','#8fe39b'); drawWave('s2','sinc','#1f8bff');
+  drawWave('s3','tri','#ff6f24');  drawWave('s4','gauss','#cfe6ff');
+  drawWave('s5','rand','#8fe39b'); drawWave('s7','square','#ff6f24');
+  drawWave('s8','saw','#cfe6ff');  drawWave('s10','sine','#1f8bff');
+  drawWave('s11','square','#8fe39b');
+  drawScope('bigsig');
+};</script>
+</body></html>

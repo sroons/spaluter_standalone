@@ -14,6 +14,7 @@ These are **mockups only** — they are not wired into the Electron app.
 | `01_perform.png` | Perform | Hero stereo output scope; 5 large macro lanes; persistent MIDI/SC/Audio/Power status chips; undervoltage banner; dedicated red-orange Stop Synth transport; consolidated bottom nav. |
 | `02_edit.png` | Edit Engine | Dense parameters reorganized into 4 grouped touch cards (Core / Timbre+Wave / Formants / Texture) with vector wave + window previews and large touch sliders. |
 | `03_modulation.png` | Mod Router | 16-slot internal LFO bus shown as active routing cards with live shape previews, rate/depth readouts, and bus targets. |
+| `04_presets.png` | Presets | Save/recall configurations: a 32-slot preset bank (saved + empty slots with waveform signatures) plus a slot-detail panel showing what's captured (params, LFO bus, sample, macros) with Recall / Save / Rename / Clear actions. |
 
 ## Design tokens
 
@@ -42,5 +43,5 @@ Helvetica Neue, Andale Mono). Override the browser with `CHROME=/path/to/chrome 
 
 - `bt.css` — shared design system + all component styles
 - `bt.js` — canvas drawing for scope / waveform / LFO previews
-- `01_perform.html`, `02_edit.html`, `03_mods.html` — the three screens
-- `render.sh` — renders all three to `../*.png`
+- `01_perform.html`, `02_edit.html`, `03_mods.html`, `04_presets.html` — the four screens
+- `render.sh` — renders all four to `../*.png`

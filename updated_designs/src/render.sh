@@ -7,9 +7,10 @@ SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUT_DIR="$(dirname "$SRC_DIR")"
 CHROME="${CHROME:-/Applications/Google Chrome.app/Contents/MacOS/Google Chrome}"
 
-for src in 01_perform 02_edit 03_mods; do
+for src in 01_perform 02_edit 03_mods 04_presets; do
   case "$src" in
-    03_mods) out="03_modulation" ;;
+    03_mods)     out="03_modulation" ;;
+    04_presets)  out="04_presets" ;;
     *)       out="$src" ;;
   esac
   "$CHROME" --headless=new --disable-gpu --hide-scrollbars \

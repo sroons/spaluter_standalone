@@ -310,3 +310,72 @@ body{
 .modbar .t b{ color:var(--shock); }
 .modbar .m{ font-family:"Andale Mono","Menlo",monospace; font-size:9px; color:var(--mute-2);
   letter-spacing:.07em; }
+
+/* ============================================================
+   PRESETS / SNAPSHOTS
+   ============================================================ */
+.pbank{ display:flex; flex-direction:column; }
+.pbank .list{ flex:1; min-height:0; overflow:hidden; display:flex; flex-direction:column; }
+.prow{ position:relative; display:grid; grid-template-columns:40px 1fr 64px 14px;
+  align-items:center; gap:10px; padding:0 12px; height:37px;
+  border-bottom:1px solid var(--line); overflow:hidden; }
+.prow:last-child{ border-bottom:none; }
+.prow .info{ display:flex; flex-direction:column; gap:1px; min-width:0; }
+.prow .pn{ font-family:"DINCond","DIN Condensed", Impact; font-weight:700; font-size:22px;
+  color:var(--mute-2); line-height:.8; }
+.prow .nm{ font-family:"DINAlt","DIN Alternate"; font-weight:700; font-size:14px;
+  letter-spacing:.03em; text-transform:uppercase; color:var(--paper);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.prow .meta{ font-family:"Andale Mono","Menlo",monospace; font-size:8px; color:var(--mute);
+  letter-spacing:.05em; text-transform:uppercase; }
+.prow .sig{ width:64px; height:22px; display:block; }
+.prow .dot{ width:7px; height:7px; border-radius:50%; background:var(--ok);
+  box-shadow:0 0 7px var(--ok); justify-self:end; }
+.prow.empty .pn{ color:rgba(233,227,214,.18); }
+.prow.empty .nm{ color:var(--mute); font-style:normal; }
+.prow.empty .dot{ background:none; box-shadow:none; border:1px solid var(--line-2); }
+.prow.on{ background:linear-gradient(90deg, rgba(255,111,36,.18), rgba(255,111,36,.02)); }
+.prow.on::before{ content:""; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--shock); }
+.prow.on .pn{ color:var(--shock); }
+
+/* detail / action panel */
+.pdetail{ display:flex; flex-direction:column; }
+.pdbody{ flex:1; min-height:0; display:flex; flex-direction:column; padding:10px 12px; gap:9px; }
+.pdtop{ display:flex; align-items:flex-start; gap:12px; }
+.pdtop .big{ font-family:"DINCond","DIN Condensed", Impact; font-weight:700; font-size:60px;
+  line-height:.74; color:var(--shock); }
+.pdtop .who .nm{ font-family:"DINAlt","DIN Alternate"; font-weight:700; font-size:22px;
+  letter-spacing:.02em; text-transform:uppercase; color:var(--paper); }
+.pdtop .who .sub{ font-family:"Andale Mono","Menlo",monospace; font-size:8.5px; color:var(--mute-2);
+  letter-spacing:.06em; margin-top:3px; }
+.psig-big{ position:relative; height:70px; background:#070708; border:1px solid var(--line-2); overflow:hidden; }
+.psig-big canvas{ display:block; width:100%; height:100%; }
+.psig-big .tag{ position:absolute; left:7px; top:5px; font-family:"Andale Mono","Menlo",monospace;
+  font-size:8px; color:var(--mute-2); letter-spacing:.06em; }
+
+.pcap{ display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+.pcap .cell{ border:1px solid var(--line-2); padding:6px 8px; background:rgba(255,255,255,.012); }
+.pcap .cell .k{ font-family:"Andale Mono","Menlo",monospace; font-size:8px; color:var(--mute);
+  letter-spacing:.07em; text-transform:uppercase; }
+.pcap .cell .v{ font-family:"DINAlt","DIN Alternate"; font-weight:700; font-size:13px;
+  color:var(--paper); margin-top:2px; letter-spacing:.02em; }
+.pcap .cell .v b{ color:var(--acid); }
+
+.pfield{ display:flex; align-items:center; gap:8px; border:1px solid var(--line-2);
+  padding:0 10px; height:38px; background:#070708; }
+.pfield .k{ font-family:"Andale Mono","Menlo",monospace; font-size:8px; color:var(--mute);
+  letter-spacing:.07em; text-transform:uppercase; }
+.pfield .input{ flex:1; font-family:"DINAlt","DIN Alternate"; font-weight:700; font-size:15px;
+  color:var(--paper); letter-spacing:.03em; text-transform:uppercase; }
+.pfield .caret{ width:2px; height:18px; background:var(--shock); }
+
+.pact{ display:grid; grid-template-columns:1fr 1fr; gap:7px; }
+.pbtn{ height:46px; display:flex; align-items:center; justify-content:center; gap:8px;
+  border:1px solid var(--line-2); background:var(--ink-3);
+  font-family:"DINAlt","DIN Alternate"; font-weight:700; font-size:15px;
+  letter-spacing:.05em; text-transform:uppercase; color:var(--paper); }
+.pbtn .ic{ font-size:13px; color:var(--mute-2); }
+.pbtn.primary{ background:var(--shock); border-color:var(--shock); color:#fff; }
+.pbtn.primary .ic{ color:#fff; }
+.pbtn.danger{ color:var(--shock); border-color:rgba(255,111,36,.5); }
+.pbtn.danger .ic{ color:var(--shock); }
