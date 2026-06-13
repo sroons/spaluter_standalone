@@ -1,0 +1,95 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<link rel="stylesheet" href="bt.css"><script src="bt.js"></script></head>
+<body><div class="screen">
+
+  <div class="ghost" style="left:-14px; top:118px; font-size:250px;">MODS</div>
+  <div class="ghost r" style="left:1006px; top:600px; font-size:104px;">16·LFO·MODULATION·BUS</div>
+  <div class="grain"></div><div class="scan"></div><div class="vig"></div>
+  <div class="marg" style="left:14px; bottom:64px;">MOD BUS · 16 SLOTS · 4 ACTIVE</div>
+  <div class="marg v" style="right:3px; top:170px;">SINE·SQUARE·TRI·S&H</div>
+
+  <div class="hdr">
+    <div class="brand">
+      <div style="position:relative;"><span class="echo">SPILUTER</span><span class="mark">S<span class="o">PI</span>LUTER</span></div>
+      <div class="tag">MODE&nbsp;<b>MOD&nbsp;ROUTER</b><br>16&nbsp;LFO&nbsp;·&nbsp;4&nbsp;ACTIVE</div>
+    </div>
+    <div class="hdr-right">
+      <div class="chips">
+        <div class="chip ok"><div class="k">MIDI</div><div class="s"><span class="dot"></span><span class="lbl">LIVE</span></div></div>
+        <div class="chip ok"><div class="k">SCLANG</div><div class="s"><span class="dot"></span><span class="lbl">RUN</span></div></div>
+        <div class="chip ok"><div class="k">AUDIO</div><div class="s"><span class="dot"></span><span class="lbl">−6dB</span></div></div>
+        <div class="chip ok"><div class="k">POWER</div><div class="s"><span class="dot"></span><span class="lbl">5.1V</span></div></div>
+      </div>
+      <div class="cpu">CPU&nbsp;<b>44.0</b>%<br>LFO&nbsp;04/16<br>XRUN&nbsp;0</div>
+    </div>
+  </div>
+
+  <div style="position:absolute; left:14px; right:14px; top:88px; bottom:64px; display:flex; flex-direction:column; gap:8px; z-index:10;">
+
+    <div class="modbar">
+      <div class="t">Internal LFO Bus · <b>04</b> Active / 16</div>
+      <div class="m">SHAPE→DEPTH→TARGET · CLIENT-RENDERED PREVIEW · NO SC STREAM</div>
+    </div>
+
+    <div style="flex:1; display:grid; grid-template-columns:repeat(4,1fr); gap:8px;">
+
+      <!-- LFO 01 -->
+      <div class="lfo"><span class="bn">01</span>
+        <div class="lh"><span class="id" style="color:var(--acid)">LFO·01</span>
+          <span class="run" style="background:var(--acid); color:#fff">RUNNING</span></div>
+        <div class="wv"><canvas id="l1"></canvas></div>
+        <div class="field"><span class="k">Shape</span><span class="v">SINE</span></div>
+        <div class="field"><span class="k">Rate</span><span class="v" style="color:var(--acid)">1.25<span style="font-size:11px">HZ</span></span></div>
+        <div class="field"><span class="k">Depth</span><span class="v" style="color:var(--acid)">50<span style="font-size:11px">%</span></span></div>
+        <div class="route"><div class="k">BUS TARGET</div><div class="v">Base Pitch</div></div>
+      </div>
+
+      <!-- LFO 02 -->
+      <div class="lfo"><span class="bn">02</span>
+        <div class="lh"><span class="id" style="color:var(--shock)">LFO·02</span>
+          <span class="run" style="background:var(--shock); color:#fff">RUNNING</span></div>
+        <div class="wv"><canvas id="l2"></canvas></div>
+        <div class="field"><span class="k">Shape</span><span class="v">SQUARE</span></div>
+        <div class="field"><span class="k">Rate</span><span class="v" style="color:var(--shock)">0.50<span style="font-size:11px">HZ</span></span></div>
+        <div class="field"><span class="k">Depth</span><span class="v" style="color:var(--shock)">35<span style="font-size:11px">%</span></span></div>
+        <div class="route"><div class="k">BUS TARGET</div><div class="v">Duty Cycle</div></div>
+      </div>
+
+      <!-- LFO 03 -->
+      <div class="lfo"><span class="bn">03</span>
+        <div class="lh"><span class="id" style="color:var(--ice)">LFO·03</span>
+          <span class="run" style="background:var(--ice); color:#111">RUNNING</span></div>
+        <div class="wv"><canvas id="l3"></canvas></div>
+        <div class="field"><span class="k">Shape</span><span class="v">TRIANGLE</span></div>
+        <div class="field"><span class="k">Rate</span><span class="v" style="color:var(--ice)">3.40<span style="font-size:11px">HZ</span></span></div>
+        <div class="field"><span class="k">Depth</span><span class="v" style="color:var(--ice)">80<span style="font-size:11px">%</span></span></div>
+        <div class="route"><div class="k">BUS TARGET</div><div class="v">Formant 1</div></div>
+      </div>
+
+      <!-- LFO 04 -->
+      <div class="lfo"><span class="bn">04</span>
+        <div class="lh"><span class="id" style="color:var(--ok)">LFO·04</span>
+          <span class="run" style="background:var(--ok); color:#111">RUNNING</span></div>
+        <div class="wv"><canvas id="l4"></canvas></div>
+        <div class="field"><span class="k">Shape</span><span class="v">S&amp;H RANDOM</span></div>
+        <div class="field"><span class="k">Rate</span><span class="v" style="color:var(--ok)">8.00<span style="font-size:11px">HZ</span></span></div>
+        <div class="field"><span class="k">Depth</span><span class="v" style="color:var(--ok)">65<span style="font-size:11px">%</span></span></div>
+        <div class="route"><div class="k">BUS TARGET</div><div class="v">Mask Amount</div></div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="nav">
+    <div class="tab"><span class="ix">[01]</span><span class="nm">Perform</span></div>
+    <div class="tab"><span class="ix">[02]</span><span class="nm">Edit Engine</span></div>
+    <div class="tab on"><span class="ix">[03]</span><span class="nm">Mod Router</span></div>
+    <div class="kill"><span class="sq"></span><span class="nm">Stop Synth</span><span class="sub">EMERGENCY · HELD</span></div>
+  </div>
+
+</div>
+<script>window.__draw=function(){
+  drawWave('l1','sine','#1f8bff'); drawWave('l2','square','#ff6f24');
+  drawWave('l3','tri','#cfe6ff');  drawWave('l4','rand','#8fe39b');
+};</script>
+</body></html>

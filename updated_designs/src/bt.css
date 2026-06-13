@@ -1,0 +1,312 @@
+/* ============================================================
+   SPILUTER — Tomato-collective-influenced UI mockups
+   Dense layered type · grain · muted base · single shock colour
+   Target surface: 1024 x 600 (Raspberry Pi touchscreen)
+   ============================================================ */
+
+@font-face { font-family: "DINCond"; src: local("DIN Condensed Bold"); font-weight: 700; }
+@font-face { font-family: "DINAlt"; src: local("DIN Alternate Bold"); font-weight: 700; }
+
+:root{
+  --ink:      #0b0b0d;
+  --ink-2:    #131318;
+  --ink-3:    #1b1b22;
+  --paper:    #e9e3d6;
+  --paper-2:  #d8d1c0;
+  --paper-ink:#16120b;
+  --mute:     #74737e;
+  --mute-2:   #9a99a4;
+  --line:     rgba(233,227,214,0.10);
+  --line-2:   rgba(233,227,214,0.18);
+  --shock:    #ff6f24;   /* red-orange shock — pushed toward orange */
+  --shock-dim:#c2531a;
+  --ice:      #cfe6ff;   /* cold trace, used sparingly */
+  --acid:     #1f8bff;   /* electric blue secondary accent */
+  --ok:       #8fe39b;
+  --warn:     #ffd23a;
+}
+
+*{ box-sizing:border-box; margin:0; padding:0; }
+
+html,body{ width:1024px; height:600px; }
+body{
+  font-family:"Helvetica Neue", Arial, sans-serif;
+  background:var(--ink);
+  color:var(--paper);
+  -webkit-font-smoothing:antialiased;
+  overflow:hidden;
+}
+
+.screen{
+  position:relative;
+  width:1024px; height:600px;
+  background:
+    radial-gradient(120% 90% at 78% -10%, #17171d 0%, var(--ink) 55%),
+    var(--ink);
+  overflow:hidden;
+}
+
+/* ---- grain + scanline texture overlays (visible process) ---- */
+.grain{
+  position:absolute; inset:0; pointer-events:none; z-index:40;
+  opacity:.05; mix-blend-mode:overlay;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+}
+.scan{
+  position:absolute; inset:0; pointer-events:none; z-index:41; opacity:.35;
+  background:repeating-linear-gradient(0deg, rgba(0,0,0,0) 0 2px, rgba(0,0,0,.10) 2px 3px);
+}
+.vig{ position:absolute; inset:0; pointer-events:none; z-index:39;
+  box-shadow:inset 0 0 140px rgba(0,0,0,.65); }
+
+/* ---- huge ghost headline behind everything ---- */
+.ghost{
+  position:absolute; z-index:0; pointer-events:none;
+  font-family:"DINCond","DIN Condensed", Impact, sans-serif;
+  font-weight:700; letter-spacing:-.02em; line-height:.78;
+  color:rgba(233,227,214,.035); white-space:nowrap; text-transform:uppercase;
+}
+.ghost.r{ transform:rotate(-90deg); transform-origin:left top; }
+
+/* scattered technical marginalia */
+.marg{
+  position:absolute; z-index:38; pointer-events:none;
+  font-family:"Andale Mono","Menlo",monospace; font-size:8px; letter-spacing:.04em;
+  color:var(--mute); text-transform:uppercase;
+}
+.marg.v{ writing-mode:vertical-rl; }
+.tick{ position:absolute; z-index:1; pointer-events:none; }
+
+/* registration / crop marks */
+.crop{ position:absolute; width:14px; height:14px; z-index:38; opacity:.5; }
+.crop::before,.crop::after{ content:""; position:absolute; background:var(--mute); }
+.crop::before{ left:6px; top:0; width:1px; height:14px; }
+.crop::after{ top:6px; left:0; height:1px; width:14px; }
+
+/* ============================================================
+   HEADER
+   ============================================================ */
+.hdr{
+  position:relative; z-index:10;
+  height:74px; padding:9px 14px 0;
+  display:flex; align-items:flex-start; justify-content:space-between;
+  border-bottom:1px solid var(--line-2);
+}
+.brand{ display:flex; align-items:baseline; gap:10px; position:relative; }
+.brand .mark{
+  font-family:"DINCond","DIN Condensed", Impact, sans-serif; font-weight:700;
+  font-size:46px; line-height:.8; letter-spacing:-.04em; text-transform:uppercase;
+  color:var(--paper);
+}
+.brand .mark .o{ color:var(--shock); }
+/* overlapped ghost of the brand, offset — the "process" layer */
+.brand .echo{
+  position:absolute; left:-1px; top:1px;
+  font-family:"DINCond","DIN Condensed", Impact, sans-serif; font-weight:700;
+  font-size:46px; line-height:.8; letter-spacing:-.04em; text-transform:uppercase;
+  color:transparent; -webkit-text-stroke:1px rgba(255,111,36,.28);
+  transform:translate(3px,2px);
+}
+.brand .tag{
+  font-family:"Andale Mono","Menlo",monospace; font-size:8.5px; line-height:1.45;
+  color:var(--mute-2); text-transform:uppercase; letter-spacing:.06em;
+  border-left:1px solid var(--line-2); padding-left:9px; align-self:stretch;
+  display:flex; flex-direction:column; justify-content:center;
+}
+.brand .tag b{ color:var(--paper); font-weight:700; }
+
+.hdr-right{ display:flex; align-items:center; gap:18px; }
+
+/* status chips: MIDI / SC / AUDIO / PWR */
+.chips{ display:flex; gap:6px; }
+.chip{
+  min-width:62px; padding:6px 9px 5px; border:1px solid var(--line-2);
+  background:rgba(255,255,255,.015); position:relative;
+}
+.chip .k{ font-family:"Andale Mono","Menlo",monospace; font-size:8px; color:var(--mute-2);
+  letter-spacing:.10em; }
+.chip .s{ display:flex; align-items:center; gap:5px; margin-top:3px; }
+.chip .dot{ width:7px; height:7px; border-radius:50%; }
+.chip .lbl{ font-family:"DINAlt","DIN Alternate", sans-serif; font-weight:700;
+  font-size:11px; letter-spacing:.02em; text-transform:uppercase; }
+.chip.ok   .dot{ background:var(--ok);   box-shadow:0 0 8px var(--ok); }
+.chip.ok   .lbl{ color:var(--ok); }
+.chip.warn .dot{ background:var(--warn); box-shadow:0 0 8px var(--warn); }
+.chip.warn .lbl{ color:var(--warn); }
+.chip.bad  .dot{ background:var(--shock);box-shadow:0 0 9px var(--shock); }
+.chip.bad  .lbl{ color:var(--shock); }
+
+.cpu{ font-family:"Andale Mono","Menlo",monospace; font-size:9px; color:var(--mute-2);
+  text-align:right; line-height:1.5; letter-spacing:.04em; }
+.cpu b{ color:var(--paper); font-size:13px; }
+
+/* ============================================================
+   GENERIC PANEL + HEADERS
+   ============================================================ */
+.panel{ position:relative; background:var(--ink-2); border:1px solid var(--line-2); }
+.panel.invert{ background:var(--paper); color:var(--paper-ink); border-color:var(--paper-2); }
+
+.ph{ display:flex; align-items:baseline; justify-content:space-between;
+  padding:7px 10px 6px; border-bottom:1px solid var(--line-2); }
+.panel.invert .ph{ border-bottom:1px solid rgba(0,0,0,.14); }
+.ph .t{ font-family:"DINAlt","DIN Alternate", sans-serif; font-weight:700;
+  font-size:14px; letter-spacing:.04em; text-transform:uppercase; }
+.ph .m{ font-family:"Andale Mono","Menlo",monospace; font-size:8.5px;
+  color:var(--mute-2); letter-spacing:.08em; text-transform:uppercase; }
+.panel.invert .ph .m{ color:#6a6256; }
+.ph .num{ font-family:"DINCond","DIN Condensed", Impact, sans-serif; font-weight:700;
+  font-size:13px; color:var(--shock); letter-spacing:.02em; }
+
+/* ============================================================
+   UNDERVOLTAGE BANNER
+   ============================================================ */
+.uv{
+  position:absolute; left:14px; right:14px; top:84px; z-index:30;
+  display:flex; align-items:center; gap:10px; padding:6px 10px;
+  background:linear-gradient(90deg, rgba(255,111,36,.16), rgba(255,111,36,.04));
+  border:1px solid var(--shock);
+}
+.uv .b{ width:9px; height:9px; background:var(--shock); border-radius:50%;
+  box-shadow:0 0 10px var(--shock); flex:0 0 auto; }
+.uv .txt{ font-family:"DINAlt","DIN Alternate", sans-serif; font-weight:700;
+  font-size:12px; letter-spacing:.03em; text-transform:uppercase; color:#ffceae; }
+.uv .code{ margin-left:auto; font-family:"Andale Mono","Menlo",monospace; font-size:8.5px;
+  color:var(--mute-2); letter-spacing:.06em; }
+
+/* ============================================================
+   BOTTOM NAV
+   ============================================================ */
+.nav{
+  position:absolute; left:0; right:0; bottom:0; z-index:20; height:56px;
+  display:flex; gap:1px; background:var(--line-2);
+  border-top:1px solid var(--line-2);
+}
+.nav .tab{
+  flex:1; background:var(--ink-2); display:flex; align-items:center; gap:11px;
+  padding:0 16px; cursor:default; position:relative; overflow:hidden;
+}
+.nav .tab .ix{ font-family:"Andale Mono","Menlo",monospace; font-size:9px; color:var(--mute); }
+.nav .tab .nm{ font-family:"DINAlt","DIN Alternate", sans-serif; font-weight:700;
+  font-size:17px; letter-spacing:.05em; text-transform:uppercase; color:var(--mute-2); }
+.nav .tab.on{ background:var(--paper); }
+.nav .tab.on .nm{ color:var(--paper-ink); }
+.nav .tab.on .ix{ color:var(--shock-dim); }
+.nav .tab.on::before{ content:""; position:absolute; left:0; top:0; bottom:0; width:4px; background:var(--shock); }
+.nav .kill{
+  flex:0 0 250px; background:var(--shock); display:flex; align-items:center; gap:10px;
+  padding:0 18px; justify-content:center;
+}
+.nav .kill .sq{ width:13px; height:13px; background:var(--ink); }
+.nav .kill .nm{ font-family:"DINAlt","DIN Alternate", sans-serif; font-weight:700;
+  font-size:17px; letter-spacing:.05em; text-transform:uppercase; color:#fff; }
+.nav .kill .sub{ font-family:"Andale Mono","Menlo",monospace; font-size:8px; color:rgba(0,0,0,.55);
+  position:absolute; left:18px; bottom:5px; letter-spacing:.06em; }
+
+/* ============================================================
+   SCOPE
+   ============================================================ */
+.scope{ position:relative; width:100%; height:100%; background:#070708; }
+.scope canvas{ display:block; width:100%; height:100%; }
+.scope .grid{ position:absolute; inset:0; pointer-events:none;
+  background:
+    repeating-linear-gradient(0deg, transparent 0 33px, rgba(207,230,255,.05) 33px 34px),
+    repeating-linear-gradient(90deg, transparent 0 33px, rgba(207,230,255,.05) 33px 34px);
+}
+.scope .axis{ position:absolute; left:0; right:0; top:50%; height:1px; background:rgba(207,230,255,.14); }
+.scope .legend{ position:absolute; left:9px; top:7px; display:flex; gap:12px; }
+.scope .legend span{ font-family:"Andale Mono","Menlo",monospace; font-size:8.5px; letter-spacing:.05em; }
+.scope .legend .l{ color:var(--shock); } .scope .legend .r{ color:var(--ice); }
+.scope .gate{ position:absolute; right:9px; top:8px; padding:3px 8px; background:var(--shock);
+  font-family:"DINAlt","DIN Alternate"; font-weight:700; font-size:10px; letter-spacing:.08em;
+  color:#fff; box-shadow:0 0 18px rgba(255,111,36,.6); }
+.scope .ruler{ position:absolute; left:0; right:0; bottom:0; height:14px;
+  display:flex; justify-content:space-between; padding:0 6px; align-items:flex-end; }
+.scope .ruler i{ width:1px; height:5px; background:rgba(207,230,255,.2); }
+.scope .ruler i:nth-child(5n){ height:9px; background:rgba(207,230,255,.35); }
+
+/* ============================================================
+   MACRO LANES (perform)
+   ============================================================ */
+.macros{ display:flex; flex-direction:column; }
+.mlane{ position:relative; flex:1; display:grid;
+  grid-template-columns:54px 1fr 92px; align-items:center;
+  border-bottom:1px solid var(--line); padding:0 12px; overflow:hidden; }
+.mlane:last-child{ border-bottom:none; }
+.mlane .bn{ position:absolute; right:78px; top:50%; transform:translateY(-52%);
+  font-family:"DINCond","DIN Condensed", Impact; font-weight:700; font-size:78px;
+  color:rgba(233,227,214,.045); line-height:1; pointer-events:none; }
+.mlane .ix{ font-family:"Andale Mono","Menlo",monospace; font-size:10px; color:var(--shock); }
+.mlane .mid{ padding-right:14px; }
+.mlane .nm{ font-family:"DINAlt","DIN Alternate"; font-weight:700; font-size:14px;
+  letter-spacing:.06em; text-transform:uppercase; color:var(--paper); margin-bottom:6px; }
+.mlane .track{ position:relative; height:12px; background:var(--ink-3); border:1px solid var(--line-2); }
+.mlane .fill{ position:absolute; left:0; top:0; bottom:0; background:var(--shock); }
+.mlane .knob{ position:absolute; top:50%; width:18px; height:34px; transform:translate(-50%,-50%);
+  background:var(--paper); border:2px solid var(--shock); }
+.mlane .val{ font-family:"DINCond","DIN Condensed", Impact; font-weight:700; font-size:34px;
+  text-align:right; color:var(--paper); line-height:.8; }
+.mlane .val small{ font-family:"Andale Mono","Menlo",monospace; font-size:9px; color:var(--mute-2);
+  display:block; font-weight:400; margin-top:2px; letter-spacing:.06em; }
+
+/* ============================================================
+   EDIT CONTROLS
+   ============================================================ */
+.ctl{ display:grid; grid-template-columns:118px 1fr 70px; align-items:center;
+  gap:10px; padding:9px 12px; border-bottom:1px solid var(--line); }
+.ctl:last-child{ border-bottom:none; }
+.ctl .nm{ font-family:"DINAlt","DIN Alternate"; font-weight:700; font-size:12px;
+  letter-spacing:.04em; text-transform:uppercase; color:var(--mute-2); }
+.ctl .track{ position:relative; height:10px; background:var(--ink-3); border:1px solid var(--line-2); }
+.ctl .fill{ position:absolute; inset:0 auto 0 0; }
+.ctl .knob{ position:absolute; top:50%; width:14px; height:28px; transform:translate(-50%,-50%);
+  background:var(--paper); }
+.ctl .val{ font-family:"Andale Mono","Menlo",monospace; font-size:12px; text-align:right;
+  color:var(--paper); letter-spacing:.02em; }
+.ctl.sel .opts{ display:flex; gap:5px; grid-column:2 / 4; }
+.ctl.sel .opt{ font-family:"DINAlt","DIN Alternate"; font-weight:700; font-size:11px;
+  text-transform:uppercase; letter-spacing:.04em; padding:6px 12px; border:1px solid var(--line-2);
+  color:var(--mute-2); }
+.ctl.sel .opt.on{ background:var(--shock); color:#fff; border-color:var(--shock); }
+
+.wavebox{ position:relative; height:78px; margin:9px 12px; background:#070708;
+  border:1px solid var(--line-2); overflow:hidden; }
+.wavebox .lab{ position:absolute; left:7px; top:5px; font-family:"Andale Mono","Menlo",monospace;
+  font-size:8px; color:var(--mute-2); letter-spacing:.06em; z-index:2; }
+.wavebox .lab.r{ left:auto; right:7px; color:var(--shock); }
+.wavebox canvas{ display:block; width:100%; height:100%; }
+
+/* ============================================================
+   MOD / LFO ROUTER
+   ============================================================ */
+.lfo{ position:relative; background:var(--ink-2); border:1px solid var(--line-2);
+  display:flex; flex-direction:column; overflow:hidden; }
+.lfo .bn{ position:absolute; right:-6px; bottom:-26px; font-family:"DINCond","DIN Condensed", Impact;
+  font-weight:700; font-size:118px; line-height:1; color:rgba(233,227,214,.05); pointer-events:none; }
+.lfo .lh{ display:flex; align-items:center; justify-content:space-between; padding:6px 9px;
+  border-bottom:1px solid var(--line-2); }
+.lfo .lh .id{ font-family:"DINAlt","DIN Alternate"; font-weight:700; font-size:13px;
+  letter-spacing:.05em; }
+.lfo .lh .run{ font-family:"Andale Mono","Menlo",monospace; font-size:8px; padding:2px 6px;
+  letter-spacing:.08em; }
+.lfo .wv{ position:relative; height:74px; margin:8px 9px 6px; background:#070708;
+  border:1px solid var(--line); overflow:hidden; }
+.lfo .wv canvas{ display:block; width:100%; height:100%; }
+.lfo .field{ padding:5px 9px; display:flex; align-items:baseline; justify-content:space-between;
+  border-top:1px solid var(--line); }
+.lfo .field .k{ font-family:"Andale Mono","Menlo",monospace; font-size:8px; color:var(--mute-2);
+  letter-spacing:.07em; text-transform:uppercase; }
+.lfo .field .v{ font-family:"DINCond","DIN Condensed", Impact; font-weight:700; font-size:22px;
+  line-height:.8; }
+.lfo .route{ margin:6px 9px 9px; padding:8px 9px; background:#070708; border:1px solid var(--line-2); }
+.lfo .route .k{ font-family:"Andale Mono","Menlo",monospace; font-size:8px; color:var(--mute);
+  letter-spacing:.07em; }
+.lfo .route .v{ font-family:"DINAlt","DIN Alternate"; font-weight:700; font-size:13px;
+  letter-spacing:.03em; text-transform:uppercase; margin-top:2px; display:flex; align-items:center; gap:6px; }
+.lfo .route .v::before{ content:"→"; }
+.modbar{ display:flex; align-items:center; justify-content:space-between; padding:7px 12px;
+  border:1px solid var(--line-2); background:var(--ink-2); }
+.modbar .t{ font-family:"DINAlt","DIN Alternate"; font-weight:700; font-size:13px;
+  letter-spacing:.05em; text-transform:uppercase; }
+.modbar .t b{ color:var(--shock); }
+.modbar .m{ font-family:"Andale Mono","Menlo",monospace; font-size:9px; color:var(--mute-2);
+  letter-spacing:.07em; }

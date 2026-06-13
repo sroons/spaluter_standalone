@@ -1,0 +1,91 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<link rel="stylesheet" href="bt.css"><script src="bt.js"></script></head>
+<body><div class="screen">
+
+  <div class="ghost" style="right:-10px; top:96px; font-size:230px;">EDIT</div>
+  <div class="ghost r" style="left:1006px; top:580px; font-size:96px;">PARAM·MATRIX·CORE/FORMANT/TEX</div>
+  <div class="grain"></div><div class="scan"></div><div class="vig"></div>
+  <div class="marg" style="left:14px; bottom:64px;">GROUPED PARAMETER CARDS · TOUCH 48PX</div>
+  <div class="marg v" style="right:3px; top:160px;">EDIT · 30 PARAMS · 6 GROUPS</div>
+
+  <div class="hdr">
+    <div class="brand">
+      <div style="position:relative;"><span class="echo">SPILUTER</span><span class="mark">S<span class="o">PI</span>LUTER</span></div>
+      <div class="tag">MODE&nbsp;<b>EDIT</b><br>30&nbsp;PARAM&nbsp;·&nbsp;6&nbsp;GROUPS</div>
+    </div>
+    <div class="hdr-right">
+      <div class="chips">
+        <div class="chip ok"><div class="k">MIDI</div><div class="s"><span class="dot"></span><span class="lbl">LIVE</span></div></div>
+        <div class="chip ok"><div class="k">SCLANG</div><div class="s"><span class="dot"></span><span class="lbl">RUN</span></div></div>
+        <div class="chip ok"><div class="k">AUDIO</div><div class="s"><span class="dot"></span><span class="lbl">−6dB</span></div></div>
+        <div class="chip warn"><div class="k">POWER</div><div class="s"><span class="dot"></span><span class="lbl">5.0V</span></div></div>
+      </div>
+      <div class="cpu">CPU&nbsp;<b>38.1</b>%<br>LFO&nbsp;05/16<br>XRUN&nbsp;0</div>
+    </div>
+  </div>
+
+  <div style="position:absolute; left:14px; right:14px; top:88px; bottom:64px; display:grid; grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr; gap:10px; z-index:10;">
+
+    <!-- CORE -->
+    <div class="panel" style="display:flex; flex-direction:column;">
+      <div class="ph"><span class="t" style="color:var(--shock)">Core Engine</span><span class="num">01</span></div>
+      <div style="flex:1; display:flex; flex-direction:column; justify-content:center;">
+        <div class="ctl"><span class="nm">Amplitude</span>
+          <div class="track"><div class="fill" style="width:25%; background:var(--shock)"></div><div class="knob" style="left:25%"></div></div><span class="val">0.250</span></div>
+        <div class="ctl"><span class="nm">Drive Gain</span>
+          <div class="track"><div class="fill" style="width:24%; background:var(--shock)"></div><div class="knob" style="left:24%"></div></div><span class="val">1.000</span></div>
+        <div class="ctl"><span class="nm">Base Pitch</span>
+          <div class="track"><div class="fill" style="width:13%; background:var(--shock)"></div><div class="knob" style="left:13%"></div></div><span class="val">33.0Hz</span></div>
+      </div>
+    </div>
+
+    <!-- TIMBRE / WAVE PREVIEW -->
+    <div class="panel" style="display:flex; flex-direction:column;">
+      <div class="ph"><span class="t" style="color:var(--acid)">Timbre · Wave</span><span class="num">02</span></div>
+      <div style="display:flex; gap:0;">
+        <div class="wavebox" style="flex:1; margin-right:5px;"><span class="lab">PULSARET · SINE→SINC</span><canvas id="w_puls"></canvas></div>
+        <div class="wavebox" style="flex:1; margin-left:5px;"><span class="lab r">WINDOW · GAUSS</span><canvas id="w_win"></canvas></div>
+      </div>
+      <div class="ctl sel"><span class="nm">Duty Mode</span>
+        <div class="opts"><span class="opt on">Manual</span><span class="opt">Formant</span></div></div>
+      <div class="ctl sel"><span class="nm">Voices</span>
+        <div class="opts"><span class="opt on">1</span><span class="opt">2</span><span class="opt">3</span><span class="opt">4</span></div></div>
+    </div>
+
+    <!-- FORMANTS -->
+    <div class="panel" style="display:flex; flex-direction:column;">
+      <div class="ph"><span class="t" style="color:var(--ice)">Formant System</span><span class="num">03</span></div>
+      <div style="flex:1; display:flex; flex-direction:column; justify-content:center;">
+        <div class="ctl"><span class="nm">Formant 1</span>
+          <div class="track"><div class="fill" style="width:14%; background:var(--ice)"></div><div class="knob" style="left:14%"></div></div><span class="val">120Hz</span></div>
+        <div class="ctl"><span class="nm">Formant 2</span>
+          <div class="track"><div class="fill" style="width:42%; background:var(--ice)"></div><div class="knob" style="left:42%"></div></div><span class="val">600Hz</span></div>
+        <div class="ctl"><span class="nm">Formant 3</span>
+          <div class="track"><div class="fill" style="width:68%; background:var(--ice)"></div><div class="knob" style="left:68%"></div></div><span class="val">1500Hz</span></div>
+      </div>
+    </div>
+
+    <!-- TEXTURE -->
+    <div class="panel" style="display:flex; flex-direction:column;">
+      <div class="ph"><span class="t" style="color:var(--ok)">Texture · Stochastic</span><span class="num">04</span></div>
+      <div style="flex:1; display:flex; flex-direction:column; justify-content:center;">
+        <div class="ctl"><span class="nm">Mask Amount</span>
+          <div class="track"><div class="fill" style="width:50%; background:var(--ok)"></div><div class="knob" style="left:50%"></div></div><span class="val">0.500</span></div>
+        <div class="ctl"><span class="nm">Glisson</span>
+          <div class="track"><div class="fill" style="width:50%; background:var(--ok)"></div><div class="knob" style="left:50%"></div></div><span class="val">0.000</span></div>
+        <div class="ctl"><span class="nm">Timing Jit</span>
+          <div class="track"><div class="fill" style="width:10%; background:var(--ok)"></div><div class="knob" style="left:10%"></div></div><span class="val">10ms</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="nav">
+    <div class="tab"><span class="ix">[01]</span><span class="nm">Perform</span></div>
+    <div class="tab on"><span class="ix">[02]</span><span class="nm">Edit Engine</span></div>
+    <div class="tab"><span class="ix">[03]</span><span class="nm">Mod Router</span></div>
+    <div class="kill"><span class="sq"></span><span class="nm">Stop Synth</span><span class="sub">EMERGENCY · HELD</span></div>
+  </div>
+
+</div>
+<script>window.__draw=function(){ drawWave('w_puls','sinc','#ff6f24'); drawWave('w_win','gauss','#1f8bff'); };</script>
+</body></html>

@@ -1,0 +1,101 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<link rel="stylesheet" href="bt.css"><script src="bt.js"></script></head>
+<body><div class="screen">
+
+  <!-- texture + ghost layers -->
+  <div class="ghost" style="left:-18px; top:120px; font-size:300px;">PERFORM</div>
+  <div class="ghost r" style="left:1006px; top:600px; font-size:120px;">PULSAR·SYNTHESIS</div>
+  <div class="grain"></div><div class="scan"></div><div class="vig"></div>
+  <div class="crop" style="left:4px; top:84px;"></div>
+  <div class="crop" style="right:4px; top:84px; transform:scaleX(-1);"></div>
+  <div class="marg" style="left:14px; bottom:64px;">SURFACE 1024×600 · KIOSK · OPENBOX/XORG</div>
+  <div class="marg v" style="right:3px; top:200px;">CH_L // CH_R · 20HZ STREAM</div>
+
+  <!-- header -->
+  <div class="hdr">
+    <div class="brand">
+      <div style="position:relative;">
+        <span class="echo">SPILUTER</span>
+        <span class="mark">S<span class="o">PI</span>LUTER</span>
+      </div>
+      <div class="tag">PULSAR&nbsp;SYNTHESIS&nbsp;<b>ENGINE</b><br>OSC&nbsp;57131 · SC&nbsp;3.13<br><b>v1.0.62</b>&nbsp;DARWIN_X86</div>
+    </div>
+    <div class="hdr-right">
+      <div class="chips">
+        <div class="chip ok"><div class="k">MIDI</div><div class="s"><span class="dot"></span><span class="lbl">LIVE</span></div></div>
+        <div class="chip ok"><div class="k">SCLANG</div><div class="s"><span class="dot"></span><span class="lbl">RUN</span></div></div>
+        <div class="chip ok"><div class="k">AUDIO</div><div class="s"><span class="dot"></span><span class="lbl">−6dB</span></div></div>
+        <div class="chip bad"><div class="k">POWER</div><div class="s"><span class="dot"></span><span class="lbl">THRTL</span></div></div>
+      </div>
+      <div class="cpu">CPU&nbsp;<b>41.8</b>%<br>LFO&nbsp;05/16<br>XRUN&nbsp;0</div>
+    </div>
+  </div>
+
+  <!-- undervoltage banner -->
+  <div class="uv">
+    <span class="b"></span>
+    <span class="txt">Power undervoltage — Pi reporting throttling · brown-out risk</span>
+    <span class="code">SYS_THROTTLE 0x50005 · 4.71V</span>
+  </div>
+
+  <!-- content -->
+  <div style="position:absolute; left:14px; right:14px; top:120px; bottom:64px; display:flex; gap:10px; z-index:10;">
+
+    <!-- HERO SCOPE -->
+    <div class="panel" style="flex:1.62; display:flex; flex-direction:column;">
+      <div class="ph"><span class="t">Stereo Output</span><span class="m">HERO&nbsp;·&nbsp;LIVE&nbsp;OSCILLOSCOPE</span></div>
+      <div class="scope" style="flex:1;">
+        <canvas id="scope"></canvas>
+        <div class="grid"></div><div class="axis"></div>
+        <div class="legend"><span class="l">▮ CH_L −6.2dB</span><span class="r">▮ CH_R −7.0dB</span></div>
+        <div class="gate">● GATE IN</div>
+        <div class="ruler">
+          <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+          <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+        </div>
+      </div>
+      <div style="display:flex; justify-content:space-between; padding:6px 10px; border-top:1px solid var(--line-2);">
+        <span class="marg" style="position:static;">MIDI&nbsp;IN&nbsp;·&nbsp;KORG_NANOKONTROL2&nbsp;·&nbsp;NOTE&nbsp;33HZ&nbsp;·&nbsp;OCTAVES</span>
+        <span class="marg" style="position:static; color:var(--ok);">● 47 EVT/S · COMP 1.3:1</span>
+      </div>
+    </div>
+
+    <!-- MACROS -->
+    <div class="panel" style="flex:1; display:flex; flex-direction:column;">
+      <div class="ph"><span class="t">Macros</span><span class="num">M01—05</span></div>
+      <div class="macros" style="flex:1;">
+        <div class="mlane"><span class="bn">01</span><span class="ix">M01</span>
+          <div class="mid"><div class="nm">Brightness</div>
+            <div class="track"><div class="fill" style="width:72%"></div><div class="knob" style="left:72%"></div></div></div>
+          <div class="val">72<small>↳ F1·F2·DRIVE</small></div></div>
+        <div class="mlane"><span class="bn">02</span><span class="ix">M02</span>
+          <div class="mid"><div class="nm">Motion</div>
+            <div class="track"><div class="fill" style="width:28%"></div><div class="knob" style="left:28%"></div></div></div>
+          <div class="val">28<small>↳ LFO·JITTER</small></div></div>
+        <div class="mlane"><span class="bn">03</span><span class="ix">M03</span>
+          <div class="mid"><div class="nm">Stereo Width</div>
+            <div class="track"><div class="fill" style="width:85%"></div><div class="knob" style="left:85%"></div></div></div>
+          <div class="val">85<small>↳ PAN1·2·3</small></div></div>
+        <div class="mlane"><span class="bn">04</span><span class="ix">M04</span>
+          <div class="mid"><div class="nm">Texture</div>
+            <div class="track"><div class="fill" style="width:40%"></div><div class="knob" style="left:40%"></div></div></div>
+          <div class="val">40<small>↳ MASK·DUTY</small></div></div>
+        <div class="mlane"><span class="bn">05</span><span class="ix">M05</span>
+          <div class="mid"><div class="nm">Grain Shape</div>
+            <div class="track"><div class="fill" style="width:55%"></div><div class="knob" style="left:55%"></div></div></div>
+          <div class="val">55<small>↳ PULSARET·WIN</small></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- nav -->
+  <div class="nav">
+    <div class="tab on"><span class="ix">[01]</span><span class="nm">Perform</span></div>
+    <div class="tab"><span class="ix">[02]</span><span class="nm">Edit Engine</span></div>
+    <div class="tab"><span class="ix">[03]</span><span class="nm">Mod Router</span></div>
+    <div class="kill"><span class="sq"></span><span class="nm">Stop Synth</span><span class="sub">EMERGENCY · HELD</span></div>
+  </div>
+
+</div>
+<script>window.__draw=function(){ drawScope('scope'); };</script>
+</body></html>
