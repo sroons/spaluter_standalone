@@ -34,7 +34,7 @@ const formantActivityLabelEl = document.getElementById("formantActivityLabel");
 const maskScopeLabelEl = document.getElementById("maskScopeLabel");
 const mainScreenSwitchEl = document.getElementById("mainScreenSwitch");
 const mainScreenStageEl = document.getElementById("mainScreenStage");
-const mainScreenButtons = Array.from(document.querySelectorAll(".main-screen-btn[data-view-index]"));
+const mainScreenButtons = Array.from(document.querySelectorAll(".nav-btn[data-screen]"));
 const mainScreenPanels = Array.from(document.querySelectorAll(".main-screen[data-screen]"));
 const paramValueGridEl = document.getElementById("paramValueGrid");
 const paramPagePrevBtn = document.getElementById("paramPagePrev");
@@ -68,7 +68,7 @@ const PARAM_ANIM_TICK_MS_DEFAULT = 33;
 const PARAM_ANIM_TICK_MS_RESPONSIVE = 22;
 const RESPONSIVE_PREVIEW_MODE_STORAGE_KEY = "spaluter-responsive-preview-v1";
 const DEFAULT_RESPONSIVE_PREVIEW_MODE = true;
-const MAIN_SCREENS = ["scopes", "parameters"];
+const MAIN_SCREENS = ["perform", "edit", "mods", "presets"];
 const SCREEN_SLIDE_MS = 240;
 const SWIPE_MIN_DISTANCE_PX = 60;
 const SWIPE_MAX_OFF_AXIS_PX = 45;
@@ -91,7 +91,7 @@ let activeKnobDrag = null;
 let logLineCount = 0;
 let scopeStreamingEnabled = true;
 let scopeStreamingRateHz = ACTIVE_SCOPE_RATE_HZ;
-let currentMainScreen = "scopes";
+let currentMainScreen = "perform";
 let currentViewIndex = 0;
 let screenTransitionTimer = null;
 let screenTransitionToken = 0;
@@ -2064,7 +2064,7 @@ function redrawModulatedParamViews() {
 let paramModActive = false;
 
 function paramModNeedsAnim() {
-  return currentMainScreen === "scopes" && anyActiveLfoTargetsSynthView();
+  return currentMainScreen === "edit" && anyActiveLfoTargetsSynthView();
 }
 
 function desiredParamAnimTickMs() {
@@ -2363,7 +2363,7 @@ function sendLfo(index) {
   // Re-evaluate synthetic scope-preview animation: starts it when a synthetic-view
   // target becomes active, and lets it settle the static scope when it stops.
   scheduleParamModAnim();
-  if (currentMainScreen === "scopes") scheduleWaveformViewsRedraw();
+  if (currentMainScreen === "edit") scheduleWaveformViewsRedraw();
 }
 
 function sendAllLfos() {
@@ -2414,11 +2414,11 @@ function applyLfoState(state) {
   rebuildLfoOverview();
   syncLfosToEngine();
   scheduleParamModAnim();
-  if (currentMainScreen === "scopes") scheduleWaveformViewsRedraw();
+  if (currentMainScreen === "edit") scheduleWaveformViewsRedraw();
 }
 
 function isModulationScreenActive() {
-  return currentMainScreen === "modulation";
+  return currentMainScreen === "mods";
 }
 
 function lfoCursorTick(timestamp) {
@@ -2444,10 +2444,14 @@ function scheduleLfoCursor() {
 }
 
 function handleMainScreenEntered(targetScreen) {
-  if (targetScreen === "scopes") {
+  if (targetScreen === "perform") {
+    scheduleWaveformResizeRefresh();
+    drawOutputScope(outputScopeCanvas, outputScopeSamples.left, outputScopeSamples.right);
+    drawOutputAnalysisScopes();
+  } else if (targetScreen === "edit") {
     scheduleWaveformResizeRefresh();
     scheduleParamModAnim();
-  } else if (targetScreen === "modulation") {
+  } else if (targetScreen === "mods") {
     redrawAllLfoViews();
     scheduleLfoCursor();
   }
@@ -2636,261 +2640,30 @@ function scheduleWaveformResizeRefresh() {
   }, RESIZE_DEBOUNCE_MS);
 }
 
-function normalizedMainViewIndex(rawIndex) {
-  return clamp(Math.floor(Number(rawIndex) || 0), 0, Math.max(0, MAIN_VIEW_COUNT - 1));
-}
-
-function screenForMainViewIndex(viewIndex) {
-  const idx = normalizedMainViewIndex(viewIndex);
-  if (idx === 0) return "scopes";
-  if (idx === MODULATION_VIEW_INDEX) return "modulation";
-  return "parameters";
-}
-
-function parameterPageForMainViewIndex(viewIndex) {
-  const normalized = normalizedMainViewIndex(viewIndex);
-  if (normalized <= 0) return 0;
-  return clamp(normalized - 1, 0, Math.max(0, PARAM_PAGES.length - 1));
-}
-
-function inferMainViewSwipeDirection(fromIndex, toIndex) {
-  const from = normalizedMainViewIndex(fromIndex);
-  const to = normalizedMainViewIndex(toIndex);
-  if (from === to) return -1;
-  return to > from ? -1 : 1;
-}
-
-function clearMainScreenTransitionState(panel) {
-  if (!panel) return;
-  panel.classList.remove("transitioning");
-  panel.style.transitionDuration = "";
-  panel.style.transform = "";
-}
-
-function updateMainScreenSwitchButtons(targetViewIndex) {
+function setScreen(name, options = {}) {
+  const target = MAIN_SCREENS.includes(name) ? name : "perform";
+  if (target === currentMainScreen && !options.force) return;
+  currentMainScreen = target;
+  currentViewIndex = MAIN_SCREENS.indexOf(target);
   mainScreenButtons.forEach((button) => {
-    const buttonViewIndex = normalizedMainViewIndex(button.dataset.viewIndex);
-    const isActive = buttonViewIndex === targetViewIndex;
-    button.classList.toggle("active", isActive);
-    button.setAttribute("aria-pressed", String(isActive));
+    const on = button.dataset.screen === target;
+    button.classList.toggle("active", on);
+    button.setAttribute("aria-pressed", String(on));
   });
-}
-
-function animateParameterPageTransition(panel, nextPage, swipeDirection, transitionToken) {
-  if (!panel) return;
-  const incomingStartX = swipeDirection < 0 ? "100%" : "-100%";
-  const outgoingEndX = swipeDirection < 0 ? "-100%" : "100%";
-
-  clearMainScreenTransitionState(panel);
-  panel.classList.add("active", "transitioning");
-  panel.style.transitionDuration = `${SCREEN_SLIDE_MS}ms`;
-  panel.style.transform = "translate3d(0, 0, 0)";
-  void panel.offsetWidth;
-
-  window.requestAnimationFrame(() => {
-    if (transitionToken !== screenTransitionToken) return;
-    panel.style.transform = `translate3d(${outgoingEndX}, 0, 0)`;
-  });
-
-  screenTransitionTimer = window.setTimeout(() => {
-    if (transitionToken !== screenTransitionToken) return;
-    clearMainScreenTransitionState(panel);
-    setParameterPage(nextPage);
-    panel.classList.add("active", "transitioning");
-    panel.style.transitionDuration = "0ms";
-    panel.style.transform = `translate3d(${incomingStartX}, 0, 0)`;
-    void panel.offsetWidth;
-    panel.style.transitionDuration = `${SCREEN_SLIDE_MS}ms`;
-    window.requestAnimationFrame(() => {
-      if (transitionToken !== screenTransitionToken) return;
-      panel.style.transform = "translate3d(0, 0, 0)";
-    });
-    screenTransitionTimer = window.setTimeout(() => {
-      if (transitionToken !== screenTransitionToken) return;
-      clearMainScreenTransitionState(panel);
-      panel.classList.add("active");
-      screenTransitionTimer = null;
-    }, SCREEN_SLIDE_MS + 34);
-  }, SCREEN_SLIDE_MS + 16);
-}
-
-function setMainView(targetViewIndex, options = {}) {
-  const targetIndex = normalizedMainViewIndex(targetViewIndex);
-  const targetScreen = screenForMainViewIndex(targetIndex);
-  const targetParamPage = parameterPageForMainViewIndex(targetIndex);
-  const animate = Boolean(options.animate);
-  const swipeDirection = Number(options.swipeDirection) < 0 ? -1 : 1;
-  const transitionToken = ++screenTransitionToken;
-
-  if (screenTransitionTimer) {
-    clearTimeout(screenTransitionTimer);
-    screenTransitionTimer = null;
-  }
-
-  if (targetIndex === currentViewIndex && !options.force) return;
-
-  const previousViewIndex = currentViewIndex;
-  const previousScreen = currentMainScreen;
-  const previousParamPage = currentParamPage;
-
-  const nextPanel = mainScreenPanels.find((panel) => panel.dataset.screen === targetScreen) || null;
-  const currentPanel = mainScreenPanels.find((panel) => panel.dataset.screen === previousScreen) || null;
-  if (!nextPanel) return;
-
-  updateMainScreenSwitchButtons(targetIndex);
-  currentViewIndex = targetIndex;
-  currentMainScreen = targetScreen;
-
-  if (!animate) {
-    if (targetScreen === "parameters") {
-      setParameterPage(targetParamPage);
-    }
-    mainScreenPanels.forEach((panel) => {
-      clearMainScreenTransitionState(panel);
-      panel.classList.toggle("active", panel === nextPanel);
-    });
-    handleMainScreenEntered(targetScreen);
-    return;
-  }
-
-  if (!currentPanel) {
-    if (targetScreen === "parameters") {
-      setParameterPage(targetParamPage);
-    }
-    nextPanel.classList.add("active");
-    handleMainScreenEntered(targetScreen);
-    return;
-  }
-
-  if (previousScreen === "parameters" && targetScreen === "parameters" && previousParamPage !== targetParamPage) {
-    animateParameterPageTransition(nextPanel, targetParamPage, swipeDirection, transitionToken);
-    return;
-  }
-
-  if (previousScreen === targetScreen) {
-    if (targetScreen === "parameters") {
-      setParameterPage(targetParamPage);
-    }
-    handleMainScreenEntered(targetScreen);
-    return;
-  }
-
-  if (targetScreen === "parameters") {
-    setParameterPage(targetParamPage);
-  }
-
-  const incomingStartX = swipeDirection < 0 ? "100%" : "-100%";
-  const outgoingEndX = swipeDirection < 0 ? "-100%" : "100%";
-
   mainScreenPanels.forEach((panel) => {
-    clearMainScreenTransitionState(panel);
-    if (panel !== currentPanel && panel !== nextPanel) {
-      panel.classList.remove("active");
-    }
+    panel.classList.toggle("active", panel.dataset.screen === target);
   });
-
-  currentPanel.classList.add("active");
-  nextPanel.classList.add("active");
-  nextPanel.style.transform = `translate3d(${incomingStartX}, 0, 0)`;
-  currentPanel.style.transform = "translate3d(0, 0, 0)";
-
-  // Force layout before enabling transition to keep animation smooth.
-  void nextPanel.offsetWidth;
-
-  nextPanel.classList.add("transitioning");
-  currentPanel.classList.add("transitioning");
-  nextPanel.style.transitionDuration = `${SCREEN_SLIDE_MS}ms`;
-  currentPanel.style.transitionDuration = `${SCREEN_SLIDE_MS}ms`;
-
-  window.requestAnimationFrame(() => {
-    if (transitionToken !== screenTransitionToken) return;
-    nextPanel.style.transform = "translate3d(0, 0, 0)";
-    currentPanel.style.transform = `translate3d(${outgoingEndX}, 0, 0)`;
-  });
-
-  screenTransitionTimer = window.setTimeout(() => {
-    if (transitionToken !== screenTransitionToken) return;
-    clearMainScreenTransitionState(currentPanel);
-    clearMainScreenTransitionState(nextPanel);
-    currentPanel.classList.remove("active");
-    nextPanel.classList.add("active");
-    handleMainScreenEntered(targetScreen);
-    screenTransitionTimer = null;
-  }, SCREEN_SLIDE_MS + 34);
+  if (target === "edit") setParameterPage(currentParamPage);
+  handleMainScreenEntered(target);
 }
 
-function initMainScreenSwitcher() {
+function initScreenNav() {
   if (!mainScreenSwitchEl) return;
   mainScreenSwitchEl.addEventListener("click", (event) => {
-    const button = event.target.closest(".main-screen-btn[data-view-index]");
+    const button = event.target.closest(".nav-btn[data-screen]");
     if (!button) return;
-    const targetViewIndex = normalizedMainViewIndex(button.dataset.viewIndex);
-    const direction = inferMainViewSwipeDirection(currentViewIndex, targetViewIndex);
-    setMainView(targetViewIndex, { animate: true, swipeDirection: direction });
+    setScreen(button.dataset.screen);
   });
-}
-
-function shouldIgnoreSwipeStartTarget(target) {
-  if (!(target instanceof Element)) return true;
-  return Boolean(target.closest(
-    "button,input,select,textarea,a,label,.tab-strip,.main-screen-switch,.log-footer,#aboutDrawer,.midi-map-panel,.midi-map-trigger"
-  ));
-}
-
-function switchMainViewBySwipe(step) {
-  const direction = step >= 0 ? 1 : -1;
-  const nextViewIndex = clamp(currentViewIndex + direction, 0, Math.max(0, MAIN_VIEW_COUNT - 1));
-  if (nextViewIndex === currentViewIndex) return;
-  const swipeDirection = direction > 0 ? -1 : 1;
-  setMainView(nextViewIndex, { animate: true, swipeDirection });
-}
-
-function initMainScreenSwipe() {
-  if (!mainScreenStageEl) return;
-  let swipeStart = null;
-
-  mainScreenStageEl.addEventListener("touchstart", (event) => {
-    if (event.touches.length !== 1) {
-      swipeStart = null;
-      return;
-    }
-    const touch = event.touches[0];
-    if (!touch || shouldIgnoreSwipeStartTarget(event.target)) {
-      swipeStart = null;
-      return;
-    }
-    swipeStart = {
-      x: touch.clientX,
-      y: touch.clientY,
-      time: Date.now()
-    };
-  }, { passive: true });
-
-  mainScreenStageEl.addEventListener("touchcancel", () => {
-    swipeStart = null;
-  }, { passive: true });
-
-  mainScreenStageEl.addEventListener("touchend", (event) => {
-    if (!swipeStart) return;
-    const touch = event.changedTouches?.[0];
-    if (!touch) {
-      swipeStart = null;
-      return;
-    }
-
-    const dx = touch.clientX - swipeStart.x;
-    const dy = touch.clientY - swipeStart.y;
-    const dt = Date.now() - swipeStart.time;
-    swipeStart = null;
-
-    if (dt > SWIPE_MAX_DURATION_MS) return;
-    if (Math.abs(dx) < SWIPE_MIN_DISTANCE_PX) return;
-    if (Math.abs(dy) > SWIPE_MAX_OFF_AXIS_PX) return;
-    if (Math.abs(dx) <= Math.abs(dy)) return;
-
-    if (dx < 0) switchMainViewBySwipe(1);
-    else switchMainViewBySwipe(-1);
-  }, { passive: true });
 }
 
 function setScopeStreaming(enabled) {
@@ -2946,9 +2719,8 @@ window.spaluterApi.onScope((samples) => {
 renderSynthToggle();
 setCpuUsage(0);
 initModulationUi();
-initMainScreenSwitcher();
-initMainScreenSwipe();
-setMainView(mainScreenButtons.find((button) => button.classList.contains("active"))?.dataset.viewIndex || 0, { force: true });
+initScreenNav();
+setScreen("perform", { force: true });
 updateWaveformViews();
 clearOutputScope();
 window.addEventListener("resize", scheduleWaveformResizeRefresh);
@@ -3184,3 +2956,68 @@ window.spaluterApi.getInitialState().then((state) => {
   refreshSampleList(defaultDir, "");
   refreshScopeStreamingState();
 });
+
+// ─────────────────────────── Live UI additions ─────────────────────────────
+// Performance-page macro encoders: each macro (0..1) drives several engine
+// params via linear interpolation, routed through setParamValue so the OSC
+// send + UI sync + previews all stay consistent.
+const MACRO_TARGETS = Object.freeze({
+  macroBrightness: [["drive", 1, 3.2], ["formant2", 200, 1400], ["formant3", 400, 2600]],
+  macroMotion: [["ampJitter", 0, 0.6], ["timingJitter", 0, 0.5]],
+  macroWidth: [["pan2", 0, 1], ["pan3", 0, -1]],
+  macroTexture: [["maskAmount", 0, 0.9], ["duty", 0.5, 0.12]],
+  macroShape: [["pulsaret", 0, 6], ["window", 0, 5]]
+});
+
+function initMacros() {
+  Object.keys(MACRO_TARGETS).forEach((id) => {
+    const slider = document.getElementById(id);
+    if (!slider) return;
+    const valEl = document.getElementById(`${id}Val`);
+    const apply = () => {
+      const frac = clamp(Number(slider.value), 0, 1);
+      if (valEl) valEl.textContent = String(Math.round(frac * 100));
+      MACRO_TARGETS[id].forEach(([param, lo, hi]) => {
+        setParamValue(param, lo + ((hi - lo) * frac), true);
+      });
+    };
+    slider.addEventListener("input", apply);
+  });
+}
+
+// Header status chips + perform-page MIDI activity readout.
+function setChip(id, cls, label) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.classList.remove("ok", "warn", "bad");
+  if (cls) el.classList.add(cls);
+  const lbl = el.querySelector(".lbl");
+  if (lbl) lbl.textContent = label;
+}
+
+function refreshStatusChips() {
+  if (synthRunning) {
+    setChip("chipSc", "ok", "RUN");
+    setChip("chipAudio", "ok", "ON");
+  } else {
+    setChip("chipSc", "bad", "OFF");
+    setChip("chipAudio", "bad", "OFF");
+  }
+  if (lastMidiInputCount > 0) setChip("chipMidi", "ok", "LIVE");
+  else if (lastMidiInputCount === 0) setChip("chipMidi", "warn", "NONE");
+  else setChip("chipMidi", "", "—");
+
+  const midiMeta = document.getElementById("midiActivityMeta");
+  if (midiMeta) {
+    if (lastMidiInputCount > 0) {
+      const n = activeMidiNotes.length;
+      midiMeta.textContent = `MIDI IN · ${lastMidiInputCount} dev · ${n} note${n === 1 ? "" : "s"}`;
+    } else {
+      midiMeta.textContent = "MIDI IN · no device";
+    }
+  }
+}
+
+initMacros();
+refreshStatusChips();
+window.setInterval(refreshStatusChips, 750);

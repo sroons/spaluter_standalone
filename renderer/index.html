@@ -3,305 +3,252 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Spaluter Desktop</title>
+    <title>Spaluter</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
 
-    <!-- Header -->
+    <!-- ─── Header ─── -->
     <header>
       <div class="header-brand">
-        <h1><span class="title-spaluter">Spa</span><span class="title-desktop">lu</span><span class="title-spaluter">ter</span></h1>
+        <h1><span class="title-spaluter">S</span><span class="title-desktop">PI</span><span class="title-spaluter">LUTER</span></h1>
+        <div class="tagline">PULSAR&nbsp;SYNTHESIS&nbsp;<b>ENGINE</b><br>OSC&nbsp;57131&nbsp;·&nbsp;SC&nbsp;3.13</div>
         <img class="header-wave" src="./assets/spaluter_icon.png" alt="" />
       </div>
       <div class="header-transport">
-        <div id="cpuUsage">CPU: --</div>
+        <div class="chips">
+          <div class="chip" id="chipMidi"><div class="k">MIDI</div><div class="s"><span class="dot"></span><span class="lbl">—</span></div></div>
+          <div class="chip" id="chipSc"><div class="k">SCLANG</div><div class="s"><span class="dot"></span><span class="lbl">—</span></div></div>
+          <div class="chip" id="chipAudio"><div class="k">AUDIO</div><div class="s"><span class="dot"></span><span class="lbl">—</span></div></div>
+          <div class="chip ok" id="chipPwr"><div class="k">POWER</div><div class="s"><span class="dot"></span><span class="lbl">OK</span></div></div>
+        </div>
         <div id="status">Starting...</div>
-        <button id="synthToggle" data-action="start" aria-pressed="false">Start Synth</button>
+        <div id="cpuUsage">CPU: --</div>
         <button data-action="reset">↺ Reset</button>
         <button id="toggleLog" type="button" aria-expanded="false">Log</button>
         <button id="toggleAbout" type="button" aria-expanded="false">About</button>
       </div>
     </header>
 
-    <div class="main-screen-switch" id="mainScreenSwitch" role="tablist" aria-label="Main screens">
-      <button class="main-screen-btn active" data-view-index="0" type="button" aria-pressed="true">SCOPES</button>
-      <button class="main-screen-btn" data-view-index="1" type="button" aria-pressed="false">PARAMETERS P1</button>
-      <button class="main-screen-btn" data-view-index="2" type="button" aria-pressed="false">PARAMETERS P2</button>
-      <button class="main-screen-btn" data-view-index="3" type="button" aria-pressed="false">PARAMETERS P3</button>
-      <button class="main-screen-btn" data-view-index="4" type="button" aria-pressed="false">PARAMETERS P4</button>
-      <button class="main-screen-btn" data-view-index="5" type="button" aria-pressed="false">PARAMETERS P5</button>
-      <button class="main-screen-btn" data-view-index="6" type="button" aria-pressed="false">PARAMETERS P6</button>
-      <button class="main-screen-btn" data-view-index="7" type="button" aria-pressed="false">MODULATION</button>
-    </div>
-
+    <!-- ─── Screen stage ─── -->
     <div id="mainScreenStage" class="main-screen-stage">
-      <section class="main-screen active" data-screen="scopes" aria-label="Scope screen">
-        <div class="waveform-strip" aria-label="Waveform previews">
-        <div class="waveform-panel">
-          <div class="waveform-panel-header">
-            <span class="waveform-panel-title">Pulsaret</span>
-            <span id="pulsaretWaveLabel" class="waveform-panel-meta">sine</span>
-          </div>
-          <canvas id="pulsaretWaveView" class="waveform-canvas" width="320" height="84" aria-label="Pulsaret waveform preview"></canvas>
-        </div>
-        <div class="waveform-panel">
-          <div class="waveform-panel-header">
-            <span class="waveform-panel-title">Window</span>
-            <span id="windowWaveLabel" class="waveform-panel-meta">rectangular</span>
-          </div>
-          <canvas id="windowWaveView" class="waveform-canvas" width="320" height="84" aria-label="Window waveform preview"></canvas>
-        </div>
-        <div class="waveform-panel">
-          <div class="waveform-panel-header">
-            <span class="waveform-panel-title">Duty</span>
-            <span id="dutyWaveLabel" class="waveform-panel-meta">0.50</span>
-          </div>
-          <canvas id="dutyWaveView" class="waveform-canvas" width="320" height="84" aria-label="Duty waveform preview"></canvas>
-        </div>
-        <div class="waveform-panel formant-scope-panel equal-height-scope-panel">
-          <div class="waveform-panel-header">
-            <span class="waveform-panel-title">Formants</span>
-            <span id="formantWaveLabel" class="waveform-panel-meta">F1 20 Hz • F2 200 Hz</span>
-          </div>
-          <canvas id="formantWaveView" class="waveform-canvas" width="320" height="52" aria-label="Active formants scope preview"></canvas>
-        </div>
-        <div class="waveform-panel formant-activity-panel">
-          <div class="waveform-panel-header">
-            <span class="waveform-panel-title">Formant Activity</span>
-            <span id="formantActivityLabel" class="waveform-panel-meta">Static • Mask-aware</span>
-          </div>
-          <canvas id="formantActivityView" class="waveform-canvas" width="320" height="84" aria-label="Formant activity heatmap"></canvas>
-        </div>
-        <div class="waveform-panel equal-height-scope-panel">
-          <div class="waveform-panel-header">
-            <span class="waveform-panel-title">Mask Scope</span>
-            <span id="maskScopeLabel" class="waveform-panel-meta">Off • PF off • 0.50</span>
-          </div>
-          <canvas id="maskScopeView" class="waveform-canvas" width="320" height="84" aria-label="Mask activity scope"></canvas>
-        </div>
-        <div class="waveform-panel equal-height-scope-panel peak-meter-panel">
-          <div class="waveform-panel-header">
-            <span class="waveform-panel-title">Stereo Peak</span>
-            <span id="peakMeterLabel" class="waveform-panel-meta">L -inf dB • R -inf dB</span>
-          </div>
-          <canvas id="peakMeterView" class="waveform-canvas" width="320" height="52" aria-label="Stereo peak hold meter"></canvas>
-        </div>
-        </div>
-      </section>
 
-      <section class="main-screen" data-screen="parameters" aria-label="Parameter screen">
-      <!-- About drawer (hidden by default, renderer.js toggles it) -->
-      <section id="aboutDrawer" class="info-drawer closed">
-        <div class="info-drawer-header">
-          <h2>About Spaluter</h2>
-          <button id="closeAbout" type="button">Close</button>
-        </div>
-        <div class="info-content">
-          <p>Pulsar synthesis builds sound from a stream of tiny wave fragments called pulsarets. Each pulsaret is brief, periodic, and can be morphed to create very different timbres.</p>
-          <p>Spaluter shapes each pulsaret with a <strong>window</strong>, which controls the grain envelope, and a <strong>duty</strong> value, which sets how much of each cycle is active versus silent.</p>
-          <p>By sweeping pulsaret waveform, window type, pitch/formants, and texture controls, you move between pitched tones, vocal-like spectra, and noisy granular textures while keeping a rhythmic pulse structure.</p>
-          <p><strong>Credits:</strong> Spaluter's pulsar synthesis direction is inspired by Curtis Roads' foundational work in granular and microsound composition.</p>
-          <p class="info-sources-title"><strong>Curtis Roads source material:</strong></p>
-          <ul class="info-sources">
-            <li><a href="https://mitpress.mit.edu/9780262681544/microsound/" target="_blank" rel="noopener noreferrer">Microsound (MIT Press)</a></li>
-            <li><a href="https://mitpress.mit.edu/9780262044912/the-computer-music-tutorial/" target="_blank" rel="noopener noreferrer">The Computer Music Tutorial, 2nd Edition (MIT Press)</a></li>
-          </ul>
-        </div>
-      </section>
+      <!-- ===== PERFORM ===== -->
+      <section class="main-screen active" data-screen="perform" aria-label="Perform screen">
+        <div class="perform-row">
 
-      <section class="param-monitor" aria-label="Realtime parameter values">
-        <div id="paramValueGrid" class="param-value-grid"></div>
-      </section>
-
-      <!-- Tab strip -->
-      <div class="tab-strip" id="tabStrip">
-        <button class="tab-btn active" data-tab="core" type="button">Core</button>
-        <button class="tab-btn" data-tab="wave" type="button">Wave / Formants</button>
-        <button class="tab-btn" data-tab="fx" type="button">Texture / FX</button>
-        <button class="tab-btn" data-tab="voice" type="button">Voice / Sample</button>
-      </div>
-
-      <!-- Tab panels -->
-      <div class="tab-panels">
-
-      <!-- ─── Core ─── -->
-      <div class="tab-panel active" data-tab="core">
-        <div class="section-title blue">Main Controls</div>
-        <div class="knob-grid">
-          <div class="knob-control"><div class="knob" data-param="amp" data-min="0" data-max="1" data-step="0.01" data-value="0.25"><div class="knob-pointer"></div></div><div class="knob-label">Amplitude</div><div class="knob-value">0.25</div></div>
-          <div class="knob-control"><div class="knob" data-param="drive" data-min="0.1" data-max="4" data-step="0.01" data-value="1.0"><div class="knob-pointer"></div></div><div class="knob-label">Drive</div><div class="knob-value">1.00</div></div>
-          <div class="knob-control"><div class="knob" data-param="pulsaret" data-min="0" data-max="9" data-step="0.1" data-value="2.5"><div class="knob-pointer"></div></div><div class="knob-label">Pulsaret</div><div class="knob-value">2.50</div></div>
-          <div class="knob-control"><div class="knob" data-param="window" data-min="0" data-max="8" data-step="0.1" data-value="0.5"><div class="knob-pointer"></div></div><div class="knob-label">Window</div><div class="knob-value">0.50</div></div>
-          <div class="knob-control"><div class="knob" data-param="duty" data-min="0.01" data-max="1" data-step="0.01" data-value="0.5"><div class="knob-pointer"></div></div><div class="knob-label">Duty</div><div class="knob-value">0.50</div></div>
-        </div>
-
-        <div class="section-title" style="margin-top:6px;">Presets</div>
-        <div class="preset-row">
-          <select id="presetSlot" style="max-width:220px"></select>
-          <input id="presetName" type="text" maxlength="48" placeholder="Enter preset name" style="max-width:180px" />
-          <button id="savePreset" type="button">Save</button>
-          <button id="loadPreset" type="button">Recall</button>
-        </div>
-      </div>
-
-      <!-- ─── Wave / Formants ─── -->
-      <div class="tab-panel" data-tab="wave">
-        <div class="controls-row">
-          <div class="control"><label for="dutyMode">Duty Mode</label><select id="dutyMode" data-param="dutyMode"><option value="0" selected>Manual</option><option value="1">Formant</option></select></div>
-          <div class="control"><label for="formantCount">Formants</label><select id="formantCount" data-param="formantCount"><option value="1">1</option><option value="2">2</option><option value="3" selected>3</option></select></div>
-          <div class="control"><label for="formantTrack">Formant Track</label><select id="formantTrack" data-param="formantTrack"><option value="0" selected>Off</option><option value="1">On</option></select></div>
-        </div>
-        <div class="split-row">
-          <div>
-            <div class="section-title orange">Formant Frequencies</div>
-            <div class="knob-grid">
-              <div class="knob-control"><div class="knob" data-param="formant1" data-min="20" data-max="3000" data-step="1" data-value="20"><div class="knob-pointer"></div></div><div class="knob-label">Formant 1</div><div class="knob-value">20.00</div></div>
-              <div class="knob-control"><div class="knob" data-param="formant2" data-min="20" data-max="3000" data-step="1" data-value="200"><div class="knob-pointer"></div></div><div class="knob-label">Formant 2</div><div class="knob-value">200.00</div></div>
-              <div class="knob-control"><div class="knob" data-param="formant3" data-min="20" data-max="3000" data-step="1" data-value="400"><div class="knob-pointer"></div></div><div class="knob-label">Formant 3</div><div class="knob-value">400.00</div></div>
+          <div class="panel scope-card">
+            <div class="ph"><span class="t">Stereo Output</span><span class="m" id="outputScopeLabel">HERO · LIVE OSCILLOSCOPE</span></div>
+            <div class="scope-wrap">
+              <canvas id="outputScopeView" width="600" height="300" aria-label="Live output scope"></canvas>
+              <div class="legend"><span class="l">▮ CH_L</span><span class="r">▮ CH_R</span></div>
+            </div>
+            <div class="scope-foot">
+              <span class="scope-meta" id="midiActivityMeta">MIDI IN · waiting…</span>
+              <span class="scope-meta ok" id="peakMeterLabel">L -inf dB • R -inf dB</span>
             </div>
           </div>
-          <div>
-            <div class="section-title orange">Stereo Pan</div>
-            <div class="knob-grid">
-              <div class="knob-control"><div class="knob" data-param="pan1" data-min="-1" data-max="1" data-step="0.01" data-value="0"><div class="knob-pointer"></div></div><div class="knob-label">Pan 1</div><div class="knob-value">0.00</div></div>
-              <div class="knob-control"><div class="knob" data-param="pan2" data-min="-1" data-max="1" data-step="0.01" data-value="0.5"><div class="knob-pointer"></div></div><div class="knob-label">Pan 2</div><div class="knob-value">0.50</div></div>
-              <div class="knob-control"><div class="knob" data-param="pan3" data-min="-1" data-max="1" data-step="0.01" data-value="-0.5"><div class="knob-pointer"></div></div><div class="knob-label">Pan 3</div><div class="knob-value">-0.50</div></div>
+
+          <div class="panel peak-card">
+            <div class="ph"><span class="t">Peak</span></div>
+            <div class="peak-wrap"><canvas id="peakMeterView" width="80" height="240" aria-label="Stereo peak meter"></canvas></div>
+          </div>
+
+          <div class="panel macros-card">
+            <div class="ph"><span class="t">Macros</span><span class="num">M01—05</span></div>
+            <div class="macros">
+              <div class="mlane"><span class="ix">M01</span>
+                <div><div class="nm">Brightness</div><input class="macro-slider" id="macroBrightness" type="range" min="0" max="1" step="0.01" value="0.3" /></div>
+                <div class="val" id="macroBrightnessVal">30</div></div>
+              <div class="mlane"><span class="ix">M02</span>
+                <div><div class="nm">Motion</div><input class="macro-slider" id="macroMotion" type="range" min="0" max="1" step="0.01" value="0" /></div>
+                <div class="val" id="macroMotionVal">0</div></div>
+              <div class="mlane"><span class="ix">M03</span>
+                <div><div class="nm">Stereo Width</div><input class="macro-slider" id="macroWidth" type="range" min="0" max="1" step="0.01" value="0.5" /></div>
+                <div class="val" id="macroWidthVal">50</div></div>
+              <div class="mlane"><span class="ix">M04</span>
+                <div><div class="nm">Texture</div><input class="macro-slider" id="macroTexture" type="range" min="0" max="1" step="0.01" value="0" /></div>
+                <div class="val" id="macroTextureVal">0</div></div>
+              <div class="mlane"><span class="ix">M05</span>
+                <div><div class="nm">Grain Shape</div><input class="macro-slider" id="macroShape" type="range" min="0" max="1" step="0.01" value="0.28" /></div>
+                <div class="val" id="macroShapeVal">28</div></div>
             </div>
           </div>
-        </div>
-      </div>
-
-      <!-- ─── Texture / FX ─── -->
-      <div class="tab-panel" data-tab="fx">
-        <div class="controls-row">
-          <div class="control"><label for="maskMode">Mask Mode</label><select id="maskMode" data-param="maskMode"><option value="0" selected>Off</option><option value="1">Stochastic</option><option value="2">Burst</option></select></div>
-          <div class="control"><label for="perFormantMask">Per-Formant Mask</label><select id="perFormantMask" data-param="perFormantMask"><option value="0" selected>Off</option><option value="1">On</option></select></div>
-        </div>
-        <div class="section-title green">Texture Controls</div>
-        <div class="knob-grid">
-          <div class="knob-control"><div class="knob" data-param="maskAmount" data-min="0" data-max="1" data-step="0.01" data-value="0.5"><div class="knob-pointer"></div></div><div class="knob-label">Mask Amt</div><div class="knob-value">0.50</div></div>
-          <div class="knob-control"><div class="knob" data-param="ampJitter" data-min="0" data-max="1" data-step="0.01" data-value="0"><div class="knob-pointer"></div></div><div class="knob-label">Amp Jitter</div><div class="knob-value">0.00</div></div>
-          <div class="knob-control"><div class="knob" data-param="timingJitter" data-min="0" data-max="1" data-step="0.01" data-value="0"><div class="knob-pointer"></div></div><div class="knob-label">Timing Jit</div><div class="knob-value">0.00</div></div>
-          <div class="knob-control"><div class="knob" data-param="glisson" data-min="-2" data-max="2" data-step="0.01" data-value="0"><div class="knob-pointer"></div></div><div class="knob-label">Glisson</div><div class="knob-value">0.00</div></div>
-          <div class="knob-control"><div class="knob" data-param="burstOn" data-min="1" data-max="16" data-step="1" data-value="4"><div class="knob-pointer"></div></div><div class="knob-label">Burst On</div><div class="knob-value">4.00</div></div>
-          <div class="knob-control"><div class="knob" data-param="burstOff" data-min="0" data-max="16" data-step="1" data-value="0"><div class="knob-pointer"></div></div><div class="knob-label">Burst Off</div><div class="knob-value">0.00</div></div>
-        </div>
-      </div>
-
-      <!-- ─── Voice / Sample ─── -->
-      <div class="tab-panel" data-tab="voice">
-        <div class="section-title violet">Voice</div>
-        <div class="controls-row">
-          <div class="control"><label for="gateMode">Gate Mode</label><select id="gateMode" data-param="gateMode"><option value="0">MIDI-like</option><option value="1" selected>Free Run</option><option value="2">CV-like</option></select></div>
-          <div class="control"><label for="voiceCount">Voices</label><select id="voiceCount" data-param="voiceCount"><option value="1" selected>1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option></select></div>
-          <div class="control"><label for="chordType">Chord Type</label><select id="chordType" data-param="chordType"><option value="0" selected>Unison</option><option value="1">Octaves</option><option value="2">Fifths</option><option value="3">Sub+Oct</option><option value="4">Major</option><option value="5">Minor</option><option value="6">Maj7</option><option value="7">Min7</option><option value="8">Sus4</option><option value="9">Dom7</option><option value="10">Dim</option><option value="11">Aug</option><option value="12">Power</option><option value="13">Open5th</option></select></div>
-        </div>
-        <div class="knob-grid">
-          <div class="knob-control"><div class="knob" data-param="basePitch" data-min="20" data-max="1000" data-step="1" data-value="33"><div class="knob-pointer"></div></div><div class="knob-label">Base Pitch</div><div class="knob-value">33.00</div></div>
-          <div class="knob-control"><div class="knob" data-param="attackMs" data-min="0.1" data-max="2000" data-step="0.1" data-value="10"><div class="knob-pointer"></div></div><div class="knob-label">Attack ms</div><div class="knob-value">10.00</div></div>
-          <div class="knob-control"><div class="knob" data-param="releaseMs" data-min="1" data-max="3200" data-step="1" data-value="200"><div class="knob-pointer"></div></div><div class="knob-label">Release ms</div><div class="knob-value">200.00</div></div>
-          <div class="knob-control"><div class="knob" data-param="glideMs" data-min="0" data-max="2000" data-step="1" data-value="0"><div class="knob-pointer"></div></div><div class="knob-label">Glide ms</div><div class="knob-value">0.00</div></div>
-        </div>
-
-        <div class="section-title violet" style="margin-top:6px;">Sample</div>
-        <div class="sample-row">
-          <div class="control" style="border:none;background:none;padding:0">
-            <label for="useSample"><input type="checkbox" id="useSampleCheck" style="accent-color:var(--accent-blue)"> Use Sample</label>
-            <select id="useSample" data-param="useSample" style="display:none"><option value="0" selected>Off</option><option value="1">On</option></select>
-          </div>
-          <select id="sampleFile" style="flex:1;max-width:170px;font-size:10px;font-family:inherit;background:rgb(22,24,40);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 6px"></select>
-          <input id="sampleDirectory" type="text" value="" placeholder="/spaluter/samples/" style="flex:1;max-width:130px;font-size:10px;font-family:inherit;background:rgb(22,24,40);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 6px" />
-          <div class="control" style="border:none;background:none;padding:0;gap:4px;flex-shrink:0">
-            <label for="sampleRate" style="font-size:9px">Rate</label>
-            <input id="sampleRate" data-param="sampleRate" type="range" min="0.25" max="4" step="0.01" value="1" style="width:80px" />
-            <span class="sample-rate-val" id="sampleRateVal">1.00×</span>
-          </div>
-          <button id="loadSample" type="button">Load</button>
-          <button id="refreshSamples" type="button">↻</button>
-        </div>
-      </div>
 
         </div>
       </section>
 
-      <section class="main-screen" data-screen="modulation" aria-label="Modulation screen">
+      <!-- ===== EDIT ===== -->
+      <section class="main-screen" data-screen="edit" aria-label="Edit screen">
+        <div class="wave-strip">
+          <div class="wave-panel"><div class="wave-head"><span class="wave-title">Pulsaret</span><span class="wave-meta" id="pulsaretWaveLabel">sine</span></div><canvas id="pulsaretWaveView" class="wave-canvas" width="320" height="52"></canvas></div>
+          <div class="wave-panel"><div class="wave-head"><span class="wave-title">Window</span><span class="wave-meta" id="windowWaveLabel">rectangular</span></div><canvas id="windowWaveView" class="wave-canvas" width="320" height="52"></canvas></div>
+          <div class="wave-panel"><div class="wave-head"><span class="wave-title">Duty</span><span class="wave-meta" id="dutyWaveLabel">0.50</span></div><canvas id="dutyWaveView" class="wave-canvas" width="320" height="52"></canvas></div>
+          <div class="wave-panel"><div class="wave-head"><span class="wave-title">Formants</span><span class="wave-meta" id="formantWaveLabel">F1 20 Hz</span></div><canvas id="formantWaveView" class="wave-canvas" width="320" height="52"></canvas></div>
+          <div class="wave-panel"><div class="wave-head"><span class="wave-title">Formant Activity</span><span class="wave-meta" id="formantActivityLabel">Static</span></div><canvas id="formantActivityView" class="wave-canvas" width="320" height="52"></canvas></div>
+          <div class="wave-panel"><div class="wave-head"><span class="wave-title">Mask</span><span class="wave-meta" id="maskScopeLabel">Off</span></div><canvas id="maskScopeView" class="wave-canvas" width="320" height="52"></canvas></div>
+        </div>
+
+        <div class="panel param-monitor">
+          <div class="ph">
+            <span class="t">Parameters</span>
+            <span class="pager">
+              <button id="paramPagePrev" type="button">‹ Prev</button>
+              <span id="paramPageIndicator">Core (1/6)</span>
+              <button id="paramPageNext" type="button">Next ›</button>
+            </span>
+          </div>
+          <div id="paramValueGrid" class="param-value-grid"></div>
+        </div>
+      </section>
+
+      <!-- ===== MODS ===== -->
+      <section class="main-screen" data-screen="mods" aria-label="Modulation screen">
         <div class="modulation-toolbar">
-          <div class="modulation-toolbar-group">
-            <span class="modulation-title">Internal LFOs</span>
-          </div>
-          <div class="modulation-toolbar-group">
-            <span id="lfoCountHint" class="modulation-hint">0 of 16 active</span>
-          </div>
+          <span class="modulation-title">Internal LFO Bus · 16 Modulators</span>
+          <span id="lfoCountHint" class="modulation-hint">0 of 16 active</span>
         </div>
         <div class="lfo-overview" id="lfoOverview" aria-label="Active LFO overview"></div>
         <div class="lfo-strip-list" id="lfoStripList" aria-label="LFO controls"></div>
       </section>
+
+      <!-- ===== PRESETS ===== -->
+      <section class="main-screen" data-screen="presets" aria-label="Presets screen">
+        <div class="presets-row">
+
+          <div class="panel preset-bank">
+            <div class="ph"><span class="t">Preset Bank</span><span class="m">32 SLOTS · SAVE / RECALL</span></div>
+            <div class="panel-body">
+              <div class="field-row">
+                <label for="presetSlot">Slot</label>
+                <select id="presetSlot" size="8" style="min-height:200px"></select>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel preset-detail">
+            <div class="ph"><span class="t">Snapshot</span><span class="num">SAVE / RECALL</span></div>
+            <div class="panel-body">
+              <div class="field-row">
+                <label for="presetName">Name</label>
+                <input id="presetName" type="text" maxlength="48" placeholder="Enter preset name" />
+              </div>
+              <div class="preset-actions">
+                <button id="loadPreset" class="primary" type="button">↺ Recall</button>
+                <button id="savePreset" type="button">⤓ Save</button>
+              </div>
+
+              <div class="field-row sample-block">
+                <label>Sample (captured with preset)</label>
+                <div class="sample-line">
+                  <label for="useSampleCheck"><input type="checkbox" id="useSampleCheck" /> Use Sample</label>
+                  <select id="useSample" data-param="useSample" style="display:none"><option value="0" selected>Off</option><option value="1">On</option></select>
+                </div>
+                <div class="sample-line">
+                  <select id="sampleFile" style="flex:1; min-width:140px"></select>
+                  <button id="refreshSamples" type="button">↻</button>
+                </div>
+                <div class="sample-line">
+                  <input id="sampleDirectory" type="text" placeholder="/spaluter/samples/" style="flex:1; min-width:140px" />
+                  <button id="loadSample" type="button">Load</button>
+                </div>
+                <div class="sample-line">
+                  <label for="sampleRate">Rate</label>
+                  <input id="sampleRate" data-param="sampleRate" type="range" min="0.25" max="4" step="0.01" value="1" style="flex:1" />
+                  <span class="sample-rate-val" id="sampleRateVal">1.00×</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
     </div>
 
-    <!-- Log footer -->
-    <section id="logDrawer" class="log-drawer">
-      <div class="log-footer">
-        <div class="log-toggle-bar" id="logToggleBar">
-          <span>▸ LOG</span>
-          <span class="log-chevron" id="logChevron">▾</span>
-        </div>
-        <div class="log-content closed" id="logContent">
-          <div class="log-drawer-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-            <h2 style="font-size:12px;margin:0">Log</h2>
-            <button id="closeLog" type="button" style="font-size:10px;padding:2px 8px">Close</button>
-          </div>
-          <pre id="log"></pre>
-        </div>
+    <!-- ─── Bottom nav ─── -->
+    <div class="main-screen-switch" id="mainScreenSwitch" role="tablist" aria-label="Main screens">
+      <button class="nav-btn active" data-screen="perform" type="button" aria-pressed="true"><span class="ix">[01]</span><span class="nm">Perform</span></button>
+      <button class="nav-btn" data-screen="edit" type="button" aria-pressed="false"><span class="ix">[02]</span><span class="nm">Edit</span></button>
+      <button class="nav-btn" data-screen="mods" type="button" aria-pressed="false"><span class="ix">[03]</span><span class="nm">Mods</span></button>
+      <button class="nav-btn" data-screen="presets" type="button" aria-pressed="false"><span class="ix">[04]</span><span class="nm">Presets</span></button>
+      <button class="nav-kill" id="synthToggle" data-action="start" aria-pressed="false">Start Synth</button>
+    </div>
+
+    <!-- ─── Hidden parameter registry (source of truth for renderer.js) ─── -->
+    <div id="paramRegistry" aria-hidden="true">
+      <input type="range" data-param="amp" min="0" max="1" step="0.01" value="0.25" />
+      <input type="range" data-param="drive" min="0.1" max="4" step="0.01" value="1.0" />
+      <input type="range" data-param="pulsaret" min="0" max="9" step="0.1" value="2.5" />
+      <input type="range" data-param="window" min="0" max="8" step="0.1" value="0.5" />
+      <input type="range" data-param="duty" min="0.01" max="1" step="0.01" value="0.5" />
+      <input type="range" data-param="formant1" min="20" max="3000" step="1" value="20" />
+      <input type="range" data-param="formant2" min="20" max="3000" step="1" value="200" />
+      <input type="range" data-param="formant3" min="20" max="3000" step="1" value="400" />
+      <input type="range" data-param="pan1" min="-1" max="1" step="0.01" value="0" />
+      <input type="range" data-param="pan2" min="-1" max="1" step="0.01" value="0.5" />
+      <input type="range" data-param="pan3" min="-1" max="1" step="0.01" value="-0.5" />
+      <input type="range" data-param="maskAmount" min="0" max="1" step="0.01" value="0.5" />
+      <input type="range" data-param="ampJitter" min="0" max="1" step="0.01" value="0" />
+      <input type="range" data-param="timingJitter" min="0" max="1" step="0.01" value="0" />
+      <input type="range" data-param="glisson" min="-2" max="2" step="0.01" value="0" />
+      <input type="range" data-param="burstOn" min="1" max="16" step="1" value="4" />
+      <input type="range" data-param="burstOff" min="0" max="16" step="1" value="0" />
+      <input type="range" data-param="basePitch" min="20" max="1000" step="1" value="33" />
+      <input type="range" data-param="attackMs" min="0.1" max="2000" step="0.1" value="10" />
+      <input type="range" data-param="releaseMs" min="1" max="3200" step="1" value="200" />
+      <input type="range" data-param="glideMs" min="0" max="2000" step="1" value="0" />
+      <select data-param="dutyMode"><option value="0" selected>Manual</option><option value="1">Formant</option></select>
+      <select data-param="formantCount"><option value="1">1</option><option value="2">2</option><option value="3" selected>3</option></select>
+      <select data-param="formantTrack"><option value="0" selected>Off</option><option value="1">On</option></select>
+      <select data-param="maskMode"><option value="0" selected>Off</option><option value="1">Stochastic</option><option value="2">Burst</option></select>
+      <select data-param="perFormantMask"><option value="0" selected>Off</option><option value="1">On</option></select>
+      <select data-param="gateMode"><option value="0">MIDI-like</option><option value="1" selected>Free Run</option><option value="2">CV-like</option></select>
+      <select data-param="voiceCount"><option value="1" selected>1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option></select>
+      <select data-param="chordType"><option value="0" selected>Unison</option><option value="1">Octaves</option><option value="2">Fifths</option><option value="3">Sub+Oct</option><option value="4">Major</option><option value="5">Minor</option><option value="6">Maj7</option><option value="7">Min7</option><option value="8">Sus4</option><option value="9">Dom7</option><option value="10">Dim</option><option value="11">Aug</option><option value="12">Power</option><option value="13">Open5th</option></select>
+    </div>
+
+    <!-- ─── Log drawer ─── -->
+    <section id="logDrawer" class="log-drawer closed">
+      <div class="log-drawer-header"><h2>Console Log</h2><button id="closeLog" type="button">Close</button></div>
+      <pre id="log"></pre>
+    </section>
+
+    <!-- ─── About drawer ─── -->
+    <section id="aboutDrawer" class="info-drawer closed">
+      <div class="info-drawer-header"><h2>About Spaluter</h2><button id="closeAbout" type="button">Close</button></div>
+      <div class="info-content">
+        <p>Pulsar synthesis builds sound from a stream of tiny wave fragments called pulsarets. Each pulsaret is brief, periodic, and can be morphed to create very different timbres.</p>
+        <p>Spaluter shapes each pulsaret with a <strong>window</strong> (grain envelope) and a <strong>duty</strong> value (active vs. silent portion of each cycle).</p>
+        <p><strong>Credits:</strong> Spaluter's pulsar synthesis direction is inspired by Curtis Roads' foundational work in granular and microsound composition.</p>
+        <ul class="info-sources">
+          <li><a href="https://mitpress.mit.edu/9780262681544/microsound/" target="_blank" rel="noopener noreferrer">Microsound (MIT Press)</a></li>
+          <li><a href="https://mitpress.mit.edu/9780262044912/the-computer-music-tutorial/" target="_blank" rel="noopener noreferrer">The Computer Music Tutorial, 2nd Ed.</a></li>
+        </ul>
       </div>
     </section>
 
     <script src="./renderer.js"></script>
     <script>
-      /* ── Tab switching ── */
-      document.getElementById('tabStrip').addEventListener('click', function(e) {
-        const btn = e.target.closest('.tab-btn');
-        if (!btn) return;
-        document.querySelectorAll('.tab-btn').forEach(t => t.classList.remove('active'));
-        document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-        btn.classList.add('active');
-        document.querySelector('.tab-panel[data-tab="' + btn.dataset.tab + '"]').classList.add('active');
-      });
-
-      /* ── Log toggle (supplements renderer.js log open/close) ── */
-      document.getElementById('logToggleBar').addEventListener('click', function() {
-        const content = document.getElementById('logContent');
-        const isOpen = !content.classList.contains('closed');
-        content.classList.toggle('closed', isOpen);
-        document.getElementById('logChevron').textContent = isOpen ? '▾' : '▴';
-      });
-
-      /* ── Use Sample checkbox <-> hidden select sync ── */
-      (function() {
-        const checkbox = document.getElementById('useSampleCheck');
-        const select = document.getElementById('useSample');
+      /* Use Sample checkbox <-> hidden select sync */
+      (function () {
+        var checkbox = document.getElementById("useSampleCheck");
+        var select = document.getElementById("useSample");
         if (checkbox && select) {
-          checkbox.addEventListener('change', function() {
-            select.value = checkbox.checked ? '1' : '0';
-            select.dispatchEvent(new Event('change'));
+          checkbox.addEventListener("change", function () {
+            select.value = checkbox.checked ? "1" : "0";
+            select.dispatchEvent(new Event("change"));
           });
-          /* Keep checkbox in sync if renderer.js changes the select */
-          const observer = new MutationObserver(function() {
-            checkbox.checked = select.value === '1';
-          });
-          observer.observe(select, { attributes: true, childList: true });
-          /* Also poll in case value is set programmatically */
-          setInterval(function() { checkbox.checked = select.value === '1'; }, 500);
+          setInterval(function () { checkbox.checked = select.value === "1"; }, 500);
         }
       })();
-
-      /* ── Sample rate label update ── */
-      (function() {
-        const slider = document.getElementById('sampleRate');
-        const label = document.getElementById('sampleRateVal');
+      /* Sample rate label */
+      (function () {
+        var slider = document.getElementById("sampleRate");
+        var label = document.getElementById("sampleRateVal");
         if (slider && label) {
-          slider.addEventListener('input', function() {
-            label.textContent = Number(slider.value).toFixed(2) + '×';
+          slider.addEventListener("input", function () {
+            label.textContent = Number(slider.value).toFixed(2) + "×";
           });
         }
       })();
