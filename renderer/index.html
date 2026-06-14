@@ -35,6 +35,7 @@
 
       <!-- ===== PERFORM ===== -->
       <section class="main-screen active" data-screen="perform" aria-label="Perform screen">
+        <div class="perform-ghost" aria-hidden="true">PERFORM</div>
         <div class="perform-row">
 
           <div class="panel scope-card">
@@ -57,21 +58,21 @@
           <div class="panel macros-card">
             <div class="ph"><span class="t">Macros</span><span class="num">M01—05</span></div>
             <div class="macros">
-              <div class="mlane"><span class="ix">M01</span>
+              <div class="mlane"><span class="bn" aria-hidden="true">01</span><span class="ix">M01</span>
                 <div><div class="nm">Brightness</div><input class="macro-slider" id="macroBrightness" type="range" min="0" max="1" step="0.01" value="0.3" /></div>
-                <div class="val" id="macroBrightnessVal">30</div></div>
-              <div class="mlane"><span class="ix">M02</span>
+                <div class="val" id="macroBrightnessVal">30<small>↳ F1·F2·DRIVE</small></div></div>
+              <div class="mlane"><span class="bn" aria-hidden="true">02</span><span class="ix">M02</span>
                 <div><div class="nm">Motion</div><input class="macro-slider" id="macroMotion" type="range" min="0" max="1" step="0.01" value="0" /></div>
-                <div class="val" id="macroMotionVal">0</div></div>
-              <div class="mlane"><span class="ix">M03</span>
+                <div class="val" id="macroMotionVal">0<small>↳ LFO·JITTER</small></div></div>
+              <div class="mlane"><span class="bn" aria-hidden="true">03</span><span class="ix">M03</span>
                 <div><div class="nm">Stereo Width</div><input class="macro-slider" id="macroWidth" type="range" min="0" max="1" step="0.01" value="0.5" /></div>
-                <div class="val" id="macroWidthVal">50</div></div>
-              <div class="mlane"><span class="ix">M04</span>
+                <div class="val" id="macroWidthVal">50<small>↳ PAN1·2·3</small></div></div>
+              <div class="mlane"><span class="bn" aria-hidden="true">04</span><span class="ix">M04</span>
                 <div><div class="nm">Texture</div><input class="macro-slider" id="macroTexture" type="range" min="0" max="1" step="0.01" value="0" /></div>
-                <div class="val" id="macroTextureVal">0</div></div>
-              <div class="mlane"><span class="ix">M05</span>
+                <div class="val" id="macroTextureVal">0<small>↳ MASK·DUTY</small></div></div>
+              <div class="mlane"><span class="bn" aria-hidden="true">05</span><span class="ix">M05</span>
                 <div><div class="nm">Grain Shape</div><input class="macro-slider" id="macroShape" type="range" min="0" max="1" step="0.01" value="0.28" /></div>
-                <div class="val" id="macroShapeVal">28</div></div>
+                <div class="val" id="macroShapeVal">28<small>↳ PULSARET·WIN</small></div></div>
             </div>
           </div>
 

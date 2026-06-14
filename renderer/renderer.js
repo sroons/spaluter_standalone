@@ -639,6 +639,8 @@ function drawScopeTrace(ctx, values, metrics, color) {
   };
   ctx.lineWidth = Math.max(1, dpr);
   ctx.strokeStyle = color;
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 8 * dpr;
   ctx.beginPath();
   const samples = Math.max(48, Math.floor(drawWidth / 2));
   for (let i = 0; i <= samples; i += 1) {
@@ -651,6 +653,7 @@ function drawScopeTrace(ctx, values, metrics, color) {
     else ctx.lineTo(x, y);
   }
   ctx.stroke();
+  ctx.shadowBlur = 0;
 }
 
 function drawOutputScope(canvas, left, right = null) {
@@ -686,9 +689,9 @@ function drawOutputScope(canvas, left, right = null) {
   const prevAlpha = ctx.globalAlpha;
   ctx.globalCompositeOperation = "lighter";
   ctx.globalAlpha = 0.85;
-  drawScopeTrace(ctx, left, metrics, "rgb(91, 169, 246)");
+  drawScopeTrace(ctx, left, metrics, "#ff6f24");
   if (right && right.length > 0) {
-    drawScopeTrace(ctx, right, metrics, "rgb(114, 213, 142)");
+    drawScopeTrace(ctx, right, metrics, "#cfe6ff");
   }
   ctx.globalAlpha = prevAlpha;
   ctx.globalCompositeOperation = prevComposite;
@@ -766,7 +769,7 @@ function drawStereoPeakMeter(canvas) {
   const laneY = [topPad, topPad + laneHeight + laneGap];
   const levels = [stereoPeakDisplayL, stereoPeakDisplayR];
   const holds = [stereoPeakHoldL, stereoPeakHoldR];
-  const laneColors = ["rgb(91, 169, 246)", "rgb(114, 213, 142)"];
+  const laneColors = ["#ff6f24", "#cfe6ff"];
   const labels = ["L", "R"];
 
   for (let i = 0; i < 2; i += 1) {
@@ -775,7 +778,7 @@ function drawStereoPeakMeter(canvas) {
     const hold = clamp(holds[i], 0, 1);
     const fillW = level * usableWidth;
 
-    ctx.fillStyle = "rgba(52, 55, 84, 0.4)";
+    ctx.fillStyle = "rgba(233, 227, 214, 0.05)";
     ctx.fillRect(leftPad, y, usableWidth, laneHeight);
 
     ctx.fillStyle = laneColors[i];
@@ -3299,7 +3302,14 @@ function initMacros() {
     const valEl = document.getElementById(`${id}Val`);
     const apply = () => {
       const frac = clamp(Number(slider.value), 0, 1);
-      if (valEl) valEl.textContent = String(Math.round(frac * 100));
+      if (valEl) {
+        const num = String(Math.round(frac * 100));
+        if (valEl.firstChild && valEl.firstChild.nodeType === 3) {
+          valEl.firstChild.nodeValue = num;
+        } else {
+          valEl.insertBefore(document.createTextNode(num), valEl.firstChild);
+        }
+      }
       MACRO_TARGETS[id].forEach(([param, lo, hi]) => {
         setParamValue(param, lo + ((hi - lo) * frac), true);
       });
