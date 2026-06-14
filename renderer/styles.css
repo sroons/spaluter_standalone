@@ -322,6 +322,9 @@ button{
 }
 button:hover{ background:#23232c; border-color:var(--shock); }
 button[data-action="reset"]{ color:var(--mute-2); }
+/* Match the About button height/touch-target to the taller two-line
+   header buttons (e.g. "Show Log") by stretching it to the header row. */
+#toggleAbout{ align-self:stretch; }
 button:focus-visible, input:focus-visible, select:focus-visible{
   outline:2px solid var(--shock); outline-offset:1px; }
 
