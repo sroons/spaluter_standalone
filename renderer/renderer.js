@@ -1,4 +1,5 @@
 const statusEl = document.getElementById("status");
+const statusTextEl = document.getElementById("statusText") || statusEl;
 const cpuUsageEl = document.getElementById("cpuUsage");
 const logEl = document.getElementById("log");
 const logDrawerEl = document.getElementById("logDrawer");
@@ -2902,7 +2903,7 @@ function refreshScopeStreamingState() {
 }
 
 window.spaluterApi.onStatus((text) => {
-  statusEl.textContent = text;
+  statusTextEl.textContent = text;
   const state = classifyStatus(text);
   const statusText = String(text || "").toLowerCase();
   setStatusState(state);
@@ -3205,7 +3206,7 @@ if (loadSampleBtn) {
 window.spaluterApi.getInitialState().then((state) => {
   if (!state) return;
   if (state.status) {
-    statusEl.textContent = state.status;
+    statusTextEl.textContent = state.status;
     setStatusState(classifyStatus(state.status));
     updateSynthRunningFromStatus(state.status);
   } else {

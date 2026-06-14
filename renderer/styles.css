@@ -67,9 +67,12 @@ header{
 .chip.warn .dot{ background:var(--warn); box-shadow:0 0 8px var(--warn); } .chip.warn .lbl{ color:var(--warn); }
 .chip.bad .dot{ background:var(--shock); box-shadow:0 0 9px var(--shock); } .chip.bad .lbl{ color:var(--shock); }
 
-#status{ font-family:var(--mono); font-size:9px; padding:5px 8px;
-  border:1px solid var(--line-2); color:var(--mute-2); letter-spacing:.03em;
-  max-width:230px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+#status{ padding:5px 8px; border:1px solid var(--line-2); color:var(--mute-2);
+  align-self:stretch; max-width:230px;
+  display:flex; align-items:center; overflow:hidden; }
+#status #statusText{ font-family:var(--mono); font-size:9px; letter-spacing:.03em;
+  display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2;
+  overflow:hidden; }
 #status.status-ok{ color:var(--ok); border-color:rgba(143,227,155,.4); }
 #status.status-starting{ color:var(--warn); border-color:rgba(255,210,58,.4); }
 #status.status-error{ color:var(--shock); border-color:var(--shock); }
