@@ -1,6 +1,7 @@
 const statusEl = document.getElementById("status");
 const statusTextEl = document.getElementById("statusText") || statusEl;
 const cpuUsageEl = document.getElementById("cpuUsage");
+const cpuValEl = document.getElementById("cpuVal");
 const logEl = document.getElementById("log");
 const logDrawerEl = document.getElementById("logDrawer");
 const toggleLogBtn = document.getElementById("toggleLog");
@@ -326,7 +327,11 @@ function setCpuUsage(percent) {
   if (!cpuUsageEl) return;
   const numeric = Number(percent);
   const safeValue = Number.isFinite(numeric) ? Math.max(0, numeric) : 0;
-  cpuUsageEl.textContent = `CPU: ${safeValue.toFixed(1)}%`;
+  if (cpuValEl) {
+    cpuValEl.textContent = `${safeValue.toFixed(1)}%`;
+  } else {
+    cpuUsageEl.textContent = `CPU: ${safeValue.toFixed(1)}%`;
+  }
 }
 
 function renderSynthToggle() {
