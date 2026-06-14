@@ -13,6 +13,48 @@ Cross-platform desktop wrapper for the `spaluter_supercollider.scd` patch.
 - Handles MIDI CC mappings plus MIDI Note On/Off pitch+gate control (auto-switches from Free Run to MIDI-like gating so attack/release is honored)
 - Startup order is enforced as: check SuperCollider -> install if missing -> start SuperCollider -> start synth -> start GUI
 
+## The Perform screen
+
+The Perform screen is the default, always-on view on the 1024×600 Raspberry Pi touchscreen. It is the live "mixer" of the instrument: a large output scope on the left, a stereo peak meter in the middle, and the five performance **macros** on the right.
+
+![Spaluter Perform screen](docs/perform-screen.png)
+
+### Header (top row)
+
+- **SPILUTER wordmark** — the "PI" is tinted in the shock orange accent.
+- **Status chips** — live health of the runtime: `MIDI` (input device link), `SCLANG` (language runtime), `AUDIO` (output engine), and `POWER` (Pi under-voltage/throttle state). Green = healthy.
+- **Status label** — the current engine status (e.g. `Synth started`); wraps to two lines for longer messages.
+- **CPU** — current CPU load, with the label on top and the value (bold) beneath.
+- **Reset / Show Log / About** — utility buttons. The bottom-right **Stop Synth** button (red) is the emergency stop.
+
+### Stereo Output (hero scope)
+
+A live oscilloscope of the synthesized output. **CH_L** is drawn in shock orange and **CH_R** in pale ice-blue, each with a soft bloom. The horizontal centre line is the zero axis. The footer shows the active MIDI input summary. The scope only renders while Perform is on screen, to keep CPU low on the Pi.
+
+### Peak meter
+
+Two vertical bars showing the post-output peak level for the **L** (orange) and **R** (ice-blue) channels, with peak-hold. The dB readout (`L -x.x dB · R -x.x dB`) is shown in the scope footer.
+
+### Macros (the performance controls)
+
+The **Macros** panel is the heart of live performance. Each of the five macros is a single fader that drives **several underlying synth parameters at once**, so one gesture sweeps a whole musical dimension instead of a single value. Each lane shows: the macro slot id (`M01`–`M05`), the macro name, the fader, the current value (`0`–`100`), and a small mono-font caption listing the parameters it groups (prefixed with `↳`). The faint number behind each lane is the slot index.
+
+Moving a macro from 0→100 interpolates every target parameter across the listed range. The five macros are:
+
+| Slot | Macro | Underlying parameters (0 → 100) | What it does |
+| --- | --- | --- | --- |
+| **M01** | **Brightness** | `drive` (1 → 3.2), `formant2` (200 → 1400 Hz), `formant3` (400 → 2600 Hz) | Opens the upper formants and pushes drive for a brighter, more present timbre. |
+| **M02** | **Motion** | `timingJitter` (0 → 0.5), `glisson` (0 → 0.5) | Introduces per-grain timing jitter and glissando, adding rhythmic and pitch movement. |
+| **M03** | **Stereo Width** | `pan2` (0 → 1), `pan3` (0 → -1) | Spreads the formant streams to opposite sides of the stereo field for a wider image. |
+| **M04** | **Texture** | `maskAmount` (0 → 0.9), `duty` (0.5 → 0.12) | Increases stochastic grain masking and narrows the duty cycle for a grainier, sparser texture. |
+| **M05** | **Grain Shape** | `pulsaret` (0 → 6), `window` (0 → 5) | Morphs the pulsaret waveform and the grain window, reshaping the fundamental grain. |
+
+Macros write directly to the same parameters exposed on the Edit and Mods screens, so a macro move is reflected everywhere (and is also a valid target for MIDI CCs). The grouped parameter set for each macro is defined by `MACRO_TARGETS` in `renderer/renderer.js`.
+
+### Bottom navigation
+
+`[01] Perform · [02] Edit · [03] Mods · [04] Presets` switch between the four screens; the orange **Stop Synth** button on the far right is the held emergency stop.
+
 ## Default MIDI channel values (CC mappings)
 
 | Parameter | Default MIDI CC |
