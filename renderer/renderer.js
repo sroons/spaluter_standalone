@@ -637,10 +637,6 @@ function drawScopeTrace(ctx, values, metrics, color) {
     const wet = Math.sign(dry) * Math.pow(mag, OUTPUT_SCOPE_COMPAND_GAMMA);
     return (dry * (1 - OUTPUT_SCOPE_COMPAND_MIX)) + (wet * OUTPUT_SCOPE_COMPAND_MIX);
   };
-  ctx.lineWidth = Math.max(1, dpr);
-  ctx.strokeStyle = color;
-  ctx.shadowColor = color;
-  ctx.shadowBlur = 8 * dpr;
   ctx.beginPath();
   const samples = Math.max(48, Math.floor(drawWidth / 2));
   for (let i = 0; i <= samples; i += 1) {
@@ -652,8 +648,20 @@ function drawScopeTrace(ctx, values, metrics, color) {
     if (i === 0) ctx.moveTo(x, y);
     else ctx.lineTo(x, y);
   }
+  // Cheap bloom: a wide, translucent underlay stroke (with the caller's
+  // "lighter" compositing) reads as a glow without the heavy offscreen
+  // Gaussian pass ctx.shadowBlur triggers — that pass on the large hero
+  // canvas at 20Hz was a measurable CPU cost on the Pi.
+  const baseAlpha = ctx.globalAlpha;
+  ctx.strokeStyle = color;
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+  ctx.globalAlpha = baseAlpha * 0.22;
+  ctx.lineWidth = Math.max(1, dpr) * 4;
   ctx.stroke();
-  ctx.shadowBlur = 0;
+  ctx.globalAlpha = baseAlpha;
+  ctx.lineWidth = Math.max(1, dpr);
+  ctx.stroke();
 }
 
 function drawOutputScope(canvas, left, right = null) {
@@ -1111,8 +1119,14 @@ function setOutputScopeSamples(samples, label = "Live output") {
     peakMeterLabelEl.textContent = `L ${linearToDb(peaks.leftPeak).toFixed(1)} dB • R ${linearToDb(peaks.rightPeak).toFixed(1)} dB`;
   }
   if (outputScopeLabelEl) outputScopeLabelEl.textContent = label;
-  drawOutputScope(outputScopeCanvas, outputScopeSamples.left, outputScopeSamples.right);
-  drawOutputAnalysisScopes();
+  // Only paint the scope/peak canvases when Perform is on screen. The scope
+  // payload still streams at 20Hz to keep peak state and labels current, but
+  // drawing to a hidden canvas every frame just wastes CPU on the Pi. The
+  // canvases are repainted on screen entry by handleMainScreenEntered().
+  if (currentMainScreen === "perform") {
+    drawOutputScope(outputScopeCanvas, outputScopeSamples.left, outputScopeSamples.right);
+    drawOutputAnalysisScopes();
+  }
 }
 
 function clearOutputScope(label = "Waiting for synth...") {
@@ -1242,8 +1256,10 @@ function updateWaveformViews() {
   drawDutyView(v);
   drawFormantViews(v);
   drawMaskView(v);
-  drawOutputScope(outputScopeCanvas, outputScopeSamples.left, outputScopeSamples.right);
-  drawOutputAnalysisScopes();
+  if (currentMainScreen === "perform") {
+    drawOutputScope(outputScopeCanvas, outputScopeSamples.left, outputScopeSamples.right);
+    drawOutputAnalysisScopes();
+  }
 }
 
 function defaultMidiMappingsForCurrentParams() {
