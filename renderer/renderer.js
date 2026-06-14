@@ -3232,7 +3232,7 @@ window.spaluterApi.getInitialState().then((state) => {
 // send + UI sync + previews all stay consistent.
 const MACRO_TARGETS = Object.freeze({
   macroBrightness: [["drive", 1, 3.2], ["formant2", 200, 1400], ["formant3", 400, 2600]],
-  macroMotion: [["ampJitter", 0, 0.6], ["timingJitter", 0, 0.5]],
+  macroMotion: [["timingJitter", 0, 0.5], ["glisson", 0, 0.5]],
   macroWidth: [["pan2", 0, 1], ["pan3", 0, -1]],
   macroTexture: [["maskAmount", 0, 0.9], ["duty", 0.5, 0.12]],
   macroShape: [["pulsaret", 0, 6], ["window", 0, 5]]
