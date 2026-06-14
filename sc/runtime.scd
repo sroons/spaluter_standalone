@@ -212,9 +212,15 @@ s.doWhenBooted({
         } {
             tgt = name.asSymbol;
             en = enabled.asInteger.clip(0, 1);
-            if(modParamIndex[tgt].isNil) {
-                lfoWarn.value("invalid target: " ++ name.asString);
-                tgt = \none; en = 0;
+            // \none is a legitimate "unrouted" state (every idle LFO uses it);
+            // disable silently without flagging it as an invalid target.
+            if(tgt == \none) {
+                en = 0;
+            } {
+                if(modParamIndex[tgt].isNil) {
+                    lfoWarn.value("invalid target: " ++ name.asString);
+                    tgt = \none; en = 0;
+                };
             };
             cap = (modDepthCap[tgt] ? 1).asFloat;
             cfg = lfoConfigs[i];

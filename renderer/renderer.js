@@ -398,8 +398,11 @@ function knobAngleFromValue(v, min, max) {
 }
 
 function updateRangeLabel(rangeEl, value) {
+  // Legacy "Name: value" sibling-label pattern is gone in the card UI; the
+  // value readouts are now driven by updateRealtimeParamValue. Kept as a guarded
+  // no-op so existing callers (setParamValue, init) don't corrupt the new labels.
   const label = rangeEl.previousElementSibling;
-  if (!label) return;
+  if (!label || !label.classList.contains("range-readout")) return;
   label.textContent = `${label.textContent.split(":")[0]}: ${value}`;
 }
 
@@ -559,10 +562,14 @@ function getCanvasMetrics(canvas) {
   return measureCanvasMetrics(canvas);
 }
 
-function drawWaveform(canvas, sampleFn, minValue = -1, maxValue = 1) {
+function drawWaveform(canvas, sampleFn, minValue = -1, maxValue = 1, opts = {}) {
   if (!canvas) return;
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
+
+  const color = opts.color || "rgb(91, 169, 246)";
+  const lineScale = opts.lineWidth || 1.6;
+  const glow = opts.glow !== false;
 
   const metrics = getCanvasMetrics(canvas);
   const {
@@ -576,7 +583,7 @@ function drawWaveform(canvas, sampleFn, minValue = -1, maxValue = 1) {
 
   ctx.clearRect(0, 0, drawWidth, drawHeight);
   ctx.lineWidth = Math.max(1, dpr);
-  ctx.strokeStyle = "rgba(169, 180, 208, 0.35)";
+  ctx.strokeStyle = "rgba(169, 180, 208, 0.18)";
   ctx.beginPath();
   const centerY = drawHeight * 0.5;
   ctx.moveTo(0, centerY);
@@ -587,7 +594,14 @@ function drawWaveform(canvas, sampleFn, minValue = -1, maxValue = 1) {
   const usableHeight = Math.max(1, bottomPad - topPad);
   const range = maxValue - minValue || 1;
 
-  ctx.strokeStyle = "rgb(91, 169, 246)";
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+  ctx.lineWidth = Math.max(1, dpr * lineScale);
+  ctx.strokeStyle = color;
+  if (glow) {
+    ctx.shadowBlur = dpr * 5;
+    ctx.shadowColor = color;
+  }
   ctx.beginPath();
   const samples = Math.max(48, Math.floor(drawWidth / 2));
   for (let i = 0; i <= samples; i += 1) {
@@ -600,6 +614,7 @@ function drawWaveform(canvas, sampleFn, minValue = -1, maxValue = 1) {
     else ctx.lineTo(x, y);
   }
   ctx.stroke();
+  ctx.shadowBlur = 0;
 }
 
 function drawScopeTrace(ctx, values, metrics, color) {
@@ -1138,30 +1153,35 @@ function computeWaveformValues(nowSec) {
 }
 
 function drawPulsaretView(v) {
+  if (!pulsaretWaveCanvas) return;
   if (pulsaretWaveLabelEl) {
-    pulsaretWaveLabelEl.textContent = `${interpolatedWaveLabel(v.pulsaret, PULSARET_WAVE_NAMES)} (${v.pulsaret.toFixed(2)})`;
+    pulsaretWaveLabelEl.textContent = `PULSARET · ${interpolatedWaveLabel(v.pulsaret, PULSARET_WAVE_NAMES)}`;
   }
   drawWaveform(
     pulsaretWaveCanvas,
     (t) => interpolatedWaveSample(v.pulsaret, 9, pulsaretWaveSample, t),
     -1,
-    1
+    1,
+    { color: "#ff6f24", lineWidth: 1.9 }
   );
 }
 
 function drawWindowView(v) {
+  if (!windowWaveCanvas) return;
   if (windowWaveLabelEl) {
-    windowWaveLabelEl.textContent = `${interpolatedWaveLabel(v.windowType, WINDOW_WAVE_NAMES)} (${v.windowType.toFixed(2)})`;
+    windowWaveLabelEl.textContent = `WINDOW · ${interpolatedWaveLabel(v.windowType, WINDOW_WAVE_NAMES)}`;
   }
   drawWaveform(
     windowWaveCanvas,
     (t) => interpolatedWaveSample(v.windowType, 8, windowWaveSample, t),
     0,
-    1
+    1,
+    { color: "#1f8bff", lineWidth: 1.9 }
   );
 }
 
 function drawDutyView(v) {
+  if (!dutyWaveCanvas) return;
   if (dutyWaveLabelEl) {
     dutyWaveLabelEl.textContent = `${v.duty.toFixed(2)} • ${v.dutyMode}`;
   }
@@ -1169,6 +1189,7 @@ function drawDutyView(v) {
 }
 
 function drawFormantViews(v) {
+  if (!formantWaveCanvas && !formantActivityCanvas) return;
   if (formantWaveLabelEl) {
     const activeLabels = v.formantHzValues
       .slice(0, v.formantCount)
@@ -1194,6 +1215,7 @@ function drawFormantViews(v) {
 }
 
 function drawMaskView(v) {
+  if (!maskScopeCanvas) return;
   if (maskScopeLabelEl) {
     const mode = MASK_MODE_NAMES[v.maskMode] || MASK_MODE_NAMES[0];
     const perFormantState = v.perFormantMask ? "PF on" : "PF off";
@@ -1379,7 +1401,8 @@ function updateRealtimeParamValue(param, value) {
   const valueEl = paramValueElByParam.get(param);
   const numericValue = Number(value);
   if (valueEl) {
-    valueEl.textContent = formatParamValue(param, numericValue);
+    const unit = valueEl.dataset ? valueEl.dataset.unit : "";
+    valueEl.textContent = formatParamValue(param, numericValue) + (unit || "");
   }
 
   const sliderEl = paramSliderByParam.get(param);
@@ -1389,7 +1412,15 @@ function updateRealtimeParamValue(param, value) {
   if (!meta) return;
   if (meta.type === "discrete") {
     const discreteIndex = meta.values.indexOf(numericValue);
-    if (discreteIndex >= 0) sliderEl.value = String(discreteIndex);
+    if (discreteIndex >= 0 && sliderEl.classList.contains("param-value-slider")) {
+      sliderEl.value = String(discreteIndex);
+    }
+    return;
+  }
+
+  if (sliderEl.classList.contains("edit-slider")) {
+    sliderEl.value = String(numericValue);
+    refreshSliderFill(sliderEl);
     return;
   }
 
@@ -1445,64 +1476,9 @@ function setParameterPage(pageIndex) {
 }
 
 function rebuildRealtimeParamGrid() {
-  if (!paramValueGridEl) return;
-  paramValueGridEl.innerHTML = "";
-  paramValueElByParam.clear();
-  paramSliderByParam.clear();
-
-  const visibleParamNames = parameterNamesForPage(currentParamPage);
-  visibleParamNames.forEach((param) => {
-    const row = document.createElement("div");
-    row.className = "param-value-item";
-
-    const labelEl = document.createElement("span");
-    labelEl.className = "param-value-label";
-    labelEl.textContent = findParamLabel(param);
-
-    const valueEl = document.createElement("span");
-    valueEl.className = "param-value-current";
-    valueEl.textContent = "--";
-
-    const sliderEl = document.createElement("input");
-    sliderEl.type = "range";
-    sliderEl.className = "param-value-slider";
-
-    const meta = getControlMeta(param);
-    const currentValue = currentParamValue(param, 0);
-    if (meta?.type === "discrete") {
-      sliderEl.min = "0";
-      sliderEl.max = String(Math.max(0, meta.values.length - 1));
-      sliderEl.step = "1";
-      sliderEl.value = String(Math.max(0, meta.values.indexOf(Number(currentValue))));
-    } else if (meta?.type === "continuous") {
-      sliderEl.min = String(meta.min);
-      sliderEl.max = String(meta.max);
-      sliderEl.step = String(meta.step);
-      sliderEl.value = String(currentValue);
-    } else {
-      sliderEl.min = "0";
-      sliderEl.max = "1";
-      sliderEl.step = "1";
-      sliderEl.value = "0";
-      sliderEl.disabled = true;
-    }
-
-    sliderEl.addEventListener("input", () => {
-      const nextValue = sliderValueToParamValue(param, sliderEl.value);
-      if (nextValue === null) return;
-      setParamValue(param, nextValue, true);
-    });
-
-    row.append(labelEl, sliderEl, valueEl);
-    paramValueGridEl.appendChild(row);
-    paramValueElByParam.set(param, valueEl);
-    paramSliderByParam.set(param, sliderEl);
-  });
-
-  visibleParamNames.forEach((param) => {
-    updateRealtimeParamValue(param, currentParamValue(param, 0));
-  });
-  renderParamPageIndicator();
+  // The Edit screen now uses static grouped cards (see initEditCards). The old
+  // auto-generated, paged param grid has been retired; this is intentionally a
+  // no-op so it never clears the value/slider maps that initEditCards populates.
 }
 
 function valueFromMidiCc(param, ccValue) {
@@ -2117,13 +2093,15 @@ function drawLfoCursor(canvas, cursorT) {
 function drawLfoThumb(canvas, cfg, seed, cursorT = null) {
   if (!canvas) return;
   const active = lfoIsActive(cfg);
-  const amp = active ? Math.max(0.08, Math.abs(lfoDepthFractionSigned(cfg))) : 0;
+  const amp = active ? Math.max(0.08, Math.abs(lfoDepthFractionSigned(cfg))) : 0.55;
   const sign = cfg.depth < 0 ? -1 : 1;
+  const accent = lfoCardAccent(seed || 0);
   drawWaveform(
     canvas,
-    (t) => (active ? sign * amp * lfoShapeSample(cfg.shape, t + cfg.phase, seed) : 0),
+    (t) => sign * amp * lfoShapeSample(cfg.shape, t + cfg.phase, seed),
     -1,
-    1
+    1,
+    { color: accent, lineWidth: 1.9 }
   );
   if (active && cursorT !== null) drawLfoCursor(canvas, cursorT);
 }
@@ -2142,49 +2120,55 @@ function lfoField(labelText) {
   return field;
 }
 
+const LFO_CARD_ACCENTS = ["#1f8bff", "#ff6f24", "#cfe6ff", "#8fe39b"];
+
+function lfoCardAccent(index) {
+  return LFO_CARD_ACCENTS[index % LFO_CARD_ACCENTS.length];
+}
+
 function createLfoStrip(index) {
   const cfg = lfoConfigs[index];
-  const accent = lfoAccent(index);
+  const accent = lfoCardAccent(index);
 
-  const strip = document.createElement("div");
-  strip.className = "lfo-strip";
-  strip.dataset.lfoIndex = String(index);
-  strip.style.borderLeftColor = accent;
+  const card = document.createElement("div");
+  card.className = "lfo-card";
+  card.dataset.lfoIndex = String(index);
+  card.style.setProperty("--lfo-accent", accent);
 
-  const thumbWrap = document.createElement("div");
-  thumbWrap.className = "lfo-strip-thumb-wrap";
+  const ghost = document.createElement("span");
+  ghost.className = "lfo-ghost";
+  ghost.textContent = String(index + 1).padStart(2, "0");
+
   const head = document.createElement("div");
-  head.className = "lfo-strip-thumb-head";
-  const nameEl = document.createElement("span");
-  nameEl.className = "lfo-strip-name";
-  nameEl.textContent = `LFO ${index + 1}`;
-  const metaEl = document.createElement("span");
-  metaEl.className = "lfo-strip-meta";
-  head.appendChild(nameEl);
-  head.appendChild(metaEl);
+  head.className = "lfo-card-head";
+  const idEl = document.createElement("span");
+  idEl.className = "lfo-id";
+  idEl.textContent = `LFO·${String(index + 1).padStart(2, "0")}`;
+  const runBtn = document.createElement("button");
+  runBtn.type = "button";
+  runBtn.className = "lfo-run";
+  runBtn.textContent = "OFF";
+  head.append(idEl, runBtn);
+
+  const waveBox = document.createElement("div");
+  waveBox.className = "lfo-wv-box";
   const canvas = document.createElement("canvas");
-  canvas.className = "lfo-thumb";
+  canvas.className = "lfo-wv";
   canvas.width = 240;
   canvas.height = 56;
-  thumbWrap.appendChild(head);
-  thumbWrap.appendChild(canvas);
+  waveBox.appendChild(canvas);
 
-  const controls = document.createElement("div");
-  controls.className = "lfo-strip-controls";
+  const body = document.createElement("div");
+  body.className = "lfo-card-body";
 
-  const targetField = lfoField("Target");
-  const targetSel = document.createElement("select");
-  LFO_TARGETS.forEach((t) => {
-    const option = document.createElement("option");
-    option.value = t.name;
-    option.textContent = t.label;
-    targetSel.appendChild(option);
-  });
-  targetSel.value = cfg.target;
-  targetField.appendChild(targetSel);
-
-  const shapeField = lfoField("Shape");
+  // Shape field — value styled select
+  const shapeRow = document.createElement("div");
+  shapeRow.className = "lfo-field";
+  const shapeKey = document.createElement("span");
+  shapeKey.className = "k";
+  shapeKey.textContent = "Shape";
   const shapeSel = document.createElement("select");
+  shapeSel.className = "lfo-shape v";
   LFO_SHAPE_NAMES.forEach((shapeName, shapeIdx) => {
     const option = document.createElement("option");
     option.value = String(shapeIdx);
@@ -2192,54 +2176,92 @@ function createLfoStrip(index) {
     shapeSel.appendChild(option);
   });
   shapeSel.value = String(cfg.shape);
-  shapeField.appendChild(shapeSel);
+  shapeRow.append(shapeKey, shapeSel);
 
-  const rateField = lfoField("Rate");
+  // Rate field — big value + thin slider
+  const rateRow = document.createElement("div");
+  rateRow.className = "lfo-field lfo-field-slider";
+  const rateTop = document.createElement("div");
+  rateTop.className = "lfo-field-top";
+  const rateKey = document.createElement("span");
+  rateKey.className = "k";
+  rateKey.textContent = "Rate";
+  const rateVal = document.createElement("span");
+  rateVal.className = "v";
+  rateTop.append(rateKey, rateVal);
   const rateEl = document.createElement("input");
   rateEl.type = "range";
+  rateEl.className = "lfo-range";
   rateEl.min = String(LFO_RATE_MIN);
   rateEl.max = String(LFO_RATE_MAX);
   rateEl.step = "0.01";
   rateEl.value = String(cfg.rate);
-  rateField.appendChild(rateEl);
+  rateRow.append(rateTop, rateEl);
 
-  const depthField = lfoField("Depth");
+  // Depth field — big value + thin slider
+  const depthRow = document.createElement("div");
+  depthRow.className = "lfo-field lfo-field-slider";
+  const depthTop = document.createElement("div");
+  depthTop.className = "lfo-field-top";
+  const depthKey = document.createElement("span");
+  depthKey.className = "k";
+  depthKey.textContent = "Depth";
+  const depthVal = document.createElement("span");
+  depthVal.className = "v";
+  depthTop.append(depthKey, depthVal);
   const depthEl = document.createElement("input");
   depthEl.type = "range";
+  depthEl.className = "lfo-range";
   depthEl.min = "-1";
   depthEl.max = "1";
   depthEl.step = "0.01";
   depthEl.value = String(lfoDepthFractionSigned(cfg));
-  depthField.appendChild(depthEl);
+  depthRow.append(depthTop, depthEl);
 
-  const enableField = document.createElement("div");
-  enableField.className = "lfo-field lfo-field-enable";
+  // Bus target — routed box
+  const targetBox = document.createElement("div");
+  targetBox.className = "lfo-route";
+  const targetKey = document.createElement("div");
+  targetKey.className = "k";
+  targetKey.textContent = "BUS TARGET";
+  const targetVal = document.createElement("div");
+  targetVal.className = "lfo-route-v";
+  const targetSel = document.createElement("select");
+  targetSel.className = "lfo-target-sel";
+  LFO_TARGETS.forEach((t) => {
+    const option = document.createElement("option");
+    option.value = t.name;
+    option.textContent = t.label;
+    targetSel.appendChild(option);
+  });
+  targetSel.value = cfg.target;
+  targetVal.appendChild(targetSel);
+  targetBox.append(targetKey, targetVal);
+
+  // Hidden enable mirror keeps syncLfoStripFromConfig() working unchanged.
   const enableInput = document.createElement("input");
   enableInput.type = "checkbox";
+  enableInput.style.display = "none";
   enableInput.checked = cfg.enabled;
-  enableInput.id = `lfoEnable${index}`;
-  const enableLabel = document.createElement("label");
-  enableLabel.setAttribute("for", enableInput.id);
-  enableLabel.textContent = "Enable";
-  enableField.appendChild(enableInput);
-  enableField.appendChild(enableLabel);
 
-  controls.append(targetField, shapeField, rateField, depthField, enableField);
-  strip.append(thumbWrap, controls);
-  lfoStripListEl.appendChild(strip);
+  body.append(shapeRow, rateRow, depthRow, targetBox, enableInput);
+  card.append(ghost, head, waveBox, body);
+  lfoStripListEl.appendChild(card);
 
   const refs = {
     index,
-    strip,
+    strip: card,
     canvas,
-    metaEl,
+    metaEl: null,
+    idEl,
+    runBtn,
     targetSel,
     shapeSel,
     rateEl,
     depthEl,
     enableInput,
-    rateLabelVal: rateField.querySelector(".lfo-field-val"),
-    depthLabelVal: depthField.querySelector(".lfo-field-val"),
+    rateLabelVal: rateVal,
+    depthLabelVal: depthVal,
     accent
   };
 
@@ -2250,18 +2272,21 @@ function createLfoStrip(index) {
     c.rate = clamp(Number(rateEl.value) || 0, LFO_RATE_MIN, LFO_RATE_MAX);
     c.depth = clamp(Number(depthEl.value) || 0, -1, 1) * lfoCapFor(c.target);
     c.enabled = enableInput.checked;
-    // Keep the depth slider valid when the target (and thus cap) changes.
     const depthFrac = lfoDepthFractionSigned(c);
     if (String(depthFrac) !== depthEl.value) depthEl.value = String(depthFrac);
     refreshLfoStrip(index);
+    updateLfoHint();
     sendLfo(index);
   };
 
+  runBtn.addEventListener("click", () => {
+    enableInput.checked = !enableInput.checked;
+    onChange();
+  });
   targetSel.addEventListener("change", onChange);
   shapeSel.addEventListener("change", onChange);
   rateEl.addEventListener("input", onChange);
   depthEl.addEventListener("input", onChange);
-  enableInput.addEventListener("change", onChange);
 
   return refs;
 }
@@ -2279,11 +2304,21 @@ function refreshLfoStrip(index) {
   const r = lfoStripEls[index];
   if (!r) return;
   const c = lfoConfigs[index];
-  const tgt = LFO_TARGET_BY_NAME.get(c.target);
+  const running = lfoIsActive(c);
   r.strip.classList.toggle("lfo-disabled", !c.enabled);
-  r.metaEl.textContent = `${tgt ? tgt.label : "none"} • ${LFO_SHAPE_NAMES[c.shape]} • ${c.rate.toFixed(2)} Hz`;
+  r.strip.classList.toggle("lfo-running", running);
+  if (r.metaEl) {
+    const tgt = LFO_TARGET_BY_NAME.get(c.target);
+    r.metaEl.textContent = `${tgt ? tgt.label : "none"} • ${LFO_SHAPE_NAMES[c.shape]} • ${c.rate.toFixed(2)} Hz`;
+  }
+  if (r.runBtn) {
+    r.runBtn.textContent = c.enabled ? "RUNNING" : "OFF";
+    r.runBtn.classList.toggle("on", c.enabled);
+  }
   if (r.rateLabelVal) r.rateLabelVal.textContent = `${c.rate.toFixed(2)} Hz`;
   if (r.depthLabelVal) r.depthLabelVal.textContent = `${Math.round(lfoDepthFractionSigned(c) * 100)}%`;
+  if (r.rateEl) refreshSliderFill(r.rateEl, r.accent);
+  if (r.depthEl) refreshSliderFill(r.depthEl, r.accent);
   drawLfoThumb(r.canvas, c, index);
 }
 
@@ -2293,8 +2328,10 @@ function lfoActiveCount() {
   return n;
 }
 
+const lfoActiveCountEl = document.getElementById("lfoActiveCount");
+
 function updateLfoHint() {
-  if (lfoCountHintEl) lfoCountHintEl.textContent = `${lfoActiveCount()} of ${LFO_MAX} active`;
+  if (lfoActiveCountEl) lfoActiveCountEl.textContent = String(lfoActiveCount());
 }
 
 function syncLfoStripFromConfig(index) {
@@ -2454,6 +2491,10 @@ function handleMainScreenEntered(targetScreen) {
   } else if (targetScreen === "mods") {
     redrawAllLfoViews();
     scheduleLfoCursor();
+  } else if (targetScreen === "presets") {
+    waveformLayoutDirty = true;
+    renderPresetBank();
+    renderPresetDetail();
   }
   refreshScopeStreamingState();
 }
@@ -2618,18 +2659,177 @@ function syncPresetNameField() {
   presetNameEl.value = presets[idx].name;
 }
 
-function renderPresetOptions() {
-  if (!presetSlotEl) return;
+const presetBankListEl = document.getElementById("presetBankList");
+const presetDetailBigEl = document.getElementById("presetDetailBig");
+const presetDetailNumEl = document.getElementById("presetDetailNum");
+const presetDetailNameEl = document.getElementById("presetDetailName");
+const presetDetailSubEl = document.getElementById("presetDetailSub");
+const presetSignatureCanvas = document.getElementById("presetSignatureView");
+const presetStatParamsEl = document.getElementById("presetStatParams");
+const presetStatLfoEl = document.getElementById("presetStatLfo");
+const presetStatSampleEl = document.getElementById("presetStatSample");
+const presetBankCountEl = document.getElementById("presetBankCount");
+const clearPresetBtn = document.getElementById("clearPreset");
+const renamePresetBtn = document.getElementById("renamePreset");
+
+function presetLfoRouteCount(preset) {
+  const configs = preset?.lfo?.configs;
+  if (!Array.isArray(configs)) return 0;
+  return configs.filter((c) => c && c.enabled && c.target && c.target !== "none" && Number(c.depth) !== 0).length;
+}
+
+function presetSampleName(preset) {
+  const p = preset?.samplePath;
+  if (!p) return "";
+  return p.split("/").pop() || "";
+}
+
+// Deterministic "signature" wave so each saved slot reads as visually distinct.
+// Seeded from the preset's params (or name) — purely decorative, never streamed.
+function drawPresetSignature(canvas, preset, color, complexity = 1) {
+  if (!canvas) return;
+  const empty = !preset || !preset.params;
+  const seedStr = preset ? `${preset.name}${JSON.stringify(preset.params || "")}` : "";
+  let seed = 0;
+  for (let i = 0; i < seedStr.length; i += 1) seed = ((seed * 31) + seedStr.charCodeAt(i)) % 100000;
+  const a = 1 + (seed % 5);
+  const b = 1 + ((seed >> 3) % 7);
+  const phase = (seed % 13) / 13;
+  drawWaveformColored(canvas, (t) => {
+    if (empty) return 0;
+    const x = t * Math.PI * 2;
+    return 0.85 * (Math.sin((x * a) + (phase * 6.28)) * 0.6
+      + Math.sin(x * b * complexity) * 0.4);
+  }, color, empty);
+}
+
+// Like drawWaveform but with caller-controlled stroke colour.
+function drawWaveformColored(canvas, sampleFn, color, dim) {
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  const metrics = getCanvasMetrics(canvas);
+  const { dpr, drawWidth, drawHeight, leftPad, rightPad, topPad, bottomPad } = metrics;
+  if (canvas.width !== drawWidth || canvas.height !== drawHeight) {
+    canvas.width = drawWidth;
+    canvas.height = drawHeight;
+  }
+  ctx.clearRect(0, 0, drawWidth, drawHeight);
+  ctx.lineWidth = Math.max(1, dpr);
+  ctx.strokeStyle = "rgba(169, 180, 208, 0.22)";
+  ctx.beginPath();
+  const centerY = drawHeight * 0.5;
+  ctx.moveTo(0, centerY);
+  ctx.lineTo(drawWidth, centerY);
+  ctx.stroke();
+  if (dim) return;
+  const usableWidth = Math.max(1, rightPad - leftPad);
+  const usableHeight = Math.max(1, bottomPad - topPad);
+  ctx.strokeStyle = color;
+  ctx.beginPath();
+  const samples = Math.max(64, Math.floor(drawWidth / 2));
+  for (let i = 0; i <= samples; i += 1) {
+    const t = i / samples;
+    const normalized = clamp((sampleFn(t) + 1) / 2, 0, 1);
+    const x = leftPad + (t * usableWidth);
+    const y = topPad + ((1 - normalized) * usableHeight);
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+}
+
+const PRESET_ROW_COLORS = ["#ff6f24", "#1f8bff", "#cfe6ff", "#8fe39b"];
+
+function renderPresetBank() {
+  if (!presetBankListEl) return;
   const currentIndex = selectedPresetIndex();
-  presetSlotEl.innerHTML = "";
+  presetBankListEl.innerHTML = "";
+  let savedCount = 0;
   presets.forEach((preset, index) => {
-    const option = document.createElement("option");
-    option.value = String(index);
-    option.textContent = `${String(index + 1).padStart(2, "0")} ${preset.params ? "[saved]" : "[empty]"} ${preset.name}`;
-    presetSlotEl.appendChild(option);
+    const saved = Boolean(preset.params);
+    if (saved) savedCount += 1;
+    const row = document.createElement("div");
+    row.className = "prow";
+    if (!saved) row.classList.add("empty");
+    if (index === currentIndex) row.classList.add("on");
+    row.dataset.index = String(index);
+
+    const pn = document.createElement("span");
+    pn.className = "pn";
+    pn.textContent = String(index + 1).padStart(2, "0");
+
+    const info = document.createElement("div");
+    info.className = "info";
+    const nm = document.createElement("span");
+    nm.className = "nm";
+    nm.textContent = saved ? preset.name : "— empty —";
+    const meta = document.createElement("span");
+    meta.className = "meta";
+    if (saved) {
+      const lfo = presetLfoRouteCount(preset);
+      meta.textContent = `30P · ${lfo} LFO${presetSampleName(preset) ? " · SMPL" : ""}`;
+    } else {
+      meta.textContent = "available";
+    }
+    info.append(nm, meta);
+
+    const sig = document.createElement("canvas");
+    sig.className = "sig";
+    sig.width = 120;
+    sig.height = 34;
+
+    const dot = document.createElement("span");
+    dot.className = "dot";
+    if (saved) dot.classList.add("lit");
+
+    row.append(pn, info, sig, dot);
+    presetBankListEl.appendChild(row);
+    drawPresetSignature(sig, saved ? preset : null, PRESET_ROW_COLORS[index % PRESET_ROW_COLORS.length]);
   });
-  presetSlotEl.value = String(currentIndex);
+  if (presetBankCountEl) presetBankCountEl.textContent = `${savedCount}/32 SAVED`;
+}
+
+function renderPresetDetail() {
+  const idx = selectedPresetIndex();
+  const preset = presets[idx];
+  const saved = Boolean(preset && preset.params);
+  const num = String(idx + 1).padStart(2, "0");
+  if (presetDetailBigEl) presetDetailBigEl.textContent = num;
+  if (presetDetailNumEl) presetDetailNumEl.textContent = num;
+  if (presetDetailNameEl) presetDetailNameEl.textContent = preset ? preset.name : "—";
+  if (presetDetailSubEl) {
+    presetDetailSubEl.textContent = saved
+      ? `SAVED · ${presetLfoRouteCount(preset)} LFO routes`
+      : "EMPTY · no snapshot";
+  }
+  if (presetStatParamsEl) presetStatParamsEl.textContent = saved ? "30 / 30" : "— / 30";
+  if (presetStatLfoEl) presetStatLfoEl.textContent = `${saved ? presetLfoRouteCount(preset) : 0} routes`;
+  if (presetStatSampleEl) presetStatSampleEl.textContent = (saved && presetSampleName(preset)) || "none";
+  drawPresetSignature(presetSignatureCanvas, saved ? preset : null, "#ff6f24", 2);
+  // highlight active bank row
+  if (presetBankListEl) {
+    presetBankListEl.querySelectorAll(".prow").forEach((r) => {
+      r.classList.toggle("on", Number(r.dataset.index) === idx);
+    });
+  }
+}
+
+function renderPresetOptions() {
+  if (presetSlotEl) {
+    const currentIndex = selectedPresetIndex();
+    presetSlotEl.innerHTML = "";
+    presets.forEach((preset, index) => {
+      const option = document.createElement("option");
+      option.value = String(index);
+      option.textContent = `${String(index + 1).padStart(2, "0")} ${preset.params ? "[saved]" : "[empty]"} ${preset.name}`;
+      presetSlotEl.appendChild(option);
+    });
+    presetSlotEl.value = String(currentIndex);
+  }
   syncPresetNameField();
+  renderPresetBank();
+  renderPresetDetail();
 }
 
 function scheduleWaveformResizeRefresh() {
@@ -2823,7 +3023,7 @@ selectInputs.forEach((el) => {
 });
 
 rebuildControlMetaCache();
-setParameterPage(0);
+initEditCards();
 
 if (paramPagePrevBtn) {
   paramPagePrevBtn.addEventListener("click", () => {
@@ -2873,7 +3073,51 @@ initMidiSupport();
 
 if (presetSlotEl) {
   renderPresetOptions();
-  presetSlotEl.addEventListener("change", syncPresetNameField);
+  presetSlotEl.addEventListener("change", () => {
+    syncPresetNameField();
+    renderPresetDetail();
+  });
+}
+
+if (presetBankListEl) {
+  presetBankListEl.addEventListener("click", (event) => {
+    const row = event.target.closest(".prow[data-index]");
+    if (!row || !presetSlotEl) return;
+    presetSlotEl.value = row.dataset.index;
+    presetSlotEl.dispatchEvent(new Event("change"));
+  });
+}
+
+if (renamePresetBtn) {
+  renamePresetBtn.addEventListener("click", () => {
+    const idx = selectedPresetIndex();
+    const typed = String(presetNameEl?.value || "").trim();
+    const name = typed.length > 0 ? typed : defaultPresetName(idx);
+    presets[idx].name = name;
+    persistPresets(presets);
+    renderPresetOptions();
+    presetSlotEl.value = String(idx);
+    renderPresetDetail();
+    appendLog(`[PRESET] Renamed ${String(idx + 1).padStart(2, "0")}: ${name}`);
+  });
+}
+
+if (clearPresetBtn) {
+  clearPresetBtn.addEventListener("click", () => {
+    const idx = selectedPresetIndex();
+    presets[idx] = {
+      name: defaultPresetName(idx),
+      params: null,
+      sampleDirectory: sampleDefaultDir,
+      samplePath: "",
+      lfo: null
+    };
+    persistPresets(presets);
+    renderPresetOptions();
+    presetSlotEl.value = String(idx);
+    renderPresetDetail();
+    appendLog(`[PRESET] Cleared ${String(idx + 1).padStart(2, "0")}`);
+  });
 }
 
 if (savePresetBtn) {
@@ -2968,6 +3212,85 @@ const MACRO_TARGETS = Object.freeze({
   macroTexture: [["maskAmount", 0, 0.9], ["duty", 0.5, 0.12]],
   macroShape: [["pulsaret", 0, 6], ["window", 0, 5]]
 });
+
+// ─────────────────────────── Edit screen cards ─────────────────────────────
+// The Edit screen is built from static grouped cards in index.html holding the
+// real [data-param] controls (already wired for OSC by the global range/select
+// listeners). Here we register each card's value readout + slider so external
+// value changes (presets, macros, MIDI) stay reflected, and paint the slider
+// "fill" with the owning card's accent colour.
+function sliderAccentHex(key) {
+  // Inline map keeps this callable from initEditCards() before any module-level
+  // const further down the file has initialized (avoids a TDZ ReferenceError).
+  const map = { shock: "#ff6f24", acid: "#1f8bff", ice: "#cfe6ff", ok: "#8fe39b" };
+  return map[key] || map.shock;
+}
+
+function refreshSliderFill(slider, accentHex) {
+  if (!slider) return;
+  const min = Number(slider.min);
+  const max = Number(slider.max);
+  const val = Number(slider.value);
+  const frac = max > min ? clamp((val - min) / (max - min), 0, 1) : 0;
+  const accent = accentHex || sliderAccentHex(slider.dataset.accent);
+  const pct = `${(frac * 100).toFixed(1)}%`;
+  slider.style.background =
+    `linear-gradient(to right, ${accent} 0%, ${accent} ${pct}, rgba(255,255,255,0.09) ${pct}, rgba(255,255,255,0.09) 100%) no-repeat center / 100% 10px`;
+}
+
+function buildSegmentedSelect(select, accent) {
+  const opts = document.createElement("div");
+  opts.className = "opts";
+  opts.dataset.accent = accent;
+  const buttons = [];
+  Array.from(select.options).forEach((option) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "opt";
+    btn.textContent = option.textContent;
+    btn.dataset.value = option.value;
+    if (option.selected) btn.classList.add("on");
+    btn.addEventListener("click", () => {
+      if (select.value === option.value) return;
+      select.value = option.value;
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    buttons.push(btn);
+    opts.appendChild(btn);
+  });
+  const sync = () => {
+    buttons.forEach((b) => b.classList.toggle("on", b.dataset.value === select.value));
+  };
+  select.addEventListener("change", sync);
+  select.style.display = "none";
+  select.insertAdjacentElement("afterend", opts);
+  sync();
+}
+
+function initEditCards() {
+  document.querySelectorAll(".edit-card").forEach((card) => {
+    const accent = card.dataset.accent || "shock";
+    card.querySelectorAll(".ctl").forEach((ctl) => {
+      const slider = ctl.querySelector("input.edit-slider[data-param]");
+      if (slider) {
+        const param = slider.dataset.param;
+        slider.dataset.accent = accent;
+        const valEl = ctl.querySelector(".val");
+        if (valEl) paramValueElByParam.set(param, valEl);
+        paramSliderByParam.set(param, slider);
+        slider.addEventListener("input", () => refreshSliderFill(slider));
+        updateRealtimeParamValue(param, currentParamValue(param, Number(slider.value)));
+        refreshSliderFill(slider);
+        return;
+      }
+      const select = ctl.querySelector("select.edit-select[data-param]");
+      if (select) {
+        select.dataset.accent = accent;
+        if (select.dataset.seg === "1") buildSegmentedSelect(select, accent);
+      }
+    });
+  });
+}
 
 function initMacros() {
   Object.keys(MACRO_TARGETS).forEach((id) => {
