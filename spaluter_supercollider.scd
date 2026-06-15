@@ -73,7 +73,12 @@ s.waitForBoot {
             pulseFreq = (freq * jitMul).clip(0.1, 14000);
             trig = Impulse.ar(pulseFreq);
 
-            envASR = LagUD.kr(Select.kr(mode, [gate, 1, (trigIn > 0)]), atk, rel);
+            // MIDI-like note envelope (modes 0 and 2): a true gated ASR.
+            // Gate up (Note On) plays the attack to the sustain level and
+            // holds; gate down (Note Off) plays the release to silence.
+            // doneAction stays 0 so the persistent voice survives between
+            // notes. (Mode 1/Free Run uses the per-grain percussive env.)
+            envASR = EnvGen.kr(Env.asr(atk, 1, rel, -4), Select.kr(mode, [gate, gate, (trigIn > 0)]));
             envPulse = EnvGen.ar(Env.perc(atk, rel, 1, curve: -4), trig);
             env = SelectX.ar(mode, [K2A.ar(envASR), envPulse, K2A.ar(envASR)]);
 
