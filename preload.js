@@ -9,6 +9,9 @@ contextBridge.exposeInMainWorld("spaluterApi", {
   // Phase 2.3 telemetry: report raw incoming MIDI event count so main can
   // compute (raw vs flushed) compression ratio.
   reportMidiRawCount: (count) => ipcRenderer.send("midi:raw-count", count),
+  // Diagnostic: report MIDI note on/off events (and the resulting gate) so
+  // main can log them to start.log for on-device troubleshooting.
+  reportMidiNote: (info) => ipcRenderer.send("midi:note", info),
   // Diagnostic: report measured requestAnimationFrame FPS so main can log whether
   // the renderer is being occlusion-throttled.
   reportFps: (fps) => ipcRenderer.send("diag:fps", fps),

@@ -844,6 +844,12 @@ function registerIpcHandlers() {
     midiRawCountTotal += n;
   });
 
+  ipcMain.on("midi:note", (_evt, info) => {
+    const line = `[MIDI-NOTE] ${String(info)}`;
+    console.log(line);
+    sendLog(line);
+  });
+
   // Internal LFO modulation: fire-and-forget IPC → OSC. Config changes are
   // low-rate and human-driven, so there is no hot-path impact.
   ipcMain.on("sc:lfo-count", (_evt, n) => {

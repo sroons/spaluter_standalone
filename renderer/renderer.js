@@ -84,6 +84,7 @@ let midiAccess = null;
 let midiMappings = {};
 let midiParamsByCc = new Map();
 let activeMidiNotes = [];
+let lastLoggedMidiGate = -1;
 let synthRunning = false;
 let waveformLayoutDirty = true;
 let resizeDebounceTimer = null;
@@ -1549,6 +1550,17 @@ function updateGateFromMidiNotes() {
   const gateValue = activeMidiNotes.length > 0 ? 1 : 0;
   stagePendingParam("gate", gateValue);
   stagePendingParam("trigIn", gateValue);
+  // Diagnostic: log only gate transitions (0<->1) to start.log so on-device
+  // troubleshooting can confirm Note On/Off drives the envelope gate without
+  // flooding the log on every note from high-rate sources.
+  if (gateValue !== lastLoggedMidiGate) {
+    lastLoggedMidiGate = gateValue;
+    try {
+      window.spaluterApi.reportMidiNote(
+        `gate ${gateValue} (held=${activeMidiNotes.length} gateMode=${currentParamValue("gateMode", 1)})`
+      );
+    } catch (_e) { /* diagnostic only */ }
+  }
 }
 
 function ensureMidiNoteEnvelopeMode() {
