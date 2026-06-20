@@ -77,6 +77,10 @@ const SWIPE_MAX_OFF_AXIS_PX = 45;
 const SWIPE_MAX_DURATION_MS = 700;
 const MIDI_REBIND_DEBOUNCE_MS = 120;
 const MIDI_STATE_LOG_MIN_INTERVAL_MS = 250;
+const MIDI_CLOCK_TICKS_PER_QUARTER = 24;
+const MIDI_CLOCK_SMOOTHING_TICKS = 96;
+const MIDI_CLOCK_SYNC_MIN_INTERVAL_MS = 120;
+const MIDI_CLOCK_RATE_EPSILON = 0.0005;
 const RENDERER_HEARTBEAT_MS = 1000;
 let sampleDefaultDir = DEFAULT_SAMPLE_DIR;
 let currentSamplePath = "";
@@ -84,6 +88,12 @@ let midiAccess = null;
 let midiMappings = {};
 let midiParamsByCc = new Map();
 let activeMidiNotes = [];
+let activeMidiNoteNumber = null;
+let activeMidiBasePitchValue = null;
+let midiClockBpm = null;
+let midiClockHz = null;
+const midiClockTickTimesMs = [];
+let midiClockLastSyncAtMs = 0;
 let lastLoggedMidiGate = -1;
 let synthRunning = false;
 let waveformLayoutDirty = true;
@@ -261,9 +271,15 @@ const STEREO_HOLD_DECAY_PER_FRAME = 0.012;
 const FORMANT_SCOPE_COLORS = ["rgb(235, 110, 79)", "rgb(114, 213, 142)", "rgb(199, 146, 234)"];
 const MASK_MODE_NAMES = ["Off", "Stochastic", "Burst"];
 const MIDI_STATUS_TYPE_MASK = 0xF0;
+const MIDI_STATUS_CHANNEL_MASK = 0x0F;
 const MIDI_STATUS_NOTE_OFF = 0x80;
 const MIDI_STATUS_NOTE_ON = 0x90;
 const MIDI_STATUS_CC = 0xB0;
+const MIDI_STATUS_CLOCK = 0xF8;
+const MIDI_STATUS_START = 0xFA;
+const MIDI_STATUS_CONTINUE = 0xFB;
+const MIDI_STATUS_STOP = 0xFC;
+const MIDI_INPUT_CHANNEL_ZERO_BASED = 0; // MIDI channel 1
 const scopeSampleBuffers = [
   new Float64Array(OUTPUT_SCOPE_FRAME_SIZE),
   new Float64Array(OUTPUT_SCOPE_FRAME_SIZE)
@@ -610,7 +626,10 @@ function drawWaveform(canvas, sampleFn, minValue = -1, maxValue = 1, opts = {}) 
     ctx.shadowColor = color;
   }
   ctx.beginPath();
-  const samples = Math.max(48, Math.floor(drawWidth / 2));
+  const requestedSamples = Number(opts.sampleCount);
+  const samples = Number.isFinite(requestedSamples) && requestedSamples > 0
+    ? Math.max(16, Math.floor(requestedSamples))
+    : Math.max(48, Math.floor(drawWidth / 2));
   for (let i = 0; i <= samples; i += 1) {
     const t = i / samples;
     const sample = sampleFn(t);
@@ -1527,6 +1546,75 @@ function midiNoteToHz(noteNumber) {
   return 440 * (2 ** ((note - 69) / 12));
 }
 
+function midiClockRateHz() {
+  if (!Number.isFinite(midiClockHz)) return null;
+  return clamp(midiClockHz, LFO_RATE_MIN, LFO_RATE_MAX);
+}
+
+function syncMidiClockLockedLfos(nowMs = performance.now(), force = false) {
+  const clockRate = midiClockRateHz();
+  if (clockRate === null) return;
+  if (!force && (nowMs - midiClockLastSyncAtMs) < MIDI_CLOCK_SYNC_MIN_INTERVAL_MS) return;
+
+  const changed = [];
+  for (let i = 0; i < LFO_MAX; i += 1) {
+    const cfg = lfoConfigs[i];
+    if (!cfg?.useMidiClock) continue;
+    const nextRate = clamp(clockRate * lfoClockRatioValue(cfg), LFO_RATE_MIN, LFO_RATE_MAX);
+    if (Math.abs(cfg.rate - nextRate) <= MIDI_CLOCK_RATE_EPSILON) continue;
+    cfg.rate = nextRate;
+    changed.push(i);
+  }
+  midiClockLastSyncAtMs = nowMs;
+  if (changed.length === 0) return;
+
+  changed.forEach((idx) => {
+    if (lfoStripEls[idx]) refreshLfoStrip(idx);
+  });
+
+  const payload = changed.map((idx) => lfoToIpc(idx));
+  if (payload.length === 1) {
+    window.spaluterApi.setLfo(payload[0].idx, payload[0]);
+  } else if (payload.length > 1) {
+    window.spaluterApi.setLfoMany(payload);
+  }
+
+  if (currentMainScreen === "edit") scheduleWaveformViewsRedraw();
+}
+
+function resetMidiClockTracking() {
+  midiClockTickTimesMs.length = 0;
+  midiClockLastSyncAtMs = 0;
+}
+
+function handleMidiRealtimeMessage(status) {
+  if (status === MIDI_STATUS_START || status === MIDI_STATUS_CONTINUE || status === MIDI_STATUS_STOP) {
+    resetMidiClockTracking();
+    return;
+  }
+  if (status !== MIDI_STATUS_CLOCK) return;
+
+  const nowMs = performance.now();
+  midiClockTickTimesMs.push(nowMs);
+  if (midiClockTickTimesMs.length > MIDI_CLOCK_SMOOTHING_TICKS) midiClockTickTimesMs.shift();
+  if (midiClockTickTimesMs.length < 8) return;
+
+  const first = midiClockTickTimesMs[0];
+  const last = midiClockTickTimesMs[midiClockTickTimesMs.length - 1];
+  const intervals = midiClockTickTimesMs.length - 1;
+  if (last <= first || intervals <= 0) return;
+
+  const avgTickMs = (last - first) / intervals;
+  if (!Number.isFinite(avgTickMs) || avgTickMs <= 0) return;
+
+  const bpm = 60000 / (avgTickMs * MIDI_CLOCK_TICKS_PER_QUARTER);
+  if (!Number.isFinite(bpm) || bpm <= 0) return;
+
+  midiClockBpm = bpm;
+  midiClockHz = bpm / 60;
+  syncMidiClockLockedLfos(nowMs);
+}
+
 function releaseActiveMidiNote(noteNumber) {
   activeMidiNotes = activeMidiNotes.filter((note) => note !== noteNumber);
 }
@@ -1539,15 +1627,28 @@ function applyMidiNotePitch(noteNumber) {
   // own control-block granularity for typical envelopes.
   const value = normalizeParamValue("basePitch", midiNoteToHz(noteNumber));
   if (value === null) return;
+  activeMidiNoteNumber = clamp(Math.round(Number(noteNumber)), 0, 127);
+  activeMidiBasePitchValue = value;
   stagePendingParam("basePitch", value);
 }
 
-function updateGateFromMidiNotes() {
+function midiNoteMatchesActiveBasePitch(noteNumber) {
+  const note = clamp(Math.round(Number(noteNumber)), 0, 127);
+  if (activeMidiNoteNumber !== null && note === activeMidiNoteNumber) return true;
+  if (activeMidiBasePitchValue === null) return false;
+  const noteBasePitch = normalizeParamValue("basePitch", midiNoteToHz(note));
+  if (noteBasePitch === null) return false;
+  return Math.abs(noteBasePitch - activeMidiBasePitchValue) <= 1e-6;
+}
+
+function updateGateFromMidiNotes(forcedGateValue = null) {
   // Phase 1.4: collapse the prior two ipcRenderer.invoke calls (one for
   // `gate`, one for `trigIn`) into staged entries that drain together on
   // the next rAF. Once Phase 2 lands, the drain will emit a single
   // setParamMany() IPC + OSC bundle, fully closing the 2x amplification.
-  const gateValue = activeMidiNotes.length > 0 ? 1 : 0;
+  const gateValue = forcedGateValue === null
+    ? (activeMidiNotes.length > 0 ? 1 : 0)
+    : (forcedGateValue ? 1 : 0);
   stagePendingParam("gate", gateValue);
   stagePendingParam("trigIn", gateValue);
   // Diagnostic: log only gate transitions (0<->1) to start.log so on-device
@@ -1590,10 +1691,14 @@ function handleMidiNoteMessage(status, noteNumber, velocity) {
 
   if (!isNoteOff) return;
 
+  const noteMatchesActivePitch = midiNoteMatchesActiveBasePitch(note);
   releaseActiveMidiNote(note);
-  const nextNote = activeMidiNotes[activeMidiNotes.length - 1];
-  if (Number.isInteger(nextNote)) applyMidiNotePitch(nextNote);
-  updateGateFromMidiNotes();
+  if (!noteMatchesActivePitch) return;
+  activeMidiNoteNumber = null;
+  activeMidiBasePitchValue = null;
+  // On Note Off in MIDI note mode, always release and stay silent until a
+  // subsequent Note On. Do not retune/reconfigure the note being released.
+  updateGateFromMidiNotes(0);
 }
 
 function closeMidiPanels(exceptParam = null) {
@@ -1738,16 +1843,29 @@ function scheduleMidiRawReport() {
 
 function handleMidiMessage(event) {
   const data = event?.data;
-  if (!data || data.length < 3) return;
+  if (!data || data.length < 1) return;
   // Phase 2.3 telemetry: count every raw incoming MIDI message so main can
   // compute the (raw vs flushed) compression ratio. Coalesced via the same
   // rAF tick as the CC drain to avoid one IPC per event.
   midiRawCountWindow += 1;
   scheduleMidiRawReport();
   const status = data[0] | 0;
+  if (status >= MIDI_STATUS_CLOCK) {
+    handleMidiRealtimeMessage(status);
+    return;
+  }
+  if (data.length < 3) return;
   const data1 = data[1] | 0;
   const data2 = data[2] | 0;
   const messageType = status & MIDI_STATUS_TYPE_MASK;
+  const channel = status & MIDI_STATUS_CHANNEL_MASK;
+
+  if ((messageType === MIDI_STATUS_CC
+      || messageType === MIDI_STATUS_NOTE_ON
+      || messageType === MIDI_STATUS_NOTE_OFF)
+    && channel !== MIDI_INPUT_CHANNEL_ZERO_BASED) {
+    return;
+  }
 
   if (messageType === MIDI_STATUS_CC) {
     const cc = data1;
@@ -1937,8 +2055,19 @@ function setParamValue(param, rawValue, send = true) {
 const LFO_MAX = 16;
 const LFO_RATE_MIN = 0.01;
 const LFO_RATE_MAX = 20;
-const LFO_CONFIG_VERSION = 1;
+const LFO_CONFIG_VERSION = 3;
 const LFO_SHAPE_NAMES = ["Sine", "Triangle", "Saw Up", "Saw Down", "Square", "S&H", "Smooth Rnd"];
+const LFO_CLOCK_RATIO_OPTIONS = (() => {
+  const options = [];
+  for (let d = 16; d >= 2; d -= 1) {
+    options.push({ label: `/${d}`, value: 1 / d });
+  }
+  options.push({ label: "x1", value: 1 });
+  for (let m = 2; m <= 16; m += 1) {
+    options.push({ label: `x${m}`, value: m });
+  }
+  return options;
+})();
 const LFO_TARGETS = [
   { name: "none", label: "— none —", cap: 0 },
   { name: "amp", label: "Amplitude", cap: 0.5 },
@@ -1961,7 +2090,16 @@ const LFO_TARGETS = [
 const LFO_TARGET_BY_NAME = new Map(LFO_TARGETS.map((t) => [t.name, t]));
 
 function defaultLfoConfig() {
-  return { target: "none", rate: 1, depth: 0, shape: 0, enabled: false, phase: 0 };
+  return {
+    target: "none",
+    rate: 1,
+    depth: 0,
+    shape: 0,
+    enabled: false,
+    phase: 0,
+    useMidiClock: false,
+    clockRatio: 1
+  };
 }
 
 let lfoConfigs = Array.from({ length: LFO_MAX }, defaultLfoConfig);
@@ -1975,6 +2113,7 @@ const lfoOverviewEl = document.getElementById("lfoOverview");
 const lfoStripListEl = document.getElementById("lfoStripList");
 const lfoCountHintEl = document.getElementById("lfoCountHint");
 const lfoStripEls = [];
+const lfoThumbCacheByCanvas = new WeakMap();
 
 function lfoCapFor(targetName) {
   const t = LFO_TARGET_BY_NAME.get(targetName);
@@ -1995,8 +2134,44 @@ function lfoDepthFractionSigned(cfg) {
   return clamp(cfg.depth / cap, -1, 1);
 }
 
+function lfoClockRatioIndexFromValue(value) {
+  const v = Number(value);
+  if (!Number.isFinite(v) || v <= 0) return LFO_CLOCK_RATIO_OPTIONS.findIndex((opt) => opt.value === 1);
+  let bestIndex = 0;
+  let bestDist = Number.POSITIVE_INFINITY;
+  for (let i = 0; i < LFO_CLOCK_RATIO_OPTIONS.length; i += 1) {
+    const dist = Math.abs(LFO_CLOCK_RATIO_OPTIONS[i].value - v);
+    if (dist < bestDist) {
+      bestDist = dist;
+      bestIndex = i;
+    }
+  }
+  return bestIndex;
+}
+
+function lfoClockRatioFromIndex(index) {
+  const idx = clamp(Math.round(Number(index) || 0), 0, LFO_CLOCK_RATIO_OPTIONS.length - 1);
+  return LFO_CLOCK_RATIO_OPTIONS[idx].value;
+}
+
+function lfoClockRatioLabel(value) {
+  const idx = lfoClockRatioIndexFromValue(value);
+  return LFO_CLOCK_RATIO_OPTIONS[idx].label;
+}
+
+function lfoClockRatioValue(cfg) {
+  return lfoClockRatioFromIndex(lfoClockRatioIndexFromValue(cfg?.clockRatio));
+}
+
 function lfoIsActive(cfg) {
   return Boolean(cfg.enabled) && cfg.target !== "none" && Math.abs(cfg.depth) > 0;
+}
+
+function hasAnyRunningLfo() {
+  for (let i = 0; i < LFO_MAX; i += 1) {
+    if (lfoIsActive(lfoConfigs[i])) return true;
+  }
+  return false;
 }
 
 // Parameters that have a synthetic (client-rendered) scope preview which is
@@ -2127,8 +2302,13 @@ function drawLfoCursor(canvas, cursorT) {
   ctx.stroke();
 }
 
-function drawLfoThumb(canvas, cfg, seed, cursorT = null) {
-  if (!canvas) return;
+function lfoThumbCacheKey(metrics, cfg, seed) {
+  const depthFrac = lfoDepthFractionSigned(cfg);
+  const active = lfoIsActive(cfg) ? 1 : 0;
+  return `${metrics.drawWidth}x${metrics.drawHeight}|${seed}|${cfg.shape}|${cfg.phase.toFixed(4)}|${depthFrac.toFixed(4)}|${cfg.depth.toFixed(4)}|${active}`;
+}
+
+function renderLfoThumbBase(canvas, cfg, seed) {
   const active = lfoIsActive(cfg);
   const amp = active ? Math.max(0.08, Math.abs(lfoDepthFractionSigned(cfg))) : 0.55;
   const sign = cfg.depth < 0 ? -1 : 1;
@@ -2138,9 +2318,41 @@ function drawLfoThumb(canvas, cfg, seed, cursorT = null) {
     (t) => sign * amp * lfoShapeSample(cfg.shape, t + cfg.phase, seed),
     -1,
     1,
-    { color: accent, lineWidth: 1.9 }
+    { color: accent, lineWidth: 1.9, glow: false, sampleCount: 96 }
   );
-  if (active && cursorT !== null) drawLfoCursor(canvas, cursorT);
+}
+
+function ensureLfoThumbCache(canvas, cfg, seed) {
+  if (!canvas) return null;
+  const metrics = getCanvasMetrics(canvas);
+  const key = lfoThumbCacheKey(metrics, cfg, seed);
+  let cache = lfoThumbCacheByCanvas.get(canvas);
+  if (cache && cache.key === key && cache.baseCanvas) return cache;
+
+  renderLfoThumbBase(canvas, cfg, seed);
+  const baseCanvas = cache?.baseCanvas || document.createElement("canvas");
+  if (baseCanvas.width !== canvas.width || baseCanvas.height !== canvas.height) {
+    baseCanvas.width = canvas.width;
+    baseCanvas.height = canvas.height;
+  }
+  const baseCtx = baseCanvas.getContext("2d");
+  if (!baseCtx) return null;
+  baseCtx.clearRect(0, 0, baseCanvas.width, baseCanvas.height);
+  baseCtx.drawImage(canvas, 0, 0);
+  cache = { key, baseCanvas };
+  lfoThumbCacheByCanvas.set(canvas, cache);
+  return cache;
+}
+
+function drawLfoThumb(canvas, cfg, seed, cursorT = null) {
+  if (!canvas) return;
+  const cache = ensureLfoThumbCache(canvas, cfg, seed);
+  if (!cache?.baseCanvas) return;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(cache.baseCanvas, 0, 0);
+  if (lfoIsActive(cfg) && cursorT !== null) drawLfoCursor(canvas, cursorT);
 }
 
 function lfoField(labelText) {
@@ -2158,6 +2370,7 @@ function lfoField(labelText) {
 }
 
 const LFO_CARD_ACCENTS = ["#1f8bff", "#ff6f24", "#cfe6ff", "#8fe39b"];
+const LFO_PRIMARY_ACCENT = "#ff6f24";
 
 function lfoCardAccent(index) {
   return LFO_CARD_ACCENTS[index % LFO_CARD_ACCENTS.length];
@@ -2205,7 +2418,7 @@ function createLfoStrip(index) {
   shapeKey.className = "k";
   shapeKey.textContent = "Shape";
   const shapeSel = document.createElement("select");
-  shapeSel.className = "lfo-shape v";
+  shapeSel.className = "lfo-shape";
   LFO_SHAPE_NAMES.forEach((shapeName, shapeIdx) => {
     const option = document.createElement("option");
     option.value = String(shapeIdx);
@@ -2214,6 +2427,22 @@ function createLfoStrip(index) {
   });
   shapeSel.value = String(cfg.shape);
   shapeRow.append(shapeKey, shapeSel);
+
+  const clockRow = document.createElement("div");
+  clockRow.className = "lfo-field lfo-clock-row";
+  const clockKey = document.createElement("span");
+  clockKey.className = "k";
+  clockKey.textContent = "Rate Source";
+  const clockToggle = document.createElement("label");
+  clockToggle.className = "lfo-clock-toggle";
+  const clockCheck = document.createElement("input");
+  clockCheck.type = "checkbox";
+  clockCheck.className = "lfo-clock-check";
+  clockCheck.checked = Boolean(cfg.useMidiClock);
+  const clockText = document.createElement("span");
+  clockText.textContent = "Use MIDI Clock";
+  clockToggle.append(clockCheck, clockText);
+  clockRow.append(clockKey, clockToggle);
 
   // Rate field — big value + thin slider
   const rateRow = document.createElement("div");
@@ -2235,9 +2464,28 @@ function createLfoStrip(index) {
   rateEl.value = String(cfg.rate);
   rateRow.append(rateTop, rateEl);
 
+  const ratioRow = document.createElement("div");
+  ratioRow.className = "lfo-field lfo-field-slider";
+  const ratioTop = document.createElement("div");
+  ratioTop.className = "lfo-field-top";
+  const ratioKey = document.createElement("span");
+  ratioKey.className = "k";
+  ratioKey.textContent = "Clock Div/Mult";
+  const ratioVal = document.createElement("span");
+  ratioVal.className = "v";
+  ratioTop.append(ratioKey, ratioVal);
+  const ratioEl = document.createElement("input");
+  ratioEl.type = "range";
+  ratioEl.className = "lfo-range lfo-clock-ratio-range";
+  ratioEl.min = "0";
+  ratioEl.max = String(LFO_CLOCK_RATIO_OPTIONS.length - 1);
+  ratioEl.step = "1";
+  ratioEl.value = String(lfoClockRatioIndexFromValue(cfg.clockRatio));
+  ratioRow.append(ratioTop, ratioEl);
+
   // Depth field — big value + thin slider
   const depthRow = document.createElement("div");
-  depthRow.className = "lfo-field lfo-field-slider";
+  depthRow.className = "lfo-field lfo-field-slider lfo-field-slider-depth";
   const depthTop = document.createElement("div");
   depthTop.className = "lfo-field-top";
   const depthKey = document.createElement("span");
@@ -2249,6 +2497,7 @@ function createLfoStrip(index) {
   const depthEl = document.createElement("input");
   depthEl.type = "range";
   depthEl.className = "lfo-range";
+  depthEl.dataset.bipolar = "1";
   depthEl.min = "-1";
   depthEl.max = "1";
   depthEl.step = "0.01";
@@ -2281,7 +2530,7 @@ function createLfoStrip(index) {
   enableInput.style.display = "none";
   enableInput.checked = cfg.enabled;
 
-  body.append(shapeRow, rateRow, depthRow, targetBox, enableInput);
+  body.append(shapeRow, clockRow, rateRow, ratioRow, depthRow, targetBox, enableInput);
   card.append(ghost, head, waveBox, body);
   lfoStripListEl.appendChild(card);
 
@@ -2294,10 +2543,13 @@ function createLfoStrip(index) {
     runBtn,
     targetSel,
     shapeSel,
+    clockCheck,
     rateEl,
+    clockRatioEl: ratioEl,
     depthEl,
     enableInput,
     rateLabelVal: rateVal,
+    clockRatioLabelVal: ratioVal,
     depthLabelVal: depthVal,
     accent
   };
@@ -2306,7 +2558,14 @@ function createLfoStrip(index) {
     const c = lfoConfigs[index];
     c.target = LFO_TARGET_BY_NAME.has(targetSel.value) ? targetSel.value : "none";
     c.shape = clamp(parseInt(shapeSel.value, 10) || 0, 0, 6);
-    c.rate = clamp(Number(rateEl.value) || 0, LFO_RATE_MIN, LFO_RATE_MAX);
+    c.useMidiClock = Boolean(clockCheck.checked);
+    c.clockRatio = lfoClockRatioFromIndex(ratioEl.value);
+    const clockRate = midiClockRateHz();
+    if (c.useMidiClock) {
+      if (clockRate !== null) c.rate = clamp(clockRate * c.clockRatio, LFO_RATE_MIN, LFO_RATE_MAX);
+    } else {
+      c.rate = clamp(Number(rateEl.value) || 0, LFO_RATE_MIN, LFO_RATE_MAX);
+    }
     c.depth = clamp(Number(depthEl.value) || 0, -1, 1) * lfoCapFor(c.target);
     c.enabled = enableInput.checked;
     const depthFrac = lfoDepthFractionSigned(c);
@@ -2322,7 +2581,9 @@ function createLfoStrip(index) {
   });
   targetSel.addEventListener("change", onChange);
   shapeSel.addEventListener("change", onChange);
+  clockCheck.addEventListener("change", onChange);
   rateEl.addEventListener("input", onChange);
+  ratioEl.addEventListener("input", onChange);
   depthEl.addEventListener("input", onChange);
 
   return refs;
@@ -2341,6 +2602,11 @@ function refreshLfoStrip(index) {
   const r = lfoStripEls[index];
   if (!r) return;
   const c = lfoConfigs[index];
+  const clockRatio = lfoClockRatioValue(c);
+  const hasClockTempo = Number.isFinite(midiClockHz);
+  const displayedRate = (c.useMidiClock && hasClockTempo)
+    ? clamp(midiClockHz * clockRatio, LFO_RATE_MIN, LFO_RATE_MAX)
+    : c.rate;
   const running = lfoIsActive(c);
   r.strip.classList.toggle("lfo-disabled", !c.enabled);
   r.strip.classList.toggle("lfo-running", running);
@@ -2352,10 +2618,27 @@ function refreshLfoStrip(index) {
     r.runBtn.textContent = c.enabled ? "RUNNING" : "OFF";
     r.runBtn.classList.toggle("on", c.enabled);
   }
-  if (r.rateLabelVal) r.rateLabelVal.textContent = `${c.rate.toFixed(2)} Hz`;
+  if (r.clockCheck) r.clockCheck.checked = Boolean(c.useMidiClock);
+  if (r.rateLabelVal) {
+    r.rateLabelVal.textContent = c.useMidiClock && !hasClockTempo
+      ? "CLOCK —"
+      : `${displayedRate.toFixed(2)} Hz`;
+  }
+  if (r.clockRatioLabelVal) r.clockRatioLabelVal.textContent = lfoClockRatioLabel(clockRatio);
+  if (r.clockRatioEl) {
+    r.clockRatioEl.value = String(lfoClockRatioIndexFromValue(clockRatio));
+    r.clockRatioEl.disabled = !c.useMidiClock;
+    r.clockRatioEl.classList.toggle("is-locked", !c.useMidiClock);
+    refreshSliderFill(r.clockRatioEl, LFO_PRIMARY_ACCENT);
+  }
   if (r.depthLabelVal) r.depthLabelVal.textContent = `${Math.round(lfoDepthFractionSigned(c) * 100)}%`;
-  if (r.rateEl) refreshSliderFill(r.rateEl, r.accent);
-  if (r.depthEl) refreshSliderFill(r.depthEl, r.accent);
+  if (r.rateEl) {
+    r.rateEl.disabled = Boolean(c.useMidiClock);
+    r.rateEl.classList.toggle("is-locked", Boolean(c.useMidiClock));
+    r.rateEl.value = String(displayedRate);
+    refreshSliderFill(r.rateEl, LFO_PRIMARY_ACCENT);
+  }
+  if (r.depthEl) refreshSliderFill(r.depthEl, LFO_PRIMARY_ACCENT);
   drawLfoThumb(r.canvas, c, index);
 }
 
@@ -2368,7 +2651,12 @@ function lfoActiveCount() {
 const lfoActiveCountEl = document.getElementById("lfoActiveCount");
 
 function updateLfoHint() {
-  if (lfoActiveCountEl) lfoActiveCountEl.textContent = String(lfoActiveCount());
+  const active = lfoActiveCount();
+  if (lfoActiveCountEl) lfoActiveCountEl.textContent = String(active);
+  if (lfoCountHintEl) {
+    const tempoText = Number.isFinite(midiClockBpm) ? ` · MIDI ${midiClockBpm.toFixed(1)} BPM` : "";
+    lfoCountHintEl.textContent = `${active} running · tap controls to edit shape, depth, and target${tempoText}`;
+  }
 }
 
 function syncLfoStripFromConfig(index) {
@@ -2434,6 +2722,7 @@ function sendLfo(index) {
   window.spaluterApi.setLfo(index, lfoToIpc(index));
   updateLfoHint();
   rebuildLfoOverview();
+  if (isModulationScreenActive()) scheduleLfoCursor();
   // Re-evaluate synthetic scope-preview animation: starts it when a synthetic-view
   // target becomes active, and lets it settle the static scope when it stops.
   scheduleParamModAnim();
@@ -2461,7 +2750,9 @@ function collectLfoState() {
       depth: c.depth,
       shape: c.shape,
       enabled: c.enabled,
-      phase: c.phase
+      phase: c.phase,
+      useMidiClock: Boolean(c.useMidiClock),
+      clockRatio: lfoClockRatioValue(c)
     }))
   };
 }
@@ -2479,11 +2770,14 @@ function applyLfoState(state) {
       c.depth = clamp(Number(src.depth) || 0, -cap, cap);
       c.enabled = Boolean(src.enabled);
       c.phase = (((Number(src.phase) || 0) % 1) + 1) % 1;
+      c.useMidiClock = Boolean(src.useMidiClock);
+      c.clockRatio = lfoClockRatioValue(src);
     } else {
       Object.assign(c, defaultLfoConfig());
     }
     syncLfoStripFromConfig(i);
   }
+  syncMidiClockLockedLfos(performance.now(), true);
   updateLfoHint();
   rebuildLfoOverview();
   syncLfosToEngine();
@@ -2495,16 +2789,25 @@ function isModulationScreenActive() {
   return currentMainScreen === "mods";
 }
 
+function isLfoStripVisible(stripEl) {
+  if (!stripEl || !lfoStripListEl) return false;
+  const viewTop = lfoStripListEl.scrollTop;
+  const viewBottom = viewTop + lfoStripListEl.clientHeight;
+  const top = stripEl.offsetTop;
+  const bottom = top + stripEl.offsetHeight;
+  return bottom >= (viewTop - 8) && top <= (viewBottom + 8);
+}
+
 function lfoCursorTick(timestamp) {
   lfoCursorRafId = 0;
-  if (!isModulationScreenActive()) return;
+  if (!isModulationScreenActive() || !hasAnyRunningLfo()) return;
   if (timestamp - lfoCursorLast >= 50) {
     lfoCursorLast = timestamp;
     const now = performance.now() / 1000;
     for (let i = 0; i < LFO_MAX; i += 1) {
       const r = lfoStripEls[i];
       const c = lfoConfigs[i];
-      if (!r || !lfoIsActive(c)) continue;
+      if (!r || !lfoIsActive(c) || !isLfoStripVisible(r.strip)) continue;
       const cursorT = (((now * c.rate) % 1) + 1) % 1;
       drawLfoThumb(r.canvas, c, i, cursorT);
     }
@@ -2513,7 +2816,7 @@ function lfoCursorTick(timestamp) {
 }
 
 function scheduleLfoCursor() {
-  if (lfoCursorRafId || !isModulationScreenActive()) return;
+  if (lfoCursorRafId || !isModulationScreenActive() || !hasAnyRunningLfo()) return;
   lfoCursorRafId = window.requestAnimationFrame(lfoCursorTick);
 }
 
@@ -2927,6 +3230,8 @@ window.spaluterApi.onStatus((text) => {
   updateSynthRunningFromStatus(text);
   if (/(synth stopped|stopped by user|manual stop|quitting runtime|sclang exited)/.test(statusText)) {
     activeMidiNotes = [];
+    activeMidiNoteNumber = null;
+    activeMidiBasePitchValue = null;
     clearOutputScope("Waiting for synth...");
   }
   if (/synth started/.test(statusText) && outputScopeLabelEl) {
@@ -3271,8 +3576,17 @@ function refreshSliderFill(slider, accentHex) {
   const frac = max > min ? clamp((val - min) / (max - min), 0, 1) : 0;
   const accent = accentHex || sliderAccentHex(slider.dataset.accent);
   const pct = `${(frac * 100).toFixed(1)}%`;
-  slider.style.background =
-    `linear-gradient(to right, ${accent} 0%, ${accent} ${pct}, rgba(255,255,255,0.09) ${pct}, rgba(255,255,255,0.09) 100%) no-repeat center / 100% 10px`;
+  const trackHeight = slider.classList.contains("lfo-range") ? "14px" : "10px";
+  const fillGradient =
+    `linear-gradient(to right, ${accent} 0%, ${accent} ${pct}, rgba(255,255,255,0.09) ${pct}, rgba(255,255,255,0.09) 100%) no-repeat center / 100% ${trackHeight}`;
+  if (slider.dataset.bipolar === "1" && min < 0 && max > 0) {
+    const center = clamp((0 - min) / (max - min), 0, 1) * 100;
+    const centerPct = `${center.toFixed(1)}%`;
+    slider.style.background =
+      `linear-gradient(to right, transparent calc(${centerPct} - 1px), rgba(233,227,214,0.4) calc(${centerPct} - 1px), rgba(233,227,214,0.4) calc(${centerPct} + 1px), transparent calc(${centerPct} + 1px)) no-repeat center / 100% ${trackHeight}, ${fillGradient}`;
+    return;
+  }
+  slider.style.background = fillGradient;
 }
 
 function buildSegmentedSelect(select, accent) {
