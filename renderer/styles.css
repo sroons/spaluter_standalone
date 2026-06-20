@@ -172,6 +172,8 @@ header{
 .edit-card[data-accent="acid"] .ph .t{ color:var(--acid); }
 .edit-card[data-accent="ice"] .ph .t{ color:var(--ice); }
 .edit-card[data-accent="ok"] .ph .t{ color:var(--ok); }
+.reverb-note{ margin:8px 10px 10px; font-family:var(--mono); font-size:9px; line-height:1.5;
+  color:var(--mute); letter-spacing:.02em; }
 .edit-waves{ display:grid; grid-auto-flow:column; grid-auto-columns:1fr; gap:6px;
   padding:7px 8px 0; }
 .wavebox{ position:relative; background:#070708; border:1px solid var(--line); padding:2px; }

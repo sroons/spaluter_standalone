@@ -70,7 +70,7 @@ const PARAM_ANIM_TICK_MS_DEFAULT = 33;
 const PARAM_ANIM_TICK_MS_RESPONSIVE = 22;
 const RESPONSIVE_PREVIEW_MODE_STORAGE_KEY = "spaluter-responsive-preview-v1";
 const DEFAULT_RESPONSIVE_PREVIEW_MODE = true;
-const MAIN_SCREENS = ["perform", "edit", "mods", "presets"];
+const MAIN_SCREENS = ["perform", "edit", "mods", "reverb", "presets"];
 const SCREEN_SLIDE_MS = 240;
 const SWIPE_MIN_DISTANCE_PX = 60;
 const SWIPE_MAX_OFF_AXIS_PX = 45;
@@ -142,6 +142,10 @@ const PARAM_PAGE_DEFINITIONS = Object.freeze([
   {
     title: "Voice",
     params: ["gateMode", "voiceCount", "chordType", "basePitch", "attackMs", "releaseMs", "glideMs"]
+  },
+  {
+    title: "Reverb",
+    params: ["revWet", "revTime", "revDamp", "revDiff", "revShimmer", "revMod", "revPreDelay", "revLowCut"]
   },
   {
     title: "Sample",
@@ -234,7 +238,15 @@ const PREFERRED_MIDI_CC_BY_PARAM = Object.freeze({
   releaseMs: 45,
   glideMs: 46,
   useSample: 47,
-  sampleRate: 48
+  sampleRate: 48,
+  revWet: 49,
+  revTime: 50,
+  revDamp: 51,
+  revDiff: 52,
+  revMod: 53,
+  revPreDelay: 54,
+  revLowCut: 55,
+  revShimmer: 56
 });
 const PULSARET_WAVE_NAMES = [
   "sine",
@@ -3143,7 +3155,7 @@ function renderPresetDetail() {
       ? `SAVED · ${presetLfoRouteCount(preset)} LFO routes`
       : "EMPTY · no snapshot";
   }
-  if (presetStatParamsEl) presetStatParamsEl.textContent = saved ? "30 / 30" : "— / 30";
+  if (presetStatParamsEl) presetStatParamsEl.textContent = saved ? `${allParamNames.length} / ${allParamNames.length}` : `— / ${allParamNames.length}`;
   if (presetStatLfoEl) presetStatLfoEl.textContent = `${saved ? presetLfoRouteCount(preset) : 0} routes`;
   if (presetStatSampleEl) presetStatSampleEl.textContent = (saved && presetSampleName(preset)) || "none";
   drawPresetSignature(presetSignatureCanvas, saved ? preset : null, "#ff6f24", 2);

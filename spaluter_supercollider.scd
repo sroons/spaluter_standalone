@@ -221,6 +221,92 @@ s.waitForBoot {
         sig  = Lag.kr(osc * depth * enabled, lag);
         Out.kr(modBus + targetIdx, sig);
     }).add;
+
+    // Mutable Instruments Clouds-style reverb core with an added octave shimmer
+    // branch. Reads the synth's stereo output bus, processes a diffused feedback
+    // delay network, and writes the dry/wet blend back with ReplaceOut. Runs
+    // AFTER \spaluterSC in node order (the runtime adds it \addAfter ~spaluter),
+    // so In.ar sees the freshly written synth output within the same control
+    // block. Kept as a separate, persistent synth so the tail keeps ringing while
+    // voices are gated/released and so the scope/peak metering inside
+    // \spaluterSC stays pre-reverb.
+    //
+    // CPU notes (RPi4): the input diffuser uses AllpassN (no interpolation,
+    // static times); the feedback loop uses DelayL/AllpassL (linear interp).
+    SynthDef(\spaluterReverb, {
+        |out=0, revWet=0, revTime=0.6, revDamp=0.5, revDiff=0.7, revMod=0.3,
+        revShimmer=0, revPreDelay=0, revLowCut=20|
+
+        var in, pre, diff, diffCoef, local, inL, inR, fb;
+        var modDepth, modL, modR, lpFreq, earlyL, earlyR;
+        var tankL, tankR, wet, mix, sig, shimmerAmt, shimmerMono, shimmerL, shimmerR;
+
+        in = In.ar(out, 2);
+
+        // Pre-delay (up to 250 ms) before any reverberation.
+        pre = DelayN.ar(in, 0.25, (revPreDelay * 0.001).clip(0, 0.25));
+
+        // Input diffuser: 4 series allpasses with static, prime-ish delay times.
+        // Keep a minimum decay for density, then expand with Diffusion.
+        diffCoef = revDiff.clip(0, 1);
+        diff = pre;
+        [0.004771, 0.003595, 0.012730, 0.009307].do { |dt|
+            diff = AllpassN.ar(diff, dt, dt, dt * (6 + (diffCoef * 20)));
+        };
+
+        // Small asymmetric early reflections make the space feel less "boingy"
+        // before entering the late feedback tank.
+        earlyL = (DelayN.ar(diff[0], 0.06, 0.0061) * 0.30)
+            + (DelayN.ar(diff[0], 0.06, 0.0153) * 0.22)
+            + (DelayN.ar(diff[1], 0.06, 0.0217) * 0.18);
+        earlyR = (DelayN.ar(diff[1], 0.06, 0.0057) * 0.30)
+            + (DelayN.ar(diff[1], 0.06, 0.0179) * 0.22)
+            + (DelayN.ar(diff[0], 0.06, 0.0241) * 0.18);
+
+        // Late feedback tank: cross-coupled modulated delays + staged allpass
+        // diffusion + loop filtering.
+        fb = revTime.clip(0, 0.95);
+        modDepth = revMod.clip(0, 1) * 0.0012;  // up to 1.2 ms wobble
+        modL = LFNoise2.kr(0.11).range(modDepth.neg, modDepth);
+        modR = LFNoise2.kr(0.15).range(modDepth.neg, modDepth);
+        // More damping => darker (lower in-loop low-pass cutoff).
+        lpFreq = LinExp.kr(revDamp.clip(0, 1), 0, 1, 18000, 1600);
+
+        local = LocalIn.ar(2);
+        inL = diff[0] + earlyL + (local[1] * fb);
+        inR = diff[1] + earlyR + (local[0] * fb);
+
+        tankL = DelayL.ar(inL, 0.18, (0.0371 + modL).clip(0.002, 0.18));
+        tankR = DelayL.ar(inR, 0.18, (0.0532 + modR).clip(0.002, 0.18));
+
+        tankL = AllpassL.ar(tankL, 0.09, LFNoise1.kr(0.07).range(0.031, 0.067), 0.55 + (diffCoef * 0.45));
+        tankR = AllpassL.ar(tankR, 0.09, LFNoise1.kr(0.083).range(0.034, 0.071), 0.55 + (diffCoef * 0.45));
+        tankL = AllpassL.ar(tankL, 0.07, LFNoise1.kr(0.13).range(0.019, 0.049), 0.45 + (diffCoef * 0.35));
+        tankR = AllpassL.ar(tankR, 0.07, LFNoise1.kr(0.17).range(0.021, 0.051), 0.45 + (diffCoef * 0.35));
+
+        tankL = LeakDC.ar(LPF.ar(HPF.ar(tankL, 35), lpFreq));
+        tankR = LeakDC.ar(LPF.ar(HPF.ar(tankR, 35), lpFreq));
+
+        // True shimmer: octave-up pitch-shifted branch re-injected into the tank.
+        shimmerAmt = revShimmer.clip(0, 1);
+        shimmerMono = PitchShift.ar((tankL + tankR) * 0.5, 0.11, 2.0, 0.0, 0.01);
+        shimmerMono = HPF.ar(LPF.ar(shimmerMono, 9000), 350);
+        shimmerL = DelayC.ar(shimmerMono, 0.03, 0.0087);
+        shimmerR = DelayC.ar(shimmerMono, 0.03, 0.0131);
+
+        LocalOut.ar([
+            tankL + (shimmerR * shimmerAmt * 0.24),
+            tankR + (shimmerL * shimmerAmt * 0.24)
+        ]);
+
+        wet = [tankL, tankR] + ([shimmerL, shimmerR] * (shimmerAmt * 0.35));
+        wet = HPF.ar(wet, revLowCut.clip(20, 1000));
+
+        mix = Lag.kr(revWet.clip(0, 1), 0.05);
+        sig = (in * (1 - mix)) + (wet * mix);
+        ReplaceOut.ar(out, sig);
+    }).add;
+
     s.sync;
 
     ~spaluterStart = { |out=0, modBus=0, target, addAction=\addToHead|
