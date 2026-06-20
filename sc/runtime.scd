@@ -17,6 +17,7 @@ Boots local scsynth, loads patch file, and exposes OSC control:
     var patchWaitRetries, synthDefWaitRetries, scopeRate, scopeEnabled, applyScopeConfig;
     var modBus, lfoGroup, modClearSynth, lfoSynths, lfoConfigs, lfoCount, maxLfo;
     var modParams, modParamIndex, modDepthCap, setupModulation, spawnLfo, releaseLfo, setLfoCount, applyLfo, rebuildLfos, lfoWarn, lfoWarnLast, lfoWarnCount;
+    var reverbDefaults, reverbState, reverbParamSet, applyReverbState, setReverbParam, resetReverbParams, updateReverbBypass;
 
 patchPath = ~spaluterPatchPath;
 if(patchPath.isNil) {
@@ -49,6 +50,10 @@ s.options.numInputBusChannels = 0;
 s.options.numOutputBusChannels = 2;
 // Do not force sampleRate here; let OS/default device choose a valid rate.
 s.options.numWireBufs = 4096;
+// Larger real-time memory pool so the Clouds-style reverb's delay lines
+// allocate cleanly on boot (default 8 MB can be tight alongside the synth's
+// scope LocalBufs). 32 MB is ample headroom for the FX delay buffers.
+s.options.memSize = 32768;
 s.options.bindAddress = "127.0.0.1";
 // Pin scsynth to the pisound ALSA device on Linux/Patchbox so it bypasses
 // the `plug` conversion layer in /etc/asound.conf. Only applied on Linux
@@ -234,16 +239,64 @@ s.doWhenBooted({
         };
     };
 
+    // ----- Clouds-style reverb -----
+    // Reverb params live on the separate \spaluterReverb synth (not ~spaluter).
+    // reverbState mirrors the current values so they survive synth restarts, and
+    // is applied whenever the reverb synth is (re)spawned in startSynth.
+    reverbDefaults = (
+        revWet: 0.0, revTime: 0.6, revDamp: 0.5, revDiff: 0.7,
+        revMod: 0.3, revShimmer: 0.0, revPreDelay: 0.0, revLowCut: 20.0
+    );
+    reverbState = IdentityDictionary.new;
+    reverbDefaults.keysValuesDo { |k, v| reverbState[k] = v.asFloat };
+    reverbParamSet = IdentitySet.newFrom(reverbDefaults.keys);
+
+    applyReverbState = {
+        if(~spaluterReverb.notNil) {
+            reverbState.keysValuesDo { |k, v| ~spaluterReverb.set(k, v) };
+        };
+    };
+
+    // CPU bypass: when fully dry, pause the reverb synth so its delay network
+    // stops costing DSP. Paused => no ReplaceOut, so \spaluterSC's dry output
+    // passes straight through. Resume as soon as any wet is dialed in.
+    updateReverbBypass = {
+        if(~spaluterReverb.notNil) {
+            ~spaluterReverb.run((reverbState[\revWet] ? 0) > 0.0001);
+        };
+    };
+
+    setReverbParam = { |key, value|
+        var k = key.asSymbol, v = value.asFloat;
+        reverbState[k] = v;
+        if(~spaluterReverb.notNil) { ~spaluterReverb.set(k, v); };
+        if(k == \revWet) { updateReverbBypass.value; };
+    };
+
+    resetReverbParams = {
+        reverbDefaults.keysValuesDo { |k, v| reverbState[k] = v.asFloat };
+        applyReverbState.value;
+        updateReverbBypass.value;
+    };
+
     startSynth = {
         waitForPatch.value({
             waitForSynthDef.value({
                 {
                     if(~spaluter.notNil) { ~spaluter.free; };
+                    if(~spaluterReverb.notNil) { ~spaluterReverb.free; ~spaluterReverb = nil; };
                     setupModulation.value;
                     ~spaluter = ~spaluterStart.(0, modBus.index, lfoGroup, \addAfter);
                     if(~spaluter.notNil and: { silentBuf.notNil }) {
                         ~spaluter.set(\bufnum, silentBuf.bufnum);
                         applyScopeConfig.value;
+                    };
+                    // Reverb taps bus 0 after the synth and writes the wet/dry
+                    // blend back with ReplaceOut, so it must run \addAfter ~spaluter.
+                    if(~spaluter.notNil) {
+                        ~spaluterReverb = Synth(\spaluterReverb, [\out, 0], ~spaluter, \addAfter);
+                        applyReverbState.value;
+                        updateReverbBypass.value;
                     };
                     if(~spaluter.notNil) {
                         status.value("Synth started");
@@ -257,6 +310,10 @@ s.doWhenBooted({
 
     stopSynth = {
         {
+            if(~spaluterReverb.notNil) {
+                ~spaluterReverb.free;
+                ~spaluterReverb = nil;
+            };
             if(~spaluter.notNil) {
                 ~spaluter.free;
                 ~spaluter = nil;
@@ -278,6 +335,7 @@ s.doWhenBooted({
                     \ampJitter, 0.0, \timingJitter, 0.0, \glisson, 0.0
                 );
             };
+            resetReverbParams.value;
             status.value("Patch reset");
         }.defer;
     };
@@ -321,8 +379,17 @@ s.doWhenBooted({
         // Phase 3a: no .defer — calling ~spaluter.set just emits /n_set to
         // scsynth and is thread-safe. Deferring onto AppClock added ~one
         // language-frame of latency per CC and frame-quantized the response.
-        if(~spaluter.notNil and: { key.notNil }) {
-            ~spaluter.set(key.asSymbol, value.asFloat);
+        if(key.notNil) {
+            var sym = key.asSymbol;
+            // Reverb params target the separate \spaluterReverb synth; everything
+            // else goes to the main synth.
+            if(reverbParamSet.includes(sym)) {
+                setReverbParam.value(sym, value);
+            } {
+                if(~spaluter.notNil) {
+                    ~spaluter.set(sym, value.asFloat);
+                };
+            };
         };
     }, "/spaluter/set");
 

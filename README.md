@@ -53,7 +53,26 @@ Macros write directly to the same parameters exposed on the Edit and Mods screen
 
 ### Bottom navigation
 
-`[01] Perform · [02] Edit · [03] Mods · [04] Presets` switch between the four screens; the orange **Stop Synth** button on the far right is the held emergency stop.
+`[01] Perform · [02] Edit · [03] Mods · [04] Reverb · [05] Presets` switch between the five screens; the orange **Stop Synth** button on the far right is the held emergency stop.
+
+## The Reverb screen
+
+The Reverb screen hosts a Mutable Instruments *Clouds*-style reverb: an input diffuser feeding a modulated feedback delay network with in-loop damping, plus an octave-up shimmer branch in the feedback path. It runs as a dedicated, persistent effect synth (`\spaluterReverb`) placed **after** the engine in the SuperCollider node order, so the tail keeps ringing while voices are gated/released. The Perform scope and peak meter remain pre-reverb (they read the engine output directly).
+
+The controls are plain faders, styled like the Edit screen:
+
+| Control | Param | Range | Default | What it does |
+| --- | --- | --- | ---: | --- |
+| **Mix** | `revWet` | 0 – 1 | 0.0 | Dry/wet blend. At **0** the effect is bypassed (the synth pauses the reverb node, so it costs zero DSP). |
+| **Decay** | `revTime` | 0 – 0.95 | 0.6 | Feedback-loop gain — longer values give longer tails. Capped below self-oscillation. |
+| **Diffusion** | `revDiff` | 0 – 1 | 0.7 | Smear/density of the input diffuser and in-loop allpass. |
+| **Damping** | `revDamp` | 0 – 1 | 0.5 | High-frequency absorption inside the loop (higher = darker). |
+| **Shimmer** | `revShimmer` | 0 – 1 | 0.0 | Octave-up branch injected into the reverb feedback network for classic shimmer bloom. |
+| **Movement** | `revMod` | 0 – 1 | 0.3 | Delay-time modulation depth on the loop delays to de-metal and animate the tail. |
+| **Pre-delay** | `revPreDelay` | 0 – 250 ms | 0 | Delay before the reverb onset. |
+| **Low Cut** | `revLowCut` | 20 – 1000 Hz | 20 | High-pass filter on the wet signal. |
+
+Reverb params are sent over the same `/spaluter/set` path as every other parameter; the runtime routes `rev*` keys to the reverb synth. They are captured and restored by presets like any other control.
 
 ## Default MIDI channel values (CC mappings)
 
@@ -90,6 +109,14 @@ Macros write directly to the same parameters exposed on the Edit and Mods screen
 | glideMs | 46 |
 | useSample | 47 |
 | sampleRate | 48 |
+| revWet | 49 |
+| revTime | 50 |
+| revDamp | 51 |
+| revDiff | 52 |
+| revMod | 53 |
+| revPreDelay | 54 |
+| revLowCut | 55 |
+| revShimmer | 56 |
 
 ## Requirements
 
