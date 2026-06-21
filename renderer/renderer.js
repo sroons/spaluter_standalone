@@ -116,6 +116,7 @@ let responsivePreviewMode = DEFAULT_RESPONSIVE_PREVIEW_MODE;
 const controlMetaByParam = new Map();
 const paramValueElByParam = new Map();
 const paramSliderByParam = new Map();
+const editLfoMarkerByParam = new Map();
 const canvasMetricsByElement = new WeakMap();
 const allParamNames = Array.from(new Set([
   ...knobByParam.keys(),
@@ -1676,13 +1677,6 @@ function updateGateFromMidiNotes(forcedGateValue = null) {
   }
 }
 
-function ensureMidiNoteEnvelopeMode() {
-  const gateMode = currentParamValue("gateMode", 1);
-  if (gateMode !== 1) return;
-  setParamValue("gateMode", 0, true);
-  appendLog("[MIDI] Gate Mode set to MIDI-like so Note On/Off uses attack/release.");
-}
-
 function handleMidiNoteMessage(status, noteNumber, velocity) {
   const messageType = status & MIDI_STATUS_TYPE_MASK;
   const note = clamp(Math.round(Number(noteNumber)), 0, 127);
@@ -1690,8 +1684,6 @@ function handleMidiNoteMessage(status, noteNumber, velocity) {
   const isNoteOn = messageType === MIDI_STATUS_NOTE_ON && vel > 0;
   const isNoteOff = messageType === MIDI_STATUS_NOTE_OFF || (messageType === MIDI_STATUS_NOTE_ON && vel === 0);
   const wasActive = activeMidiNotes.includes(note);
-
-  if (isNoteOn || (isNoteOff && wasActive)) ensureMidiNoteEnvelopeMode();
 
   if (isNoteOn) {
     releaseActiveMidiNote(note);
@@ -2052,6 +2044,9 @@ function setParamValue(param, rawValue, send = true) {
   }
 
   updateRealtimeParamValue(param, value);
+  if (currentMainScreen === "edit" && editLfoMarkerByParam.has(param)) {
+    updateEditLfoMarkers();
+  }
   if (send) {
     lastSentValueByParam.set(param, value);
     window.spaluterApi.setParam(param, value);
@@ -2123,9 +2118,12 @@ let lfoCursorLast = 0;
 
 const lfoOverviewEl = document.getElementById("lfoOverview");
 const lfoStripListEl = document.getElementById("lfoStripList");
+const lfoImpactMatrixEl = document.getElementById("lfoImpactMatrix");
 const lfoCountHintEl = document.getElementById("lfoCountHint");
 const lfoStripEls = [];
+const lfoImpactMatrixRows = [];
 const lfoThumbCacheByCanvas = new WeakMap();
+let lfoImpactMatrixLastUpdate = 0;
 
 function lfoCapFor(targetName) {
   const t = LFO_TARGET_BY_NAME.get(targetName);
@@ -2193,6 +2191,9 @@ function hasAnyRunningLfo() {
 const LFO_SYNTH_VIEW_TARGETS = new Set([
   "pulsaret", "window", "duty", "formant1", "formant2", "formant3", "maskAmount"
 ]);
+const LFO_EDIT_MARKER_TARGETS = new Set(
+  LFO_TARGETS.filter((target) => target.name !== "none").map((target) => target.name)
+);
 
 // Live modulation offset (native units) applied to `param` at time nowSec,
 // summing every enabled LFO that targets it. Mirrors the engine: each LFO adds
@@ -2207,6 +2208,55 @@ function lfoModOffset(param, nowSec) {
     sum += c.depth * lfoShapeSample(c.shape, phase01, i);
   }
   return sum;
+}
+
+function hasRunningLfoTarget(param) {
+  for (let i = 0; i < LFO_MAX; i += 1) {
+    const cfg = lfoConfigs[i];
+    if (lfoIsActive(cfg) && cfg.target === param) return true;
+  }
+  return false;
+}
+
+function lfoInstantContribution(cfg, index, nowSec) {
+  if (!lfoIsActive(cfg)) return 0;
+  const phase01 = ((((nowSec * cfg.rate) + cfg.phase) % 1) + 1) % 1;
+  return cfg.depth * lfoShapeSample(cfg.shape, phase01, index);
+}
+
+function clampToParamMeta(param, value) {
+  const meta = getControlMeta(param);
+  if (!meta || meta.type !== "continuous") return value;
+  return clamp(value, meta.min, meta.max);
+}
+
+function formatParamDelta(param, value) {
+  const v = Number(value);
+  if (!Number.isFinite(v)) return "0";
+  const meta = getControlMeta(param);
+  if (meta?.type === "continuous") {
+    return v.toFixed(decimalsFromStep(meta.step, 2));
+  }
+  return v.toFixed(2);
+}
+
+function updateEditLfoMarkers(nowSec = performance.now() / 1000) {
+  editLfoMarkerByParam.forEach((marker, param) => {
+    const slider = paramSliderByParam.get(param);
+    const meta = getControlMeta(param);
+    if (!marker || !slider || !meta || meta.type !== "continuous") {
+      if (marker) marker.classList.remove("on");
+      if (slider) slider.classList.remove("lfo-targeted");
+      return;
+    }
+    const base = currentParamValue(param, Number(slider.value));
+    const live = clamp(base + lfoModOffset(param, nowSec), meta.min, meta.max);
+    const frac = meta.max > meta.min ? clamp((live - meta.min) / (meta.max - meta.min), 0, 1) : 0.5;
+    marker.style.left = `${(frac * 100).toFixed(2)}%`;
+    const active = hasRunningLfoTarget(param);
+    marker.classList.toggle("on", active);
+    slider.classList.toggle("lfo-targeted", active);
+  });
 }
 
 function anyActiveLfoTargetsSynthView() {
@@ -2237,8 +2287,8 @@ const MASK_MOD = new Set(["maskAmount"]);
 // (the formant heatmap is the only heavy draw and is skipped unless a
 // formant/mask LFO is active). The live audio output scope/analysis are driven
 // separately by incoming scope data, so they're not touched here.
-function redrawModulatedParamViews() {
-  const v = computeWaveformValues(performance.now() / 1000);
+function redrawModulatedParamViews(nowSec = performance.now() / 1000) {
+  const v = computeWaveformValues(nowSec);
   const formantActive = anyActiveLfoTargets(FORMANT_MOD_TARGETS);
   const maskActive = anyActiveLfoTargets(MASK_MOD);
   if (anyActiveLfoTargets(PULSARET_MOD)) drawPulsaretView(v);
@@ -2264,7 +2314,8 @@ function redrawModulatedParamViews() {
 let paramModActive = false;
 
 function paramModNeedsAnim() {
-  return currentMainScreen === "edit" && anyActiveLfoTargetsSynthView();
+  return currentMainScreen === "edit"
+    && (anyActiveLfoTargetsSynthView() || anyActiveLfoTargets(LFO_EDIT_MARKER_TARGETS));
 }
 
 function desiredParamAnimTickMs() {
@@ -2287,6 +2338,7 @@ function stopParamModAnim() {
   if (!paramModActive) return;
   paramModActive = false;
   window.spaluterApi.setParamAnimActive(false);
+  updateEditLfoMarkers();
   refreshScopeStreamingState();
 }
 
@@ -2294,9 +2346,12 @@ window.spaluterApi.onParamAnimTick(() => {
   if (!paramModNeedsAnim()) {
     stopParamModAnim();
     updateWaveformViews(); // settle scopes back to their static value
+    updateEditLfoMarkers();
     return;
   }
-  redrawModulatedParamViews();
+  const nowSec = performance.now() / 1000;
+  if (anyActiveLfoTargetsSynthView()) redrawModulatedParamViews(nowSec);
+  updateEditLfoMarkers(nowSec);
 });
 
 function drawLfoCursor(canvas, cursorT) {
@@ -2386,6 +2441,85 @@ const LFO_PRIMARY_ACCENT = "#ff6f24";
 
 function lfoCardAccent(index) {
   return LFO_CARD_ACCENTS[index % LFO_CARD_ACCENTS.length];
+}
+
+function applyCenteredMeterFill(fillEl, normalized) {
+  if (!fillEl) return;
+  const n = clamp(Number(normalized) || 0, -1, 1);
+  const widthPct = Math.abs(n) * 50;
+  fillEl.style.width = `${widthPct.toFixed(1)}%`;
+  fillEl.classList.toggle("neg", n < 0);
+  fillEl.style.left = n < 0 ? `${(50 - widthPct).toFixed(1)}%` : "50%";
+}
+
+function refreshLfoStripImpact(index, nowSec = performance.now() / 1000) {
+  const refs = lfoStripEls[index];
+  if (!refs?.impactLiveEl || !refs?.impactDeltaEl || !refs?.impactFillEl) return;
+  const cfg = lfoConfigs[index];
+  const target = cfg.target;
+  const cap = lfoCapFor(target);
+  if (!lfoIsActive(cfg) || cap <= 0) {
+    refs.impactLiveEl.textContent = "No active modulation";
+    refs.impactDeltaEl.textContent = "ΔLFO 0 · Σ 0";
+    applyCenteredMeterFill(refs.impactFillEl, 0);
+    return;
+  }
+  const base = currentParamValue(target, 0);
+  const total = lfoModOffset(target, nowSec);
+  const live = clampToParamMeta(target, base + total);
+  const own = lfoInstantContribution(cfg, index, nowSec);
+  refs.impactLiveEl.textContent = `${formatParamValue(target, base)} → ${formatParamValue(target, live)}`;
+  refs.impactDeltaEl.textContent = `ΔLFO ${own >= 0 ? "+" : ""}${formatParamDelta(target, own)} · Σ ${total >= 0 ? "+" : ""}${formatParamDelta(target, total)}`;
+  applyCenteredMeterFill(refs.impactFillEl, own / cap);
+}
+
+function ensureLfoImpactMatrixRows() {
+  if (!lfoImpactMatrixEl || lfoImpactMatrixRows.length > 0) return;
+  for (let i = 0; i < LFO_MAX; i += 1) {
+    const row = document.createElement("div");
+    row.className = "lfo-impact-row";
+    const lfoEl = document.createElement("span");
+    lfoEl.className = "lfo-impact-lfo";
+    lfoEl.textContent = `L${String(i + 1).padStart(2, "0")}`;
+    const targetEl = document.createElement("span");
+    targetEl.className = "lfo-impact-target";
+    const deltaEl = document.createElement("span");
+    deltaEl.className = "lfo-impact-delta";
+    const bar = document.createElement("div");
+    bar.className = "lfo-impact-bar";
+    const fill = document.createElement("span");
+    fill.className = "lfo-impact-bar-fill";
+    bar.appendChild(fill);
+    row.append(lfoEl, targetEl, deltaEl, bar);
+    lfoImpactMatrixEl.appendChild(row);
+    lfoImpactMatrixRows.push({
+      row, targetEl, deltaEl, fillEl: fill, index: i
+    });
+  }
+}
+
+function refreshLfoImpactMatrix(nowSec = performance.now() / 1000, force = false) {
+  if (!lfoImpactMatrixEl || currentMainScreen !== "mods") return;
+  const nowMs = performance.now();
+  if (!force && (nowMs - lfoImpactMatrixLastUpdate) < 120) return;
+  lfoImpactMatrixLastUpdate = nowMs;
+  ensureLfoImpactMatrixRows();
+  lfoImpactMatrixRows.forEach((entry) => {
+    const cfg = lfoConfigs[entry.index];
+    const target = cfg.target;
+    const targetLabel = LFO_TARGET_BY_NAME.get(target)?.label || "—";
+    entry.targetEl.textContent = targetLabel;
+    if (!lfoIsActive(cfg) || lfoCapFor(target) <= 0) {
+      entry.row.classList.add("is-off");
+      entry.deltaEl.textContent = "0";
+      applyCenteredMeterFill(entry.fillEl, 0);
+      return;
+    }
+    entry.row.classList.remove("is-off");
+    const own = lfoInstantContribution(cfg, entry.index, nowSec);
+    entry.deltaEl.textContent = `${own >= 0 ? "+" : ""}${formatParamDelta(target, own)}`;
+    applyCenteredMeterFill(entry.fillEl, own / lfoCapFor(target));
+  });
 }
 
 function createLfoStrip(index) {
@@ -2534,7 +2668,24 @@ function createLfoStrip(index) {
   });
   targetSel.value = cfg.target;
   targetVal.appendChild(targetSel);
-  targetBox.append(targetKey, targetVal);
+
+  const impact = document.createElement("div");
+  impact.className = "lfo-target-impact";
+  const impactKey = document.createElement("div");
+  impactKey.className = "k";
+  impactKey.textContent = "Target Delta";
+  const impactLive = document.createElement("div");
+  impactLive.className = "lfo-target-impact-live";
+  const impactDelta = document.createElement("div");
+  impactDelta.className = "lfo-target-impact-delta";
+  const impactBar = document.createElement("div");
+  impactBar.className = "lfo-target-impact-bar";
+  const impactFill = document.createElement("span");
+  impactFill.className = "lfo-target-impact-fill";
+  impactBar.appendChild(impactFill);
+  impact.append(impactKey, impactLive, impactDelta, impactBar);
+
+  targetBox.append(targetKey, targetVal, impact);
 
   // Hidden enable mirror keeps syncLfoStripFromConfig() working unchanged.
   const enableInput = document.createElement("input");
@@ -2563,7 +2714,10 @@ function createLfoStrip(index) {
     rateLabelVal: rateVal,
     clockRatioLabelVal: ratioVal,
     depthLabelVal: depthVal,
-    accent
+    accent,
+    impactLiveEl: impactLive,
+    impactDeltaEl: impactDelta,
+    impactFillEl: impactFill
   };
 
   const onChange = () => {
@@ -2652,6 +2806,8 @@ function refreshLfoStrip(index) {
   }
   if (r.depthEl) refreshSliderFill(r.depthEl, LFO_PRIMARY_ACCENT);
   drawLfoThumb(r.canvas, c, index);
+  refreshLfoStripImpact(index);
+  refreshLfoImpactMatrix(undefined, true);
 }
 
 function lfoActiveCount() {
@@ -2734,6 +2890,8 @@ function sendLfo(index) {
   window.spaluterApi.setLfo(index, lfoToIpc(index));
   updateLfoHint();
   rebuildLfoOverview();
+  refreshLfoImpactMatrix(undefined, true);
+  updateEditLfoMarkers();
   if (isModulationScreenActive()) scheduleLfoCursor();
   // Re-evaluate synthetic scope-preview animation: starts it when a synthetic-view
   // target becomes active, and lets it settle the static scope when it stops.
@@ -2792,6 +2950,8 @@ function applyLfoState(state) {
   syncMidiClockLockedLfos(performance.now(), true);
   updateLfoHint();
   rebuildLfoOverview();
+  refreshLfoImpactMatrix(undefined, true);
+  updateEditLfoMarkers();
   syncLfosToEngine();
   scheduleParamModAnim();
   if (currentMainScreen === "edit") scheduleWaveformViewsRedraw();
@@ -2819,10 +2979,13 @@ function lfoCursorTick(timestamp) {
     for (let i = 0; i < LFO_MAX; i += 1) {
       const r = lfoStripEls[i];
       const c = lfoConfigs[i];
-      if (!r || !lfoIsActive(c) || !isLfoStripVisible(r.strip)) continue;
+      if (!r || !isLfoStripVisible(r.strip)) continue;
+      refreshLfoStripImpact(i, now);
+      if (!lfoIsActive(c)) continue;
       const cursorT = (((now * c.rate) % 1) + 1) % 1;
       drawLfoThumb(r.canvas, c, i, cursorT);
     }
+    refreshLfoImpactMatrix(now);
   }
   scheduleLfoCursor();
 }
@@ -2839,9 +3002,11 @@ function handleMainScreenEntered(targetScreen) {
     drawOutputAnalysisScopes();
   } else if (targetScreen === "edit") {
     scheduleWaveformResizeRefresh();
+    updateEditLfoMarkers();
     scheduleParamModAnim();
   } else if (targetScreen === "mods") {
     redrawAllLfoViews();
+    refreshLfoImpactMatrix(undefined, true);
     scheduleLfoCursor();
   } else if (targetScreen === "presets") {
     waveformLayoutDirty = true;
@@ -2853,7 +3018,9 @@ function handleMainScreenEntered(targetScreen) {
 
 function initModulationUi() {
   buildLfoStrips();
+  ensureLfoImpactMatrixRows();
   lfoStripEls.forEach((r) => refreshLfoStrip(r.index));
+  refreshLfoImpactMatrix(undefined, true);
   updateLfoHint();
   rebuildLfoOverview();
 }
@@ -3638,6 +3805,20 @@ function initEditCards() {
       if (slider) {
         const param = slider.dataset.param;
         slider.dataset.accent = accent;
+        let sliderWrap = slider.parentElement;
+        if (!sliderWrap || !sliderWrap.classList.contains("edit-slider-wrap")) {
+          sliderWrap = document.createElement("div");
+          sliderWrap.className = "edit-slider-wrap";
+          slider.parentElement?.insertBefore(sliderWrap, slider);
+          sliderWrap.appendChild(slider);
+        }
+        let lfoMarker = sliderWrap.querySelector(".lfo-live-marker");
+        if (!lfoMarker) {
+          lfoMarker = document.createElement("span");
+          lfoMarker.className = "lfo-live-marker";
+          sliderWrap.appendChild(lfoMarker);
+        }
+        editLfoMarkerByParam.set(param, lfoMarker);
         const valEl = ctl.querySelector(".val");
         if (valEl) paramValueElByParam.set(param, valEl);
         paramSliderByParam.set(param, slider);
@@ -3653,6 +3834,7 @@ function initEditCards() {
       }
     });
   });
+  updateEditLfoMarkers();
 }
 
 function initMacros() {

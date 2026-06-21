@@ -10,7 +10,7 @@ Cross-platform desktop wrapper for the `spaluter_supercollider.scd` patch.
 - Starts the synth
 - Provides a non-SuperCollider UI (HTML/CSS/JS in Electron)
 - Sends parameter changes via OSC
-- Handles MIDI CC mappings plus MIDI Note On/Off pitch+gate control (auto-switches from Free Run to MIDI-like gating so attack/release is honored)
+- Handles MIDI CC mappings plus MIDI Note On/Off pitch+gate control while respecting the currently selected Gate Mode (no forced mode switching)
 - Startup order is enforced as: check SuperCollider -> install if missing -> start SuperCollider -> start synth -> start GUI
 
 ## The Perform screen
@@ -54,6 +54,16 @@ Macros write directly to the same parameters exposed on the Edit and Mods screen
 ### Bottom navigation
 
 `[01] Perform · [02] Edit · [03] Mods · [04] Reverb · [05] Presets` switch between the five screens; the orange **Stop Synth** button on the far right is the held emergency stop.
+
+## The Mods screen
+
+The Mods screen hosts 16 internal LFOs with per-LFO shape, rate, depth, target routing, and optional MIDI clock sync + div/mult.
+
+To make modulation audibility easier to verify, the UI now includes:
+
+- **Per-LFO target delta panel** (inside each LFO card): shows `Base → Live` target value plus instantaneous `ΔLFO` and summed `Σ` modulation.
+- **Impact matrix** (above LFO cards): compact row-per-LFO view showing current target and signed modulation amount.
+- **Edit-screen live markers**: when an LFO targets a parameter with a slider, a live marker overlays that slider to show the effective modulated value in real time while preserving the base setting.
 
 ## The Reverb screen
 

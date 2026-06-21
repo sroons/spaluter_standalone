@@ -192,6 +192,16 @@ header{
   font-variant-numeric:tabular-nums; white-space:nowrap; }
 .edit-select{ width:100%; min-height:30px; padding:5px 7px; }
 input.edit-slider{ height:30px; border:none; background:transparent; }
+.edit-slider-wrap{ position:relative; display:flex; align-items:center; width:100%; height:30px; }
+.edit-slider-wrap > input.edit-slider{ width:100%; position:relative; z-index:2; }
+.lfo-live-marker{
+  position:absolute; top:50%; transform:translate(-1px,-50%);
+  width:2px; height:20px; border-radius:2px;
+  background:var(--shock); box-shadow:0 0 8px rgba(255,111,36,.65);
+  opacity:0; pointer-events:none; z-index:1;
+}
+.lfo-live-marker.on{ opacity:.92; }
+.edit-slider.lfo-targeted::-webkit-slider-thumb{ border-color:var(--shock); }
 .ctl input.edit-slider::-webkit-slider-runnable-track{ height:30px; background:transparent; border:none; }
 .ctl input.edit-slider::-webkit-slider-thumb{ -webkit-appearance:none; appearance:none;
   width:13px; height:26px; margin-top:2px; background:var(--paper);
@@ -220,6 +230,41 @@ input.edit-slider{ height:30px; border:none; background:transparent; }
   letter-spacing:.04em; color:var(--paper); }
 .modbar-title b{ color:var(--shock); }
 .modbar-meta{ font-family:var(--mono); font-size:11px; color:var(--mute-2); letter-spacing:.04em; }
+.lfo-impact-matrix{
+  flex:0 0 auto; display:flex; flex-direction:column; gap:4px;
+  padding:8px 10px; background:var(--ink-2); border:1px solid var(--line-2);
+  max-height:148px; overflow-y:auto;
+}
+.lfo-impact-row{
+  display:grid; grid-template-columns:44px 1.1fr 84px 1.4fr;
+  gap:8px; align-items:center; min-height:24px;
+}
+.lfo-impact-row.is-off{ opacity:.45; }
+.lfo-impact-lfo{
+  font-family:var(--mono); font-size:10px; color:var(--paper-2);
+  letter-spacing:.07em; text-transform:uppercase;
+}
+.lfo-impact-target{
+  font-family:var(--din); font-weight:700; font-size:12px; color:var(--paper);
+  text-transform:uppercase; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.lfo-impact-delta{
+  font-family:var(--mono); font-size:10px; color:var(--paper);
+  text-align:right; white-space:nowrap;
+}
+.lfo-impact-bar{
+  position:relative; height:10px; border:1px solid var(--line-2);
+  background:rgba(255,255,255,.03); overflow:hidden;
+}
+.lfo-impact-bar::before{
+  content:""; position:absolute; left:50%; top:0; bottom:0; width:1px;
+  background:rgba(233,227,214,.35);
+}
+.lfo-impact-bar-fill{
+  position:absolute; top:0; bottom:0; left:50%; width:0%;
+  background:var(--shock);
+}
+.lfo-impact-bar-fill.neg{ background:var(--acid); }
 .lfo-card-grid{ flex:1; min-height:0; overflow-y:auto; display:grid; grid-auto-rows:max-content;
   grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; padding-right:4px; align-content:start; }
 .lfo-card{ position:relative; overflow:hidden; background:var(--ink-2);
@@ -285,6 +330,33 @@ input.edit-slider{ height:30px; border:none; background:transparent; }
   letter-spacing:.07em; }
 .lfo-route-v{ display:flex; align-items:center; gap:5px; margin-top:3px; }
 .lfo-route-v::before{ content:"→"; color:var(--shock); font-size:15px; }
+.lfo-target-impact{
+  margin-top:8px; padding-top:8px; border-top:1px solid var(--line);
+}
+.lfo-target-impact .k{
+  font-family:var(--mono); font-size:10px; color:var(--mute-2);
+  letter-spacing:.06em; text-transform:uppercase;
+}
+.lfo-target-impact-live{
+  margin-top:4px; font-family:var(--mono); font-size:11px; color:var(--paper-2);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.lfo-target-impact-delta{
+  margin-top:2px; font-family:var(--mono); font-size:10px; color:var(--paper);
+}
+.lfo-target-impact-bar{
+  position:relative; margin-top:6px; height:8px; border:1px solid var(--line-2);
+  background:rgba(255,255,255,.03); overflow:hidden;
+}
+.lfo-target-impact-bar::before{
+  content:""; position:absolute; left:50%; top:0; bottom:0; width:1px;
+  background:rgba(233,227,214,.35);
+}
+.lfo-target-impact-fill{
+  position:absolute; top:0; bottom:0; left:50%; width:0%;
+  background:var(--shock);
+}
+.lfo-target-impact-fill.neg{ background:var(--acid); }
 
 .lfo-shape:focus-visible, .lfo-target-sel:focus-visible, .lfo-run:focus-visible{
   outline:2px solid var(--shock); outline-offset:1px;
