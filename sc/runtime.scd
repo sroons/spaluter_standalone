@@ -16,7 +16,7 @@ Boots local scsynth, loads patch file, and exposes OSC control:
     var patchPath, appPort, appAddr, status, startSynth, stopSynth, resetSynth, waitForPatch, waitForSynthDef, silentBuf, booted, loadSample, forwardScope;
     var patchWaitRetries, synthDefWaitRetries, scopeRate, scopeEnabled, applyScopeConfig;
     var modBus, lfoGroup, modClearSynth, lfoSynths, lfoConfigs, lfoCount, maxLfo;
-    var modParams, modParamIndex, modDepthCap, setupModulation, spawnLfo, releaseLfo, setLfoCount, applyLfo, rebuildLfos, lfoWarn, lfoWarnLast, lfoWarnCount;
+    var modParams, modParamIndex, modDepthCap, setupModulation, spawnLfo, releaseLfo, setLfoCount, applyLfo, rebuildLfos, retriggerLfos, lfoWarn, lfoWarnLast, lfoWarnCount;
     var reverbDefaults, reverbState, reverbParamSet, applyReverbState, setReverbParam, resetReverbParams, updateReverbBypass;
 
 patchPath = ~spaluterPatchPath;
@@ -192,6 +192,12 @@ s.doWhenBooted({
     };
 
     rebuildLfos = {
+        lfoCount.do { |i| spawnLfo.value(i) };
+    };
+
+    // Recreate active LFO synths so their phase restarts from each config's
+    // stored phase offset (used for MIDI-note-driven retrigger behavior).
+    retriggerLfos = {
         lfoCount.do { |i| spawnLfo.value(i) };
     };
 
@@ -410,6 +416,10 @@ s.doWhenBooted({
             applyLfo.value(msg[b], msg[b+1], msg[b+2], msg[b+3], msg[b+4], msg[b+5], msg[b+6]);
         };
     }, "/spaluter/lfo/set-many");
+
+    OSCdef(\spaluterLfoRetrigger, { |msg|
+        retriggerLfos.value;
+    }, "/spaluter/lfo/retrigger");
 
     OSCdef(\spaluterLoadSample, { |msg|
         var filePath;

@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld("spaluterApi", {
   setLfoCount: (n) => ipcRenderer.send("sc:lfo-count", n),
   setLfo: (idx, cfg) => ipcRenderer.send("sc:lfo-set", { idx, ...cfg }),
   setLfoMany: (list) => ipcRenderer.send("sc:lfo-set-many", list),
+  retriggerLfos: () => ipcRenderer.send("sc:lfo-retrigger"),
   trigger: (action) => ipcRenderer.invoke("sc:trigger", action),
   setScope: (enabled, rate) => ipcRenderer.invoke("sc:set-scope", { enabled, rate }),
   listSamples: (dirPath) => ipcRenderer.invoke("samples:list", dirPath),

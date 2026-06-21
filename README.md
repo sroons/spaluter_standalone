@@ -11,6 +11,7 @@ Cross-platform desktop wrapper for the `spaluter_supercollider.scd` patch.
 - Provides a non-SuperCollider UI (HTML/CSS/JS in Electron)
 - Sends parameter changes via OSC
 - Handles MIDI CC mappings plus MIDI Note On/Off pitch+gate control while respecting the currently selected Gate Mode (no forced mode switching)
+- In **MIDI-like Gate Mode**, each incoming Note On retriggers active internal LFOs
 - Startup order is enforced as: check SuperCollider -> install if missing -> start SuperCollider -> start synth -> start GUI
 
 ## The Perform screen

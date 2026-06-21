@@ -1690,6 +1690,7 @@ function handleMidiNoteMessage(status, noteNumber, velocity) {
     activeMidiNotes.push(note);
     applyMidiNotePitch(note);
     updateGateFromMidiNotes();
+    retriggerLfosForMidiNote();
     return;
   }
 
@@ -2110,6 +2111,7 @@ function defaultLfoConfig() {
 }
 
 let lfoConfigs = Array.from({ length: LFO_MAX }, defaultLfoConfig);
+const lfoRetriggerEpochSec = Array.from({ length: LFO_MAX }, () => 0);
 // All 16 LFOs are always presented and always live on the engine; each one's
 // `enabled` flag (not the count) decides whether it actually runs.
 let lfoCount = LFO_MAX;
@@ -2204,10 +2206,15 @@ function lfoModOffset(param, nowSec) {
   for (let i = 0; i < LFO_MAX; i += 1) {
     const c = lfoConfigs[i];
     if (!c.enabled || c.target !== param || c.depth === 0) continue;
-    const phase01 = ((((nowSec * c.rate) + c.phase) % 1) + 1) % 1;
+    const phase01 = lfoRuntimePhase01(i, c, nowSec);
     sum += c.depth * lfoShapeSample(c.shape, phase01, i);
   }
   return sum;
+}
+
+function lfoRuntimePhase01(index, cfg, nowSec) {
+  const epoch = lfoRetriggerEpochSec[index] || 0;
+  return ((((((nowSec - epoch) * cfg.rate) + cfg.phase) % 1) + 1) % 1);
 }
 
 function hasRunningLfoTarget(param) {
@@ -2220,8 +2227,31 @@ function hasRunningLfoTarget(param) {
 
 function lfoInstantContribution(cfg, index, nowSec) {
   if (!lfoIsActive(cfg)) return 0;
-  const phase01 = ((((nowSec * cfg.rate) + cfg.phase) % 1) + 1) % 1;
+  const phase01 = lfoRuntimePhase01(index, cfg, nowSec);
   return cfg.depth * lfoShapeSample(cfg.shape, phase01, index);
+}
+
+function retriggerLfosForMidiNote(nowSec = performance.now() / 1000) {
+  const gateMode = clamp(Math.round(currentParamValue("gateMode", 1)), 0, 2);
+  if (gateMode !== 0) return;
+
+  let retriggered = 0;
+  for (let i = 0; i < LFO_MAX; i += 1) {
+    if (!lfoIsActive(lfoConfigs[i])) continue;
+    lfoRetriggerEpochSec[i] = nowSec;
+    retriggered += 1;
+  }
+  if (retriggered === 0) return;
+
+  window.spaluterApi.retriggerLfos();
+  if (currentMainScreen === "mods") {
+    refreshLfoImpactMatrix(nowSec, true);
+    for (let i = 0; i < LFO_MAX; i += 1) {
+      if (lfoStripEls[i]) refreshLfoStripImpact(i, nowSec);
+    }
+    scheduleLfoCursor();
+  }
+  if (currentMainScreen === "edit") updateEditLfoMarkers(nowSec);
 }
 
 function clampToParamMeta(param, value) {
@@ -2945,6 +2975,7 @@ function applyLfoState(state) {
     } else {
       Object.assign(c, defaultLfoConfig());
     }
+    lfoRetriggerEpochSec[i] = 0;
     syncLfoStripFromConfig(i);
   }
   syncMidiClockLockedLfos(performance.now(), true);
@@ -2982,7 +3013,7 @@ function lfoCursorTick(timestamp) {
       if (!r || !isLfoStripVisible(r.strip)) continue;
       refreshLfoStripImpact(i, now);
       if (!lfoIsActive(c)) continue;
-      const cursorT = (((now * c.rate) % 1) + 1) % 1;
+      const cursorT = lfoRuntimePhase01(i, c, now);
       drawLfoThumb(r.canvas, c, i, cursorT);
     }
     refreshLfoImpactMatrix(now);
