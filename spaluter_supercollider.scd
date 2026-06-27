@@ -38,23 +38,25 @@ s.waitForBoot {
         var fHzArr, panArr, voices, sig, mod;
         var scopeFrames, scopeBufL, scopeBufR, scopeWritePos, scopeReadPos, scopeValuesL, scopeValuesR, scopeTrig;
 
-        atk = attackMs.max(0.1) * 0.001;
-        rel = releaseMs.max(1.0) * 0.001;
-        glid = glideMs.max(0.0) * 0.001;
-        vc = voiceCount.clip(1, 4);
-        fc = formantCount.clip(1, 3);
-        mode = gateMode.clip(0, 2);        // 0=MIDI-like gate, 1=Free Run, 2=CV-like gate
-        ctype = chordType.clip(0, 13);
-        bPitch = basePitch.max(0.1);
-
-        // Internal LFO modulation: read a 16-channel control bus. Each LFO
+        // Internal LFO modulation: read a 20-channel control bus. Each LFO
         // synth writes to its target channel only while enabled; idle channels
         // are held at 0 by \modClear, so an all-idle bus is identical to
         // pre-mod behaviour. Channel order mirrors `modParams` in
         // sc/runtime.scd. Continuous params add mod[i] before their existing
         // clip; basePitch modulates multiplicatively in semitones via midiratio.
-        mod = In.kr(modBus, 16);
-        bPitch = bPitch * mod[15].midiratio;
+        // Envelope times (atk/rel/glid) and sampleRate add their mod channels in
+        // native units (ms / rate) before conversion; EnvGen re-reads atk/rel on
+        // each grain/note retrigger so the modulation is audible per pulse.
+        mod = In.kr(modBus, 20);
+
+        atk = (attackMs + mod[16]).max(0.1) * 0.001;
+        rel = (releaseMs + mod[17]).max(1.0) * 0.001;
+        glid = (glideMs + mod[18]).max(0.0) * 0.001;
+        vc = voiceCount.clip(1, 4);
+        fc = formantCount.clip(1, 3);
+        mode = gateMode.clip(0, 2);        // 0=MIDI-like gate, 1=Free Run, 2=CV-like gate
+        ctype = chordType.clip(0, 13);
+        bPitch = basePitch.max(0.1) * mod[15].midiratio;
 
         fHzArr = [formant1 + mod[5], formant2 + mod[6], formant3 + mod[7]].collect({ |x| x.clip(20, 8000) });
         panArr = [pan1 + mod[9], pan2 + mod[10], pan3 + mod[11]].collect({ |x| x.clip(-1, 1) });
@@ -131,7 +133,7 @@ s.waitForBoot {
                 synthWave = SelectX.ar((pulsaret + mod[2]).clip(0, 9), pulsaretWaves);
                 sampleWave = BufRd.ar(
                     1, bufnum,
-                    (wphase * BufFrames.kr(bufnum) * sampleRate).wrap(0, BufFrames.kr(bufnum).max(2) - 1),
+                    (wphase * BufFrames.kr(bufnum) * (sampleRate + mod[19]).max(0.01)).wrap(0, BufFrames.kr(bufnum).max(2) - 1),
                     loop: 1, interpolation: 2
                 );
                 src = Select.ar(useSample > 0.5, [synthWave, sampleWave]);
@@ -200,7 +202,7 @@ s.waitForBoot {
     // synths (which use additive Out.kr) sum cleanly. Runs at the head of the
     // LFO group, before any LFO and before the main synth reads the bus.
     SynthDef(\modClear, { |modBus=0|
-        ReplaceOut.kr(modBus, DC.kr(0) ! 16);
+        ReplaceOut.kr(modBus, DC.kr(0) ! 20);
     }).add;
 
     // One internal LFO. Writes its bipolar output * depth additively into one

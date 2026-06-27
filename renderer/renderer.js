@@ -2121,7 +2121,11 @@ const LFO_TARGETS = [
   { name: "ampJitter", label: "Amp Jitter", cap: 0.5 },
   { name: "timingJitter", label: "Timing Jitter", cap: 0.5 },
   { name: "glisson", label: "Glisson", cap: 0.5 },
-  { name: "basePitch", label: "Base Pitch (st)", cap: 12 }
+  { name: "basePitch", label: "Base Pitch (st)", cap: 12 },
+  { name: "attackMs", label: "Attack (ms)", cap: 500 },
+  { name: "releaseMs", label: "Release (ms)", cap: 800 },
+  { name: "glideMs", label: "Glide (ms)", cap: 500 },
+  { name: "sampleRate", label: "Sample Rate", cap: 1.0 }
 ];
 const LFO_TARGET_BY_NAME = new Map(LFO_TARGETS.map((t) => [t.name, t]));
 

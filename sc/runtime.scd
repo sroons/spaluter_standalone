@@ -117,13 +117,15 @@ s.doWhenBooted({
 
     // ----- Internal LFO modulation -----
     // Canonical order of modulatable params; index = channel on the mod bus.
-    // MUST match the mod[] indices applied in the \spaluterSC SynthDef.
+    // MUST match the mod[] indices applied in the \spaluterSC SynthDef and the
+    // bus width allocated in setupModulation / cleared by \modClear.
     maxLfo = 32;
     modParams = [
         \amp, \drive, \pulsaret, \window, \duty,
         \formant1, \formant2, \formant3, \maskAmount,
         \pan1, \pan2, \pan3,
-        \ampJitter, \timingJitter, \glisson, \basePitch
+        \ampJitter, \timingJitter, \glisson, \basePitch,
+        \attackMs, \releaseMs, \glideMs, \sampleRate
     ];
     modParamIndex = IdentityDictionary.new;
     modParams.do { |name, i| modParamIndex[name] = i };
@@ -132,7 +134,8 @@ s.doWhenBooted({
         \amp, 0.5, \drive, 0.5, \pulsaret, 2.0, \window, 0.5, \duty, 0.5,
         \formant1, 1000, \formant2, 1000, \formant3, 1000, \maskAmount, 0.5,
         \pan1, 1.0, \pan2, 1.0, \pan3, 1.0,
-        \ampJitter, 0.5, \timingJitter, 0.5, \glisson, 0.5, \basePitch, 12
+        \ampJitter, 0.5, \timingJitter, 0.5, \glisson, 0.5, \basePitch, 12,
+        \attackMs, 500, \releaseMs, 800, \glideMs, 500, \sampleRate, 1.0
     ]);
     lfoConfigs = Array.fill(maxLfo, {
         (target: \none, rate: 1.0, depth: 0.0, shape: 0, enabled: 0, phase: 0.0)
@@ -166,7 +169,7 @@ s.doWhenBooted({
     // restarts). The group holds \modClear (head) then the LFO synths; the
     // main synth is created \addAfter this group so it reads summed mod values.
     setupModulation = {
-        if(modBus.isNil) { modBus = Bus.control(s, 16); };
+        if(modBus.isNil) { modBus = Bus.control(s, 20); };
         if(lfoGroup.isNil) {
             lfoGroup = Group.new(s);
             modClearSynth = Synth(\modClear, [\modBus, modBus.index], lfoGroup, \addToHead);
