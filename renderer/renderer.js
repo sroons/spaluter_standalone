@@ -82,6 +82,8 @@ const MIDI_CLOCK_SMOOTHING_TICKS = 96;
 const MIDI_CLOCK_SYNC_MIN_INTERVAL_MS = 120;
 const MIDI_CLOCK_RATE_EPSILON = 0.0005;
 const RENDERER_HEARTBEAT_MS = 1000;
+const DEBUG_FPS = false;
+const DEBUG_MIDI_NOTE_REPORTS = false;
 let sampleDefaultDir = DEFAULT_SAMPLE_DIR;
 let currentSamplePath = "";
 let midiAccess = null;
@@ -194,6 +196,8 @@ const lastSentValueByParam = new Map();
 // per-event redraws to at most one per animation frame.
 let waveformViewsDirty = false;
 let waveformViewsRafId = 0;
+let outputScopeDirty = false;
+let outputScopeRafId = 0;
 // Phase 2.3b: pending CC stream as an ordered array of [param, value] tuples.
 // We preserve EVERY value (no per-param coalescing) so the synth receives the
 // full resolution of the incoming MIDI stream. Batching is done at the
@@ -273,7 +277,12 @@ const WINDOW_WAVE_NAMES = [
   "triangle"
 ];
 const TWO_PI = Math.PI * 2;
-const OUTPUT_SCOPE_FRAME_SIZE = 128;
+// Per-channel scope frame size. MUST match `scopeFrames` in
+// spaluter_supercollider.scd: the patch emits scopeFrames L samples followed by
+// scopeFrames R samples in one /spaluter/scope payload, and the renderer splits
+// the payload into L/R on this boundary. If these drift apart, the R (white)
+// trace silently drops and the L trace reads both channels concatenated.
+const OUTPUT_SCOPE_FRAME_SIZE = 64;
 const OUTPUT_SCOPE_SMOOTHING_ALPHA = 0.35;
 const OUTPUT_SCOPE_ZERO_CROSSING_MIN_SLOPE = 0.02;
 const OUTPUT_SCOPE_COMPAND_GAMMA = 0.45;
@@ -571,8 +580,12 @@ function currentParamValue(param, fallback = 0) {
   return fallback;
 }
 
+function canvasDevicePixelRatio() {
+  return Math.min(window.devicePixelRatio || 1, 1);
+}
+
 function measureCanvasMetrics(canvas) {
-  const dpr = window.devicePixelRatio || 1;
+  const dpr = canvasDevicePixelRatio();
   const cssWidth = Math.max(1, Math.round(canvas.clientWidth || Number(canvas.getAttribute("width")) || 320));
   const cssHeight = Math.max(1, Math.round(canvas.clientHeight || Number(canvas.getAttribute("height")) || 84));
   const drawWidth = Math.max(1, Math.round(cssWidth * dpr));
@@ -593,7 +606,7 @@ function measureCanvasMetrics(canvas) {
 
 function getCanvasMetrics(canvas) {
   const cached = canvasMetricsByElement.get(canvas);
-  const dpr = window.devicePixelRatio || 1;
+  const dpr = canvasDevicePixelRatio();
   if (cached && !waveformLayoutDirty && cached.dpr === dpr) return cached;
   return measureCanvasMetrics(canvas);
 }
@@ -1145,6 +1158,19 @@ function normalizeScopeSamples(samples, channelIndex = 0, sourceOffset = 0) {
   return renderBuffer;
 }
 
+function scheduleOutputScopeRedraw() {
+  outputScopeDirty = true;
+  if (outputScopeRafId) return;
+  outputScopeRafId = window.requestAnimationFrame(() => {
+    outputScopeRafId = 0;
+    if (!outputScopeDirty) return;
+    outputScopeDirty = false;
+    if (currentMainScreen !== "perform") return;
+    drawOutputScope(outputScopeCanvas, outputScopeSamples.left, outputScopeSamples.right);
+    drawOutputAnalysisScopes();
+  });
+}
+
 function setOutputScopeSamples(samples, label = "Live output") {
   const peaks = computeScopePeaksFromPayload(samples);
   const left = normalizeScopeSamples(samples, 0, 0);
@@ -1160,11 +1186,10 @@ function setOutputScopeSamples(samples, label = "Live output") {
   if (outputScopeLabelEl) outputScopeLabelEl.textContent = label;
   // Only paint the scope/peak canvases when Perform is on screen. The scope
   // payload still streams at 20Hz to keep peak state and labels current, but
-  // drawing to a hidden canvas every frame just wastes CPU on the Pi. The
-  // canvases are repainted on screen entry by handleMainScreenEntered().
+  // canvas drawing is coalesced to one paint per animation frame. The canvases
+  // are repainted on screen entry by handleMainScreenEntered().
   if (currentMainScreen === "perform") {
-    drawOutputScope(outputScopeCanvas, outputScopeSamples.left, outputScopeSamples.right);
-    drawOutputAnalysisScopes();
+    scheduleOutputScopeRedraw();
   }
 }
 
@@ -1664,10 +1689,7 @@ function updateGateFromMidiNotes(forcedGateValue = null) {
     : (forcedGateValue ? 1 : 0);
   stagePendingParam("gate", gateValue);
   stagePendingParam("trigIn", gateValue);
-  // Diagnostic: log only gate transitions (0<->1) to start.log so on-device
-  // troubleshooting can confirm Note On/Off drives the envelope gate without
-  // flooding the log on every note from high-rate sources.
-  if (gateValue !== lastLoggedMidiGate) {
+  if (DEBUG_MIDI_NOTE_REPORTS && gateValue !== lastLoggedMidiGate) {
     lastLoggedMidiGate = gateValue;
     try {
       window.spaluterApi.reportMidiNote(
@@ -1890,9 +1912,11 @@ function handleMidiMessage(event) {
   }
 
   if (messageType === MIDI_STATUS_NOTE_ON || messageType === MIDI_STATUS_NOTE_OFF) {
-    // Notes are NOT coalesced. Per the plan, ordering and per-event timing
-    // are preserved end-to-end.
-    handleMidiNoteMessage(status, data1, data2);
+    // Phase D: MIDI note-on/off are handled by sclang (MIDIdef on the language
+    // thread), not here, so note timing is immune to renderer/UI load (view
+    // switches, repaint bursts). The renderer still receives these messages on
+    // the same ALSA port but intentionally ignores them to avoid double-driving
+    // gate/basePitch. CC + clock continue to be handled in the renderer.
   }
 }
 
@@ -2016,7 +2040,11 @@ function setParamValue(param, rawValue, send = true) {
     const valueStr = String(value);
     const meta = getControlMeta(param);
     if (meta?.valueStringSet?.has(valueStr)) {
+      const previousValue = select.value;
       select.value = valueStr;
+      if (select.value !== previousValue) {
+        select.dispatchEvent(new Event("spaluter:param-sync"));
+      }
     }
   }
 
@@ -2629,7 +2657,7 @@ function createLfoStrip(index) {
   rateKey.className = "k";
   rateKey.textContent = "Rate";
   const rateVal = document.createElement("span");
-  rateVal.className = "v";
+  rateVal.className = "v is-accent";
   rateTop.append(rateKey, rateVal);
   const rateEl = document.createElement("input");
   rateEl.type = "range";
@@ -2648,7 +2676,7 @@ function createLfoStrip(index) {
   ratioKey.className = "k";
   ratioKey.textContent = "Clock Div/Mult";
   const ratioVal = document.createElement("span");
-  ratioVal.className = "v";
+  ratioVal.className = "v is-accent";
   ratioTop.append(ratioKey, ratioVal);
   const ratioEl = document.createElement("input");
   ratioEl.type = "range";
@@ -2668,7 +2696,7 @@ function createLfoStrip(index) {
   depthKey.className = "k";
   depthKey.textContent = "Depth";
   const depthVal = document.createElement("span");
-  depthVal.className = "v";
+  depthVal.className = "v is-accent";
   depthTop.append(depthKey, depthVal);
   const depthEl = document.createElement("input");
   depthEl.type = "range";
@@ -3483,23 +3511,23 @@ rendererHeartbeatTimer = window.setInterval(() => {
   window.spaluterApi.heartbeat();
 }, RENDERER_HEARTBEAT_MS);
 
-// Diagnostic: measure actual requestAnimationFrame frame rate and report it once
-// per second so the main process can log whether rendering is occlusion-throttled.
-let fpsFrameCount = 0;
-let fpsWindowStart = performance.now();
-function fpsProbe() {
-  fpsFrameCount += 1;
-  const now = performance.now();
-  const elapsed = now - fpsWindowStart;
-  if (elapsed >= 1000) {
-    const fps = Math.round((fpsFrameCount * 1000) / elapsed);
-    if (window.spaluterApi.reportFps) window.spaluterApi.reportFps(fps);
-    fpsFrameCount = 0;
-    fpsWindowStart = now;
-  }
+if (DEBUG_FPS) {
+  let fpsFrameCount = 0;
+  let fpsWindowStart = performance.now();
+  const fpsProbe = () => {
+    fpsFrameCount += 1;
+    const now = performance.now();
+    const elapsed = now - fpsWindowStart;
+    if (elapsed >= 1000) {
+      const fps = Math.round((fpsFrameCount * 1000) / elapsed);
+      if (window.spaluterApi.reportFps) window.spaluterApi.reportFps(fps);
+      fpsFrameCount = 0;
+      fpsWindowStart = now;
+    }
+    window.requestAnimationFrame(fpsProbe);
+  };
   window.requestAnimationFrame(fpsProbe);
 }
-window.requestAnimationFrame(fpsProbe);
 window.addEventListener("beforeunload", () => {
   stopParamModAnim();
   if (midiRebindTimer) {

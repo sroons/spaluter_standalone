@@ -292,11 +292,16 @@
         var checkbox = document.getElementById("useSampleCheck");
         var select = document.getElementById("useSample");
         if (checkbox && select) {
+          var syncCheckboxFromSelect = function () {
+            checkbox.checked = select.value === "1";
+          };
           checkbox.addEventListener("change", function () {
             select.value = checkbox.checked ? "1" : "0";
             select.dispatchEvent(new Event("change"));
           });
-          setInterval(function () { checkbox.checked = select.value === "1"; }, 500);
+          select.addEventListener("change", syncCheckboxFromSelect);
+          select.addEventListener("spaluter:param-sync", syncCheckboxFromSelect);
+          syncCheckboxFromSelect();
         }
       })();
       /* Sample rate label */

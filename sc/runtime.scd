@@ -17,7 +17,8 @@ Boots local scsynth, loads patch file, and exposes OSC control:
     var patchWaitRetries, synthDefWaitRetries, scopeRate, scopeEnabled, applyScopeConfig;
     var modBus, lfoGroup, modClearSynth, lfoSynths, lfoConfigs, lfoCount, maxLfo;
     var modParams, modParamIndex, modDepthCap, setupModulation, spawnLfo, releaseLfo, setLfoCount, applyLfo, rebuildLfos, retriggerLfos, lfoWarn, lfoWarnLast, lfoWarnCount;
-    var reverbDefaults, reverbState, reverbParamSet, applyReverbState, setReverbParam, resetReverbParams, updateReverbBypass;
+    var reverbDefaults, reverbState, reverbParamSet, reverbSynthDef, reverbDefForState, applyReverbState, spawnReverb, setReverbParam, resetReverbParams, updateReverbBypass;
+    var setupMidi, midiNoteOn, midiNoteOff, midiNoteToBasePitch, midiSoundingNote, midiVoiceActive, currentGateMode, midiInitialized, midiChannel;
 
 patchPath = ~spaluterPatchPath;
 if(patchPath.isNil) {
@@ -40,9 +41,13 @@ appAddr = NetAddr("127.0.0.1", appPort);
         appAddr.sendMsg("/spaluter/status", txt);
     };
 
-    forwardScope = { |vals|
-        if(vals.notNil and: { vals.size > 0 }) {
-            appAddr.sendMsg("/spaluter/scope", *vals.collect({ |v| v.asFloat }));
+    forwardScope = { |vals, start=0|
+        var count;
+        if(vals.notNil) {
+            count = vals.size - start;
+            if(count > 0) {
+                appAddr.sendMsg("/spaluter/scope", *Array.fill(count, { |i| vals[start + i].asFloat }));
+            };
         };
     };
 
@@ -136,6 +141,17 @@ s.doWhenBooted({
     lfoCount = 0;
     lfoWarnLast = 0;
     lfoWarnCount = 0;
+
+    // MIDI note state (sclang-owned). currentGateMode mirrors the synth's
+    // \gateMode so note-on can replicate the renderer's gateMode==0 LFO
+    // retrigger. midiSoundingNote/midiVoiceActive track last-note priority and
+    // the binary gate so legato notes only retune (no re-gate), matching the
+    // renderer's dedup behavior exactly.
+    currentGateMode = 1;
+    midiSoundingNote = nil;
+    midiVoiceActive = false;
+    midiInitialized = false;
+    midiChannel = 0;
 
     lfoWarn = { |txt|
         var now = SystemClock.seconds;
@@ -256,10 +272,19 @@ s.doWhenBooted({
     reverbState = IdentityDictionary.new;
     reverbDefaults.keysValuesDo { |k, v| reverbState[k] = v.asFloat };
     reverbParamSet = IdentitySet.newFrom(reverbDefaults.keys);
+    reverbSynthDef = nil;
+
+    reverbDefForState = {
+        if(((reverbState[\revShimmer] ? 0).asFloat) > 0) { \spaluterReverb } { \spaluterReverbNoShim };
+    };
 
     applyReverbState = {
         if(~spaluterReverb.notNil) {
-            reverbState.keysValuesDo { |k, v| ~spaluterReverb.set(k, v) };
+            reverbState.keysValuesDo { |k, v|
+                if((reverbSynthDef == \spaluterReverb) or: { k != \revShimmer }) {
+                    ~spaluterReverb.set(k, v);
+                };
+            };
         };
     };
 
@@ -272,17 +297,130 @@ s.doWhenBooted({
         };
     };
 
+    spawnReverb = {
+        var defName;
+        if(~spaluter.notNil) {
+            defName = reverbDefForState.value;
+            if(~spaluterReverb.notNil) {
+                ~spaluterReverb.free;
+                ~spaluterReverb = nil;
+            };
+            ~spaluterReverb = Synth(defName, [\out, 0], ~spaluter, \addAfter);
+            reverbSynthDef = defName;
+            applyReverbState.value;
+            updateReverbBypass.value;
+        };
+    };
+
     setReverbParam = { |key, value|
-        var k = key.asSymbol, v = value.asFloat;
+        var k = key.asSymbol, v = value.asFloat, nextDef;
         reverbState[k] = v;
-        if(~spaluterReverb.notNil) { ~spaluterReverb.set(k, v); };
-        if(k == \revWet) { updateReverbBypass.value; };
+        if(k == \revShimmer) {
+            nextDef = reverbDefForState.value;
+            if(~spaluterReverb.notNil and: { reverbSynthDef != nextDef }) {
+                spawnReverb.value;
+            } {
+                if(~spaluterReverb.notNil and: { reverbSynthDef == \spaluterReverb }) {
+                    ~spaluterReverb.set(k, v);
+                };
+            };
+        } {
+            if(~spaluterReverb.notNil) { ~spaluterReverb.set(k, v); };
+            if(k == \revWet) { updateReverbBypass.value; };
+        };
     };
 
     resetReverbParams = {
         reverbDefaults.keysValuesDo { |k, v| reverbState[k] = v.asFloat };
-        applyReverbState.value;
-        updateReverbBypass.value;
+        if(~spaluterReverb.notNil and: { reverbSynthDef != reverbDefForState.value }) {
+            spawnReverb.value;
+        } {
+            applyReverbState.value;
+            updateReverbBypass.value;
+        };
+    };
+
+    // ----- sclang-owned MIDI note input -----
+    // Notes are handled here on the language thread instead of the Electron
+    // renderer, so note timing is immune to UI load (view switches, repaint
+    // bursts). This mirrors the renderer's note->param mapping exactly:
+    //   * basePitch = round(noteHz) clipped to the control's 20..1000 Hz range
+    //   * binary gate/trigIn, only toggled on the 0<->1 voice transitions
+    //     (legato notes just retune, matching the renderer's value dedup)
+    //   * LFO retrigger on each note-on while gateMode == 0
+    //   * note-off only silences when the released note is the sounding one
+    //   * only MIDI channel 1 (zero-based 0) is accepted
+    // CC and MIDI clock stay in the renderer (not timing-critical; the existing
+    // coalescing handles them with zero OSC backpressure).
+    midiNoteToBasePitch = { |note|
+        var hz = 440.0 * (2 ** ((note.clip(0, 127) - 69) / 12.0));
+        hz.round(1.0).clip(20.0, 1000.0);
+    };
+
+    midiNoteOn = { |veloc, note, chan|
+        var bp;
+        if(chan == midiChannel) {
+            if(veloc <= 0) {
+                midiNoteOff.value(0, note, chan);
+            } {
+                // Ignore a duplicate note-on for the note that is already
+                // sounding (the hardware sources are wired to SuperCollider via
+                // multiple ALSA connections, which can deliver each note more
+                // than once). A different note still retunes the voice (legato).
+                if(midiVoiceActive.not or: { midiSoundingNote != note }) {
+                    bp = midiNoteToBasePitch.value(note);
+                    midiSoundingNote = note;
+                    if(~spaluter.notNil) {
+                        if(midiVoiceActive) {
+                            ~spaluter.set(\basePitch, bp);
+                        } {
+                            ~spaluter.set(\basePitch, bp, \gate, 1, \trigIn, 1);
+                            midiVoiceActive = true;
+                        };
+                    };
+                    if(currentGateMode == 0) { retriggerLfos.value; };
+                };
+            };
+        };
+    };
+
+    midiNoteOff = { |veloc, note, chan|
+        if(chan == midiChannel) {
+            if(midiSoundingNote == note) {
+                midiSoundingNote = nil;
+                if(~spaluter.notNil and: { midiVoiceActive }) {
+                    ~spaluter.set(\gate, 0, \trigIn, 0);
+                    midiVoiceActive = false;
+                };
+            };
+        };
+    };
+
+    setupMidi = {
+        if(midiInitialized.not) {
+            try {
+                MIDIClient.init;
+                MIDIdef.noteOn(\spaluterMidiNoteOn, { |veloc, num, chan| midiNoteOn.value(veloc, num, chan) });
+                MIDIdef.noteOff(\spaluterMidiNoteOff, { |veloc, num, chan| midiNoteOff.value(veloc, num, chan) });
+                midiInitialized = true;
+                // NOTE: MIDIIn.connectAll hangs the sclang interpreter on this
+                // Pi's ALSA sequencer graph, which would block runtime startup
+                // (the synth never starts -> "ERROR. Check Log."). The system
+                // sequencer (aconnect) performs the same wiring without hanging,
+                // so connect the hardware note sources to SuperCollider's input
+                // port here instead. .unixCmd is non-blocking and the MIDIdefs
+                // above receive notes once the connection is live. stderr is
+                // discarded because the pisound amidiauto daemon usually wires
+                // these already (aconnect then prints a benign "already
+                // subscribed", which would otherwise trip the UI error banner).
+                ["Grid", "pisound"].do { |dev|
+                    ("aconnect " ++ dev.quote ++ " " ++ "SuperCollider".quote ++ " 2>/dev/null").unixCmd;
+                };
+                status.value("MIDI input ready (sclang-owned notes)");
+            } { |err|
+                status.value("MIDI init failed: " ++ err.errorString);
+            };
+        };
     };
 
     startSynth = {
@@ -290,9 +428,15 @@ s.doWhenBooted({
             waitForSynthDef.value({
                 {
                     if(~spaluter.notNil) { ~spaluter.free; };
-                    if(~spaluterReverb.notNil) { ~spaluterReverb.free; ~spaluterReverb = nil; };
+                    if(~spaluterReverb.notNil) { ~spaluterReverb.free; ~spaluterReverb = nil; reverbSynthDef = nil; };
                     setupModulation.value;
                     ~spaluter = ~spaluterStart.(0, modBus.index, lfoGroup, \addAfter);
+                    // Fresh synth starts in gateMode 1 (Free Run), gate 0; reset
+                    // sclang-owned MIDI voice state so a stale held note can't
+                    // leave the gate latched on the new synth.
+                    currentGateMode = 1;
+                    midiSoundingNote = nil;
+                    midiVoiceActive = false;
                     if(~spaluter.notNil and: { silentBuf.notNil }) {
                         ~spaluter.set(\bufnum, silentBuf.bufnum);
                         applyScopeConfig.value;
@@ -300,9 +444,7 @@ s.doWhenBooted({
                     // Reverb taps bus 0 after the synth and writes the wet/dry
                     // blend back with ReplaceOut, so it must run \addAfter ~spaluter.
                     if(~spaluter.notNil) {
-                        ~spaluterReverb = Synth(\spaluterReverb, [\out, 0], ~spaluter, \addAfter);
-                        applyReverbState.value;
-                        updateReverbBypass.value;
+                        spawnReverb.value;
                     };
                     if(~spaluter.notNil) {
                         status.value("Synth started");
@@ -319,12 +461,15 @@ s.doWhenBooted({
             if(~spaluterReverb.notNil) {
                 ~spaluterReverb.free;
                 ~spaluterReverb = nil;
+                reverbSynthDef = nil;
             };
             if(~spaluter.notNil) {
                 ~spaluter.free;
                 ~spaluter = nil;
             };
-            forwardScope.value(Array.fill(256, 0.0));
+            midiSoundingNote = nil;
+            midiVoiceActive = false;
+            forwardScope.value(Array.fill(128, 0.0));
             status.value("Synth stopped");
         }.defer;
     };
@@ -342,6 +487,7 @@ s.doWhenBooted({
                 );
             };
             resetReverbParams.value;
+            currentGateMode = 1;
             status.value("Patch reset");
         }.defer;
     };
@@ -387,6 +533,9 @@ s.doWhenBooted({
         // language-frame of latency per CC and frame-quantized the response.
         if(key.notNil) {
             var sym = key.asSymbol;
+            // Mirror gateMode locally so sclang-owned note-on can decide whether
+            // to retrigger LFOs (renderer only retriggers in gateMode 0).
+            if(sym == \gateMode) { currentGateMode = value.asInteger; };
             // Reverb params target the separate \spaluterReverb synth; everything
             // else goes to the main synth.
             if(reverbParamSet.includes(sym)) {
@@ -438,18 +587,14 @@ s.doWhenBooted({
         // were the first two L-channel samples, which made the L peak meter
         // peg at full scale and made the L trace look much hotter than R.
         if(msg.size > 3) {
-            forwardScope.value(msg.copyRange(3, msg.size - 1));
+            forwardScope.value(msg, 3);
         };
     }, "/spaluter/scope");
 
     OSCdef(\spaluterScopeReply, { |msg|
-        var cmdIdx;
-        cmdIdx = msg.detectIndex({ |item|
-            item.notNil and: { item.asString == "/spaluter/scope" }
-        });
-        // Same SendReply offset: skip nodeID + replyID after the cmdName.
-        if(cmdIdx.notNil and: { msg.size > (cmdIdx + 3) }) {
-            forwardScope.value(msg.copyRange(cmdIdx + 3, msg.size - 1));
+        // Stable /reply fallback layout: ["/reply", cmdName, nodeID, replyID, samples...].
+        if(msg.size > 4 and: { msg[1].notNil and: { msg[1].asString == "/spaluter/scope" } }) {
+            forwardScope.value(msg, 4);
         };
     }, "/reply");
 
@@ -476,6 +621,7 @@ s.doWhenBooted({
         }.defer(0.1);
     }, "/spaluter/quit");
 
+    setupMidi.value;
     status.value("Runtime ready");
 });
 

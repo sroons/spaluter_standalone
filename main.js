@@ -18,19 +18,22 @@ app.commandLine.appendSwitch("disable-gpu-vsync");
 app.commandLine.appendSwitch("disable-frame-rate-limit");
 
 const SC_OSC_PORT = 57130;
+const SET_PARAM_OSC_ADDRESS = "/spaluter/set";
 const APP_OSC_RECV_PORT_CANDIDATES = [57131, 57132, 57133, 57134];
 const LOG_BUFFER_LIMIT = 400;
 const LOG_BUFFER_CHARS_LIMIT = 8192;
 const DEFAULT_SCOPE_RATE_HZ = 20;
 const MIN_SCOPE_RATE_HZ = 1;
 const MAX_SCOPE_RATE_HZ = 60;
+const MAX_SCOPE_SAMPLES = 512;
 const COMMAND_TIMEOUT_MS = 20_000;
 const INSTALL_COMMAND_TIMEOUT_MS = 30 * 60_000;
 const STARTUP_WAIT_TIMEOUT_MS = 90_000;
 const UNRESPONSIVE_RESTART_DELAY_MS = 1500;
 const RENDERER_HEARTBEAT_TIMEOUT_MS = 8000;
 const RENDERER_HEARTBEAT_CHECK_MS = 2000;
-const APP_CPU_SAMPLE_INTERVAL_MS = 1000;
+const APP_CPU_SAMPLE_INTERVAL_MS = 3000;
+const MIDI_DIAG = /^(1|true|yes)$/i.test(process.env.SPALUTER_DIAG || "");
 
 let mainWindow = null;
 let mainWindowReady = false;
@@ -272,6 +275,32 @@ function detectSclangCommand() {
   return "sclang";
 }
 
+function getScopeSamplesForRenderer(rawArgs) {
+  if (!Array.isArray(rawArgs) || rawArgs.length === 0) return [];
+
+  if (rawArgs.length <= MAX_SCOPE_SAMPLES) {
+    let allFiniteNumbers = true;
+    for (let i = 0; i < rawArgs.length; i += 1) {
+      if (!Number.isFinite(rawArgs[i])) {
+        allFiniteNumbers = false;
+        break;
+      }
+    }
+    if (allFiniteNumbers) return rawArgs;
+  }
+
+  const samples = [];
+  for (let i = 0; i < rawArgs.length && samples.length < MAX_SCOPE_SAMPLES; i += 1) {
+    const arg = rawArgs[i];
+    const raw = (arg && typeof arg === "object" && Object.prototype.hasOwnProperty.call(arg, "value"))
+      ? arg.value
+      : arg;
+    const value = Number(raw);
+    if (Number.isFinite(value)) samples.push(value);
+  }
+  return samples;
+}
+
 function createOscClient() {
   return new Promise((resolve) => {
     const tryOpenPort = (candidateIndex) => {
@@ -311,16 +340,7 @@ function createOscClient() {
             sendOsc("/spaluter/start", []);
           }
         } else if (msg.address === "/spaluter/scope") {
-          const rawArgs = Array.isArray(msg.args) ? msg.args : [];
-          const samples = [];
-          for (let i = 0; i < rawArgs.length && samples.length < 512; i += 1) {
-            const arg = rawArgs[i];
-            const raw = (arg && typeof arg === "object" && Object.prototype.hasOwnProperty.call(arg, "value"))
-              ? arg.value
-              : arg;
-            const value = Number(raw);
-            if (Number.isFinite(value)) samples.push(value);
-          }
+          const samples = getScopeSamplesForRenderer(msg.args);
           if (samples.length > 0 && mainWindow) {
             scopeRecvWindow += 1;
             mainWindow.webContents.send("sc-scope", samples);
@@ -386,7 +406,7 @@ function sendRendererEvent(channel, payload) {
 }
 
 // MIDI/OSC diagnostics: counts per-second rates for /spaluter/set traffic
-// so Phase 0 baseline and Phase 1+ effects can be measured. Logged once/sec.
+// so Phase 0 baseline and Phase 1+ effects can be measured when enabled.
 let oscSetCountWindow = 0;
 let oscSetCountTotal = 0;
 let oscSetCountPeakPerSec = 0;
@@ -398,22 +418,24 @@ let midiRawCountTotal = 0;
 // Phase 2.2 telemetry: count flush batches and their sizes.
 let setManyBatchesWindow = 0;
 let setManyMaxBatchWindow = 0;
-setInterval(() => {
-  if (oscSetCountWindow > 0 || setParamInFlight > 0 || midiRawCountWindow > 0 || scopeRecvWindow > 0 || lastRendererFps > 0) {
-    if (oscSetCountWindow > oscSetCountPeakPerSec) oscSetCountPeakPerSec = oscSetCountWindow;
-    const compression = midiRawCountWindow > 0
-      ? (1 - (oscSetCountWindow / midiRawCountWindow)) * 100
-      : 0;
-    const line = `[MIDI-DIAG] raw=${midiRawCountWindow}/s set=${oscSetCountWindow}/s peak=${oscSetCountPeakPerSec}/s compress=${compression.toFixed(0)}% batches=${setManyBatchesWindow}/s maxBatch=${setManyMaxBatchWindow} inflight=${setParamInFlight} inflight-peak=${setParamInFlightPeak} scope=${scopeRecvWindow}/s fps=${lastRendererFps} totals: raw=${midiRawCountTotal} set=${oscSetCountTotal}`;
-    console.log(line);
-    sendLog(line);
-  }
-  oscSetCountWindow = 0;
-  midiRawCountWindow = 0;
-  setManyBatchesWindow = 0;
-  setManyMaxBatchWindow = 0;
-  scopeRecvWindow = 0;
-}, 1000);
+if (MIDI_DIAG) {
+  setInterval(() => {
+    if (oscSetCountWindow > 0 || setParamInFlight > 0 || midiRawCountWindow > 0 || scopeRecvWindow > 0 || lastRendererFps > 0) {
+      if (oscSetCountWindow > oscSetCountPeakPerSec) oscSetCountPeakPerSec = oscSetCountWindow;
+      const compression = midiRawCountWindow > 0
+        ? (1 - (oscSetCountWindow / midiRawCountWindow)) * 100
+        : 0;
+      const line = `[MIDI-DIAG] raw=${midiRawCountWindow}/s set=${oscSetCountWindow}/s peak=${oscSetCountPeakPerSec}/s compress=${compression.toFixed(0)}% batches=${setManyBatchesWindow}/s maxBatch=${setManyMaxBatchWindow} inflight=${setParamInFlight} inflight-peak=${setParamInFlightPeak} scope=${scopeRecvWindow}/s fps=${lastRendererFps} totals: raw=${midiRawCountTotal} set=${oscSetCountTotal}`;
+      console.log(line);
+      sendLog(line);
+    }
+    oscSetCountWindow = 0;
+    midiRawCountWindow = 0;
+    setManyBatchesWindow = 0;
+    setManyMaxBatchWindow = 0;
+    scopeRecvWindow = 0;
+  }, 1000);
+}
 
 // Synthetic scope preview animation is driven from the main process: the renderer's
 // own setInterval/requestAnimationFrame are throttled to ~1 Hz on the Pi's
@@ -447,7 +469,7 @@ function setParamAnimTicker(active, tickMs = 33) {
 
 function sendOsc(address, args = []) {
   if (!oscPort) return;
-  if (address === "/spaluter/set") {
+  if (address === SET_PARAM_OSC_ADDRESS) {
     oscSetCountWindow += 1;
     oscSetCountTotal += 1;
   }
@@ -460,14 +482,36 @@ function sendOsc(address, args = []) {
 // /spaluter/set-many OSCdef in runtime.scd.
 function sendOscBundle(packets) {
   if (!oscPort || !Array.isArray(packets) || packets.length === 0) return;
+  let setPacketCount = 0;
   for (let i = 0; i < packets.length; i += 1) {
     const p = packets[i];
-    if (p && p.address === "/spaluter/set") {
-      oscSetCountWindow += 1;
-      oscSetCountTotal += 1;
-    }
+    if (p && p.address === SET_PARAM_OSC_ADDRESS) setPacketCount += 1;
+  }
+  if (setPacketCount > 0) {
+    oscSetCountWindow += setPacketCount;
+    oscSetCountTotal += setPacketCount;
   }
   oscPort.send({ timeTag: osc.timeTag(0), packets });
+}
+
+// C5: zero-allocation scratch for the set-param-many OSC hot path.
+// oscPort.send() encodes synchronously (osc.UDPPort.send -> encodeOSC -> buffer
+// before it returns), so these reusable structures are safe to refill on every
+// call. The pool grows to the high-water batch size and is never shrunk; the
+// view array is re-filled with references each call (V8 keeps its backing
+// store), so steady-state knob/CC bursts allocate nothing here.
+const scratchPacketPool = [];
+const scratchPacketView = [];
+
+function scratchPacket(index, key, value) {
+  let p = scratchPacketPool[index];
+  if (!p) {
+    p = { address: SET_PARAM_OSC_ADDRESS, args: [null, 0] };
+    scratchPacketPool[index] = p;
+  }
+  p.args[0] = key;
+  p.args[1] = value;
+  return p;
 }
 
 function waitForSynthStartup(timeoutMs = STARTUP_WAIT_TIMEOUT_MS) {
@@ -566,12 +610,14 @@ function startSuperCollider() {
 
   sclangProc.stdout.on("data", (buf) => {
     const text = buf.toString();
+    process.stdout.write(`[SC] ${text}`);
     sendLog(text);
     maybeInjectRuntime(text, runtimePath, patchPath);
   });
 
   sclangProc.stderr.on("data", (buf) => {
     const text = buf.toString();
+    process.stdout.write(`[SC-ERR] ${text}`);
     sendLog(`[ERR] ${text}`);
     maybeInjectRuntime(text, runtimePath, patchPath);
   });
@@ -785,14 +831,13 @@ function registerIpcHandlers() {
     lastRendererFps = Number(fps) || 0;
   });
 
-  ipcMain.handle("sc:set-param", (_evt, payload) => {
+  ipcMain.on("sc:set-param", (_evt, payload) => {
     setParamInFlight += 1;
     if (setParamInFlight > setParamInFlightPeak) setParamInFlightPeak = setParamInFlight;
     try {
       const { key, value } = payload || {};
-      if (typeof key !== "string") return false;
-      sendOsc("/spaluter/set", [key, Number(value)]);
-      return true;
+      if (typeof key !== "string") return;
+      sendOsc(SET_PARAM_OSC_ADDRESS, [key, Number(value)]);
     } finally {
       setParamInFlight -= 1;
     }
@@ -803,7 +848,7 @@ function registerIpcHandlers() {
   ipcMain.on("sc:set-param-fast", (_evt, payload) => {
     const { key, value } = payload || {};
     if (typeof key !== "string") return;
-    sendOsc("/spaluter/set", [key, Number(value)]);
+    sendOsc(SET_PARAM_OSC_ADDRESS, [key, Number(value)]);
   });
 
   // Phase 2.2: batched fire-and-forget. Phase 2 still emits each entry
@@ -817,21 +862,34 @@ function registerIpcHandlers() {
     if (!Array.isArray(entries) || entries.length === 0) return;
     setManyBatchesWindow += 1;
     if (entries.length > setManyMaxBatchWindow) setManyMaxBatchWindow = entries.length;
-    const packets = [];
+    let validCount = 0;
+    let firstKey = "";
+    let firstValue = 0;
+    scratchPacketView.length = 0;
     for (let i = 0; i < entries.length; i += 1) {
       const entry = entries[i];
       if (!Array.isArray(entry) || entry.length < 2) continue;
       const key = entry[0];
       const value = entry[1];
       if (typeof key !== "string") continue;
-      packets.push({ address: "/spaluter/set", args: [key, Number(value)] });
+      const numericValue = Number(value);
+      if (validCount === 0) {
+        firstKey = key;
+        firstValue = numericValue;
+        validCount = 1;
+        continue;
+      }
+      if (validCount === 1) {
+        scratchPacketView.push(scratchPacket(0, firstKey, firstValue));
+      }
+      scratchPacketView.push(scratchPacket(validCount, key, numericValue));
+      validCount += 1;
     }
-    if (packets.length === 1) {
+    if (validCount === 1) {
       // Single-entry batches are cheaper as a plain message (no bundle wrapper).
-      const p = packets[0];
-      sendOsc(p.address, p.args);
-    } else if (packets.length > 1) {
-      sendOscBundle(packets);
+      sendOsc(SET_PARAM_OSC_ADDRESS, [firstKey, firstValue]);
+    } else if (validCount > 1) {
+      sendOscBundle(scratchPacketView);
     }
   });
 

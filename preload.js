@@ -1,7 +1,7 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("spaluterApi", {
-  setParam: (key, value) => ipcRenderer.invoke("sc:set-param", { key, value }),
+  setParam: (key, value) => ipcRenderer.send("sc:set-param", { key, value }),
   // Phase 2.1: fire-and-forget single param (no Promise plumbing).
   setParamFast: (key, value) => ipcRenderer.send("sc:set-param-fast", { key, value }),
   // Phase 2.1: batched fire-and-forget. entries = [[key, value], ...]
