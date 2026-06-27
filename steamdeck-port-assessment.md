@@ -179,3 +179,37 @@ Overall: **Moderate.** The codebase is largely portable (Electron + OSC + SuperC
 4. **Then** add Deck-native input mapping (item F) as the performability upgrade.
 
 **Bottom line:** A high-quality Steam Deck port is realistic and would *improve* performance, stability, and on-device performability — **provided** it ships with (and requires) an external USB audio interface so the Pisound's fidelity is matched rather than sacrificed. The dominant cost is SteamOS packaging, not application code.
+
+---
+
+## Appendix A — Recommended USB-C audio interface
+
+Per §4, the internal DAC is not acceptable; an external interface is mandatory. The selection criteria are driven by what this app actually needs:
+
+- **Output quality is the only audio spec that matters.** The engine is output-only — `s.options.numInputBusChannels = 0; numOutputBusChannels = 2` (`sc/runtime.scd:54–55`). Mic preamps, input counts, and bundled DAW software are irrelevant; **DAC dynamic range, THD+N, and clock jitter** are what determine whether Pisound fidelity is matched.
+- **USB Audio Class-compliant is non-negotiable.** SteamOS's root is immutable/read-only, so a vendor kernel driver is impractical. A class-compliant interface is plug-and-play on PipeWire/ALSA.
+- **DIN MIDI restores lost performability.** The Pisound provided 5-pin DIN MIDI in/out; an interface with DIN MIDI brings that back instead of forcing USB-only MIDI gear.
+- **Bus-powered USB-C** suits the portable, single-port Deck.
+- **Match/exceed 24-bit/192 kHz** (the Pisound's ceiling).
+
+### Candidates
+
+All are USB Audio Class-compliant, bus-powered USB-C, and 24-bit/192 kHz.
+
+| Interface | DIN MIDI | DAC / clock | Approx. price | Fit |
+| --- | --- | --- | ---: | --- |
+| **MOTU M4** ⭐ | In/Out | ESS Sapphire converters, ~120 dB(A); class-leading at the price | ~$230 | **Top pick** — exceeds Pisound converters *and* restores DIN MIDI |
+| **RME Babyface Pro FS** | Via breakout | Reference low-jitter clock; dedicated Class-Compliant mode (very robust on Linux) | ~$900 | **No-compromise** option; the only one that also beats the Pisound's low-jitter clock |
+| **Focusrite Scarlett 4i4 (4th gen)** | In/Out | ~120 dB(A); solid, a notch below MOTU/RME | ~$260 | Good value alternative |
+| ~~MOTU M2~~ | **None** | Same great DACs as M4 | ~$180 | **Avoid** — no DIN MIDI means losing the Pisound's MIDI |
+| ~~Steam Deck internal DAC~~ | — | ~48 kHz/16-bit Realtek | — | **Disqualified** by §4 (audible regression) |
+
+### Recommendation
+
+**MOTU M4.** It satisfies all three hard requirements simultaneously: class-compliant (no drivers on read-only SteamOS), DIN MIDI in/out (restores the Pisound's lost MIDI), and ESS converters that meet or beat the Pisound's fidelity. Step up to the **RME Babyface Pro FS** if the budget allows and you also want to beat the Pisound's low-jitter clocking — historically its strongest quality differentiator.
+
+### Practical integration notes
+
+- **Single USB-C port.** The Deck has one USB-C port, so use a **PD-passthrough hub (45 W minimum, ideally 65 W+)** to run the interface and charge simultaneously. This also keeps the APU off battery and avoids the battery/thermal throttling called out in §5 during sustained DSP. Verify the hub allows data + charging concurrently (cheap hubs sometimes don't).
+- **Keep the path bit-transparent.** Pin scsynth to the interface's `hw:` node (port item A in §7), exactly as the engine currently pins `hw:pisound`, so PipeWire does not insert a resampling/`plug` stage. Reconcile this with the `pw-jack` RT-priority trade-off noted in §8.
+- **Match sample rate** to the interface (e.g. 96/192 kHz). The engine already avoids forcing a rate (`sc/runtime.scd:56`), so it adopts the device's rate once the device is selected.

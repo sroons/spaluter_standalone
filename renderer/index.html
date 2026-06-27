@@ -109,19 +109,21 @@
               <div class="ctl"><span class="nm">Formant 1</span><input class="edit-slider" data-param="formant1" type="range" min="20" max="3000" step="1" value="20" /><span class="val" data-unit="Hz"></span></div>
               <div class="ctl"><span class="nm">Formant 2</span><input class="edit-slider" data-param="formant2" type="range" min="20" max="3000" step="1" value="200" /><span class="val" data-unit="Hz"></span></div>
               <div class="ctl"><span class="nm">Formant 3</span><input class="edit-slider" data-param="formant3" type="range" min="20" max="3000" step="1" value="400" /><span class="val" data-unit="Hz"></span></div>
-            </div>
-          </div>
-
-          <!-- STEREO / MASK -->
-          <div class="edit-card" data-accent="acid">
-            <div class="ph"><span class="t">Stereo · Mask</span><span class="num">03</span></div>
-            <div class="ctl-list">
               <div class="ctl"><span class="nm">Pan 1</span><input class="edit-slider" data-param="pan1" type="range" min="-1" max="1" step="0.01" value="0" /><span class="val"></span></div>
               <div class="ctl"><span class="nm">Pan 2</span><input class="edit-slider" data-param="pan2" type="range" min="-1" max="1" step="0.01" value="0.5" /><span class="val"></span></div>
               <div class="ctl"><span class="nm">Pan 3</span><input class="edit-slider" data-param="pan3" type="range" min="-1" max="1" step="0.01" value="-0.5" /><span class="val"></span></div>
+            </div>
+          </div>
+
+          <!-- MASK -->
+          <div class="edit-card" data-accent="acid">
+            <div class="ph"><span class="t">Mask</span><span class="num">03</span></div>
+            <div class="ctl-list">
               <div class="ctl sel"><span class="nm">Mask Mode</span><select class="edit-select" data-seg="1" data-param="maskMode"><option value="0" selected>Off</option><option value="1">Stochastic</option><option value="2">Burst</option></select></div>
               <div class="ctl sel"><span class="nm">Per-Formant</span><select class="edit-select" data-seg="1" data-param="perFormantMask"><option value="0" selected>Off</option><option value="1">On</option></select></div>
               <div class="ctl"><span class="nm">Mask Amount</span><input class="edit-slider" data-param="maskAmount" type="range" min="0" max="1" step="0.01" value="0.5" /><span class="val"></span></div>
+              <div class="ctl"><span class="nm">Burst On</span><input class="edit-slider" data-param="burstOn" type="range" min="1" max="16" step="1" value="4" /><span class="val"></span></div>
+              <div class="ctl"><span class="nm">Burst Off</span><input class="edit-slider" data-param="burstOff" type="range" min="0" max="16" step="1" value="0" /><span class="val"></span></div>
             </div>
           </div>
 
@@ -132,8 +134,6 @@
               <div class="ctl"><span class="nm">Amp Jitter</span><input class="edit-slider" data-param="ampJitter" type="range" min="0" max="1" step="0.01" value="0" /><span class="val"></span></div>
               <div class="ctl"><span class="nm">Timing Jitter</span><input class="edit-slider" data-param="timingJitter" type="range" min="0" max="1" step="0.01" value="0" /><span class="val"></span></div>
               <div class="ctl"><span class="nm">Glisson</span><input class="edit-slider" data-param="glisson" type="range" min="-2" max="2" step="0.01" value="0" /><span class="val"></span></div>
-              <div class="ctl"><span class="nm">Burst On</span><input class="edit-slider" data-param="burstOn" type="range" min="1" max="16" step="1" value="4" /><span class="val"></span></div>
-              <div class="ctl"><span class="nm">Burst Off</span><input class="edit-slider" data-param="burstOff" type="range" min="0" max="16" step="1" value="0" /><span class="val"></span></div>
             </div>
           </div>
 

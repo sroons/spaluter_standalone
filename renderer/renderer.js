@@ -132,15 +132,15 @@ const PARAM_PAGE_DEFINITIONS = Object.freeze([
   },
   {
     title: "Formants",
-    params: ["formantCount", "formantTrack", "formant1", "formant2", "formant3"]
+    params: ["formantCount", "formantTrack", "formant1", "formant2", "formant3", "pan1", "pan2", "pan3"]
   },
   {
-    title: "Stereo / Mask",
-    params: ["pan1", "pan2", "pan3", "maskMode", "perFormantMask", "maskAmount"]
+    title: "Mask",
+    params: ["maskMode", "perFormantMask", "maskAmount", "burstOn", "burstOff"]
   },
   {
     title: "Texture",
-    params: ["ampJitter", "timingJitter", "glisson", "burstOn", "burstOff"]
+    params: ["ampJitter", "timingJitter", "glisson"]
   },
   {
     title: "Voice",
