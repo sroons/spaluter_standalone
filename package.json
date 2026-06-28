@@ -1,6 +1,6 @@
 {
   "name": "spaluter-desktop",
-  "version": "0.1.0",
+  "version": "0.8.0",
   "description": "Cross-platform Electron app for controlling Spaluter SuperCollider patch via OSC",
   "main": "main.js",
   "type": "commonjs",
