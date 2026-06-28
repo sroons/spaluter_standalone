@@ -66,24 +66,30 @@ To make modulation audibility easier to verify, the UI now includes:
 - **Impact matrix** (above LFO cards): compact row-per-LFO view showing current target and signed modulation amount.
 - **Edit-screen live markers**: when an LFO targets a parameter with a slider, a live marker overlays that slider to show the effective modulated value in real time while preserving the base setting.
 
-## The Reverb screen
+## The VERB/DLY screen
 
-The Reverb screen hosts a Mutable Instruments *Clouds*-style reverb: an input diffuser feeding a modulated feedback delay network with in-loop damping, plus an octave-up shimmer branch in the feedback path. It runs as a dedicated, persistent effect synth (`\spaluterReverb`) placed **after** the engine in the SuperCollider node order, so the tail keeps ringing while voices are gated/released. The Perform scope and peak meter remain pre-reverb (they read the engine output directly).
+The VERB/DLY screen hosts a Mutable Instruments *Clouds*-style reverb plus a lightweight 4-tap rhythmic delay. Both run in a dedicated, persistent effect synth (`\spaluterReverb`) placed **after** the engine in the SuperCollider node order, so the tail keeps ringing while voices are gated/released. The Perform scope and peak meter remain pre-effect (they read the engine output directly).
 
 The controls are plain faders, styled like the Edit screen:
 
 | Control | Param | Range | Default | What it does |
 | --- | --- | --- | ---: | --- |
-| **Mix** | `revWet` | 0 – 1 | 0.0 | Dry/wet blend. At **0** the effect is bypassed (the synth pauses the reverb node, so it costs zero DSP). |
+| **Mix** | `revWet` | 0 – 1 | 0.0 | Reverb dry/wet blend. The FX node is fully bypassed only when **both** `revWet` and `dlyWet` are 0. |
 | **Decay** | `revTime` | 0 – 0.95 | 0.6 | Feedback-loop gain — longer values give longer tails. Capped below self-oscillation. |
 | **Diffusion** | `revDiff` | 0 – 1 | 0.7 | Smear/density of the input diffuser and in-loop allpass. |
 | **Damping** | `revDamp` | 0 – 1 | 0.5 | High-frequency absorption inside the loop (higher = darker). |
 | **Shimmer** | `revShimmer` | 0 – 1 | 0.0 | Octave-up branch injected into the reverb feedback network for classic shimmer bloom. |
 | **Movement** | `revMod` | 0 – 1 | 0.3 | Delay-time modulation depth on the loop delays to de-metal and animate the tail. |
 | **Pre-delay** | `revPreDelay` | 0 – 250 ms | 0 | Delay before the reverb onset. |
-| **Low Cut** | `revLowCut` | 20 – 1000 Hz | 20 | High-pass filter on the wet signal. |
+| **Low Cut** | `revLowCut` | 20 – 1000 Hz | 20 | High-pass filter on the reverb wet signal. |
+| **Delay Mix** | `dlyWet` | 0 – 1 | 0.0 | 4-tap delay dry/wet blend. |
+| **Delay Feedback** | `dlyFeedback` | 0 – 0.88 | 0.35 | Tail length for repeated taps (capped for stability). |
+| **Tap Spread** | `dlySpread` | 0 – 1 | 0.45 | Spacing between the 4 taps; higher values widen the rhythm. |
+| **Base Time** | `dlyTimeMs` | 20 – 2000 ms | 320 | Delay base time when Sync is in Free ms mode. |
+| **Sync** | `dlySyncMode` | `Free ms` / `MIDI Clock` | Free ms | Chooses free time or MIDI-clock-locked timing. |
+| **Clock Ratio** | `dlyClockRatio` | `/16 … x16` | x1 | Divides the beat length when Sync is MIDI Clock: `/N` lengthens (slows) the delay, `xN` shortens (speeds) it. |
 
-Reverb params are sent over the same `/spaluter/set` path as every other parameter; the runtime routes `rev*` keys to the reverb synth. They are captured and restored by presets like any other control.
+Effect params are sent over the same `/spaluter/set` path as every other parameter; the runtime routes `rev*` and `dly*` keys to the effect synth. They are captured and restored by presets like any other control.
 
 ## Default MIDI channel values (CC mappings)
 
@@ -128,6 +134,12 @@ Reverb params are sent over the same `/spaluter/set` path as every other paramet
 | revPreDelay | 54 |
 | revLowCut | 55 |
 | revShimmer | 56 |
+| dlyWet | 57 |
+| dlyFeedback | 58 |
+| dlySpread | 59 |
+| dlyTimeMs | 60 |
+| dlySyncMode | 61 |
+| dlyClockRatio | 62 |
 
 ## Requirements
 

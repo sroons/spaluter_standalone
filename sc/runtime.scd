@@ -264,13 +264,15 @@ s.doWhenBooted({
         };
     };
 
-    // ----- Clouds-style reverb -----
-    // Reverb params live on the separate \spaluterReverb synth (not ~spaluter).
-    // reverbState mirrors the current values so they survive synth restarts, and
-    // is applied whenever the reverb synth is (re)spawned in startSynth.
+    // ----- Clouds-style reverb + multitap delay -----
+    // FX params live on the separate \spaluterReverb synth (not ~spaluter).
+    // reverbState mirrors current values so they survive synth restarts, and
+    // is applied whenever the effect synth is (re)spawned in startSynth.
     reverbDefaults = (
         revWet: 0.0, revTime: 0.6, revDamp: 0.5, revDiff: 0.7,
-        revMod: 0.3, revShimmer: 0.0, revPreDelay: 0.0, revLowCut: 20.0
+        revMod: 0.3, revShimmer: 0.0, revPreDelay: 0.0, revLowCut: 20.0,
+        dlyWet: 0.0, dlyFeedback: 0.35, dlyTimeMs: 320.0, dlySpread: 0.45,
+        dlySyncMode: 0.0, dlyClockHz: 0.0, dlyClockRatio: 1.0
     );
     reverbState = IdentityDictionary.new;
     reverbDefaults.keysValuesDo { |k, v| reverbState[k] = v.asFloat };
@@ -291,12 +293,15 @@ s.doWhenBooted({
         };
     };
 
-    // CPU bypass: when fully dry, pause the reverb synth so its delay network
-    // stops costing DSP. Paused => no ReplaceOut, so \spaluterSC's dry output
-    // passes straight through. Resume as soon as any wet is dialed in.
+    // CPU bypass: when both reverb and delay are fully dry, pause the FX synth
+    // so its delay networks stop costing DSP. Paused => no ReplaceOut, so
+    // \spaluterSC's dry output passes straight through.
     updateReverbBypass = {
         if(~spaluterReverb.notNil) {
-            ~spaluterReverb.run((reverbState[\revWet] ? 0) > 0.0001);
+            ~spaluterReverb.run(
+                ((reverbState[\revWet] ? 0) > 0.0001)
+                or: { (reverbState[\dlyWet] ? 0) > 0.0001 }
+            );
         };
     };
 
@@ -329,7 +334,7 @@ s.doWhenBooted({
             };
         } {
             if(~spaluterReverb.notNil) { ~spaluterReverb.set(k, v); };
-            if(k == \revWet) { updateReverbBypass.value; };
+            if((k == \revWet) or: { k == \dlyWet }) { updateReverbBypass.value; };
         };
     };
 
@@ -539,7 +544,7 @@ s.doWhenBooted({
             // Mirror gateMode locally so sclang-owned note-on can decide whether
             // to retrigger LFOs (renderer only retriggers in gateMode 0).
             if(sym == \gateMode) { currentGateMode = value.asInteger; };
-            // Reverb params target the separate \spaluterReverb synth; everything
+            // FX params target the separate \spaluterReverb synth; everything
             // else goes to the main synth.
             if(reverbParamSet.includes(sym)) {
                 setReverbParam.value(sym, value);

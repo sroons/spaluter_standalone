@@ -81,6 +81,7 @@ const MIDI_CLOCK_TICKS_PER_QUARTER = 24;
 const MIDI_CLOCK_SMOOTHING_TICKS = 96;
 const MIDI_CLOCK_SYNC_MIN_INTERVAL_MS = 120;
 const MIDI_CLOCK_RATE_EPSILON = 0.0005;
+const DELAY_CLOCK_HZ_EPSILON = 0.0005;
 const RENDERER_HEARTBEAT_MS = 1000;
 const DEBUG_FPS = false;
 const DEBUG_MIDI_NOTE_REPORTS = false;
@@ -147,8 +148,11 @@ const PARAM_PAGE_DEFINITIONS = Object.freeze([
     params: ["gateMode", "voiceCount", "chordType", "basePitch", "attackMs", "releaseMs", "glideMs"]
   },
   {
-    title: "Reverb",
-    params: ["revWet", "revTime", "revDamp", "revDiff", "revShimmer", "revMod", "revPreDelay", "revLowCut"]
+    title: "EFFECTS",
+    params: [
+      "revWet", "revTime", "revDamp", "revDiff", "revShimmer", "revMod", "revPreDelay", "revLowCut",
+      "dlyWet", "dlyFeedback", "dlySpread", "dlyTimeMs", "dlySyncMode", "dlyClockRatio"
+    ]
   },
   {
     title: "Sample",
@@ -251,7 +255,13 @@ const PREFERRED_MIDI_CC_BY_PARAM = Object.freeze({
   revMod: 53,
   revPreDelay: 54,
   revLowCut: 55,
-  revShimmer: 56
+  revShimmer: 56,
+  dlyWet: 57,
+  dlyFeedback: 58,
+  dlySpread: 59,
+  dlyTimeMs: 60,
+  dlySyncMode: 61,
+  dlyClockRatio: 62
 });
 const PULSARET_WAVE_NAMES = [
   "sine",
@@ -1589,6 +1599,30 @@ function midiClockRateHz() {
   return clamp(midiClockHz, LFO_RATE_MIN, LFO_RATE_MAX);
 }
 
+function effectiveDelayClockHz() {
+  if (!Number.isFinite(midiClockHz) || midiClockHz <= 0) return 0;
+  return midiClockHz;
+}
+
+function syncDelayClockParam(force = false) {
+  const nextHz = effectiveDelayClockHz();
+  const previousHz = lastSentValueByParam.get("dlyClockHz");
+  if (!force && Number.isFinite(previousHz) && Math.abs(previousHz - nextHz) <= DELAY_CLOCK_HZ_EPSILON) return;
+  setParamValue("dlyClockHz", nextHz, true);
+}
+
+// Base Time is ignored by the engine in MIDI Clock mode (the delay follows the
+// incoming tempo × Clock Ratio), so disable its slider to make that clear.
+function updateDelayBaseTimeEnabled(syncModeValue) {
+  const slider = paramSliderByParam.get("dlyTimeMs");
+  if (!slider) return;
+  const mode = Number.isFinite(syncModeValue) ? syncModeValue : currentParamValue("dlySyncMode", 0);
+  const clockMode = mode > 0.5;
+  slider.disabled = clockMode;
+  const ctl = slider.closest(".ctl");
+  if (ctl) ctl.classList.toggle("ctl-disabled", clockMode);
+}
+
 function syncMidiClockLockedLfos(nowMs = performance.now(), force = false) {
   const clockRate = midiClockRateHz();
   if (clockRate === null) return;
@@ -1623,11 +1657,14 @@ function syncMidiClockLockedLfos(nowMs = performance.now(), force = false) {
 function resetMidiClockTracking() {
   midiClockTickTimesMs.length = 0;
   midiClockLastSyncAtMs = 0;
+  midiClockBpm = null;
+  midiClockHz = null;
 }
 
 function handleMidiRealtimeMessage(status) {
   if (status === MIDI_STATUS_START || status === MIDI_STATUS_CONTINUE || status === MIDI_STATUS_STOP) {
     resetMidiClockTracking();
+    syncDelayClockParam(true);
     return;
   }
   if (status !== MIDI_STATUS_CLOCK) return;
@@ -1651,6 +1688,7 @@ function handleMidiRealtimeMessage(status) {
   midiClockBpm = bpm;
   midiClockHz = bpm / 60;
   syncMidiClockLockedLfos(nowMs);
+  syncDelayClockParam();
 }
 
 function releaseActiveMidiNote(noteNumber) {
@@ -2072,6 +2110,10 @@ function setParamValue(param, rawValue, send = true) {
     applyBalancedPansForFormantCount(value, send);
   }
 
+  if (param === "dlySyncMode") {
+    updateDelayBaseTimeEnabled(value);
+  }
+
   updateRealtimeParamValue(param, value);
   if (currentMainScreen === "edit" && editLfoMarkerByParam.has(param)) {
     updateEditLfoMarkers();
@@ -2079,6 +2121,9 @@ function setParamValue(param, rawValue, send = true) {
   if (send) {
     lastSentValueByParam.set(param, value);
     window.spaluterApi.setParam(param, value);
+    if (param === "dlySyncMode" || param === "dlyClockRatio" || param === "dlyTimeMs") {
+      syncDelayClockParam(true);
+    }
   }
   return true;
 }
@@ -3482,6 +3527,7 @@ window.spaluterApi.onStatus((text) => {
   if (/synth started/.test(statusText)) {
     // Re-push LFO state so the engine matches the UI after a (re)start.
     syncLfosToEngine();
+    syncDelayClockParam(true);
   }
 });
 
@@ -3654,6 +3700,8 @@ window.addEventListener("mouseup", () => {
 setupMidiMappingControls();
 rebuildMidiCcLookup();
 initMidiSupport();
+syncDelayClockParam(true);
+updateDelayBaseTimeEnabled();
 
 if (presetSlotEl) {
   renderPresetOptions();

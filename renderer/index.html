@@ -164,8 +164,8 @@
         <div class="lfo-card-grid" id="lfoStripList" aria-label="LFO modulators"></div>
       </section>
 
-      <!-- ===== REVERB ===== -->
-      <section class="main-screen" data-screen="reverb" aria-label="Reverb screen">
+      <!-- ===== VERB/DLY ===== -->
+      <section class="main-screen" data-screen="reverb" aria-label="VERB/DLY screen">
         <div class="edit-grid reverb-grid">
 
           <!-- SPACE -->
@@ -188,7 +188,20 @@
               <div class="ctl"><span class="nm">Pre-delay</span><input class="edit-slider" data-param="revPreDelay" type="range" min="0" max="250" step="1" value="0" /><span class="val" data-unit="ms"></span></div>
               <div class="ctl"><span class="nm">Low Cut</span><input class="edit-slider" data-param="revLowCut" type="range" min="20" max="1000" step="1" value="20" /><span class="val" data-unit="Hz"></span></div>
             </div>
-            <div class="reverb-note">Clouds-style diffused feedback network. Mix at 0 bypasses the effect (zero DSP cost). Tail keeps ringing while voices are released.</div>
+          </div>
+
+          <!-- DELAY -->
+          <div class="edit-card" data-accent="acid">
+            <div class="ph"><span class="t">Delay · Rhythmic 4-Tap</span><span class="num">03</span></div>
+            <div class="ctl-list">
+              <div class="ctl"><span class="nm">Mix</span><input class="edit-slider" data-param="dlyWet" type="range" min="0" max="1" step="0.01" value="0" /><span class="val"></span></div>
+              <div class="ctl"><span class="nm">Feedback</span><input class="edit-slider" data-param="dlyFeedback" type="range" min="0" max="0.88" step="0.01" value="0.35" /><span class="val"></span></div>
+              <div class="ctl"><span class="nm">Tap Spread</span><input class="edit-slider" data-param="dlySpread" type="range" min="0" max="1" step="0.01" value="0.45" /><span class="val"></span></div>
+              <div class="ctl"><span class="nm">Base Time</span><input class="edit-slider" data-param="dlyTimeMs" type="range" min="20" max="2000" step="1" value="320" /><span class="val" data-unit="ms"></span></div>
+              <div class="ctl sel"><span class="nm">Sync</span><select class="edit-select" data-seg="1" data-param="dlySyncMode"><option value="0" selected>Free ms</option><option value="1">MIDI Clock</option></select></div>
+              <div class="ctl sel" style="margin-top:10px;"><span class="nm">Clock Ratio</span><select class="edit-select" data-param="dlyClockRatio"><option value="0.0625">/16</option><option value="0.0666666667">/15</option><option value="0.0714285714">/14</option><option value="0.0769230769">/13</option><option value="0.0833333333">/12</option><option value="0.0909090909">/11</option><option value="0.1">/10</option><option value="0.1111111111">/9</option><option value="0.125">/8</option><option value="0.1428571429">/7</option><option value="0.1666666667">/6</option><option value="0.2">/5</option><option value="0.25">/4</option><option value="0.3333333333">/3</option><option value="0.5">/2</option><option value="1" selected>x1</option><option value="2">x2</option><option value="3">x3</option><option value="4">x4</option><option value="5">x5</option><option value="6">x6</option><option value="7">x7</option><option value="8">x8</option><option value="9">x9</option><option value="10">x10</option><option value="11">x11</option><option value="12">x12</option><option value="13">x13</option><option value="14">x14</option><option value="15">x15</option><option value="16">x16</option></select></div>
+            </div>
+            <div class="reverb-note">Four static taps with cross-stereo routing and conservative feedback for stable Pi performance. In MIDI Clock mode, Base Time = beat length ÷ Clock Ratio, so /N lengthens (slows) the delay and xN shortens (speeds) it.</div>
           </div>
 
         </div>
@@ -260,7 +273,7 @@
       <button class="nav-btn active" data-screen="perform" type="button" aria-pressed="true"><span class="ix">[01]</span><span class="nm">Perform</span></button>
       <button class="nav-btn" data-screen="edit" type="button" aria-pressed="false"><span class="ix">[02]</span><span class="nm">Edit</span></button>
       <button class="nav-btn" data-screen="mods" type="button" aria-pressed="false"><span class="ix">[03]</span><span class="nm">Mods</span></button>
-      <button class="nav-btn" data-screen="reverb" type="button" aria-pressed="false"><span class="ix">[04]</span><span class="nm">Reverb</span></button>
+      <button class="nav-btn" data-screen="reverb" type="button" aria-pressed="false"><span class="ix">[04]</span><span class="nm">EFFECTS</span></button>
       <button class="nav-btn" data-screen="presets" type="button" aria-pressed="false"><span class="ix">[05]</span><span class="nm">Presets</span></button>
       <button class="nav-kill" id="synthToggle" data-action="start" aria-pressed="false">Start Synth</button>
     </div>

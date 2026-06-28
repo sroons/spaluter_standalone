@@ -237,11 +237,16 @@ s.waitForBoot {
     // static times); the feedback loop uses DelayL/AllpassL (linear interp).
     SynthDef(\spaluterReverb, {
         |out=0, revWet=0, revTime=0.6, revDamp=0.5, revDiff=0.7, revMod=0.3,
-        revShimmer=0, revPreDelay=0, revLowCut=20|
+        revShimmer=0, revPreDelay=0, revLowCut=20,
+        dlyWet=0, dlyFeedback=0.35, dlyTimeMs=320, dlySpread=0.45,
+        dlySyncMode=0, dlyClockHz=0, dlyClockRatio=1|
 
         var in, pre, diff, diffCoef, local, inL, inR, fb;
         var modDepth, modL, modR, lpFreq, earlyL, earlyR;
         var tankL, tankR, wet, mix, sig, shimmerAmt, shimmerMono, shimmerL, shimmerR;
+        var dlyMix, dlyFeedbackAmt, dlyBaseMs, dlyBaseSec, dlyClockMs, dlySpreadAmt, dlyDecaySec;
+        var dlyTapBase, dlyTapTimesL, dlyTapTimesR, dlyTapL, dlyTapR, dlyWetSig;
+        var dlyClockOn, dlyTapMul, dlyDetuneR;
 
         in = In.ar(out, 2);
 
@@ -306,6 +311,43 @@ s.waitForBoot {
 
         mix = Lag.kr(revWet.clip(0, 1), 0.05);
         sig = (in * (1 - mix)) + (wet * mix);
+        // Lightweight 4-tap delay: static taps + CombN tails for stable CPU on Pi.
+        dlyMix = Lag.kr(dlyWet.clip(0, 1), 0.05);
+        dlyFeedbackAmt = dlyFeedback.clip(0, 0.88);
+        dlySpreadAmt = dlySpread.clip(0, 1);
+        // Divide the beat length by Clock Ratio: /N lengthens (slows) the delay, xN shortens it.
+        dlyClockMs = (1000 / dlyClockHz.max(0.001)) / dlyClockRatio.clip(0.0625, 16);
+        dlyClockOn = (dlySyncMode > 0.5) * (dlyClockHz > 0.001);
+        dlyBaseMs = Select.kr(dlyClockOn, [
+            dlyTimeMs.clip(20, 2000),
+            dlyClockMs.clip(20, 2000)
+        ]);
+        dlyBaseSec = Lag.kr(dlyBaseMs * 0.001, 0.04);
+        dlyDecaySec = ((log(0.001) / log((dlyFeedbackAmt * 0.98).max(0.001))).abs * dlyBaseSec).clip(0.05, 12);
+
+        // Free mode keeps continuous spread; MIDI Clock mode quantizes each tap to the
+        // nearest whole multiple of the clock-synced base time so every tap lands on the grid.
+        dlyTapMul = [1.0, 1.0 + (0.45 * dlySpreadAmt), 1.0 + (0.95 * dlySpreadAmt), 1.0 + (1.55 * dlySpreadAmt)];
+        dlyTapMul = (dlyTapMul * (1 - dlyClockOn)) + (dlyTapMul.round(1.0) * dlyClockOn);
+        dlyTapMul = Lag.kr(dlyTapMul, 0.04);
+        dlyTapBase = dlyBaseSec * dlyTapMul;
+        // Stereo time-detune applies in free mode only; clock mode keeps both channels grid-locked.
+        dlyDetuneR = ([1.11, 0.93, 1.19, 0.89] * (1 - dlyClockOn)) + dlyClockOn;
+        dlyTapTimesL = dlyTapBase.clip(0.01, 2.4);
+        dlyTapTimesR = (dlyTapBase * dlyDetuneR).clip(0.01, 2.4);
+
+        dlyTapL = (CombN.ar(in[0], 2.5, dlyTapTimesL[0], dlyDecaySec) * 0.34)
+            + (CombN.ar(in[1], 2.5, dlyTapTimesL[1], dlyDecaySec * 0.92) * 0.27)
+            + (CombN.ar(in[0], 2.5, dlyTapTimesL[2], dlyDecaySec * 0.84) * 0.22)
+            + (CombN.ar(in[1], 2.5, dlyTapTimesL[3], dlyDecaySec * 0.76) * 0.17);
+        dlyTapR = (CombN.ar(in[1], 2.5, dlyTapTimesR[0], dlyDecaySec) * 0.34)
+            + (CombN.ar(in[0], 2.5, dlyTapTimesR[1], dlyDecaySec * 0.92) * 0.27)
+            + (CombN.ar(in[1], 2.5, dlyTapTimesR[2], dlyDecaySec * 0.84) * 0.22)
+            + (CombN.ar(in[0], 2.5, dlyTapTimesR[3], dlyDecaySec * 0.76) * 0.17);
+        dlyWetSig = LeakDC.ar(LPF.ar(HPF.ar([dlyTapL, dlyTapR], 70), 6800));
+        dlyWetSig = Limiter.ar(dlyWetSig, 0.97, 0.005);
+
+        sig = (sig * (1 - (dlyMix * 0.35))) + (dlyWetSig * dlyMix);
         ReplaceOut.ar(out, sig);
     }).add;
 
@@ -313,11 +355,16 @@ s.waitForBoot {
     // shimmer reinjection so revShimmer == 0 costs no shimmer DSP.
     SynthDef(\spaluterReverbNoShim, {
         |out=0, revWet=0, revTime=0.6, revDamp=0.5, revDiff=0.7, revMod=0.3,
-        revPreDelay=0, revLowCut=20|
+        revPreDelay=0, revLowCut=20,
+        dlyWet=0, dlyFeedback=0.35, dlyTimeMs=320, dlySpread=0.45,
+        dlySyncMode=0, dlyClockHz=0, dlyClockRatio=1|
 
         var in, pre, diff, diffCoef, local, inL, inR, fb;
         var modDepth, modL, modR, lpFreq, earlyL, earlyR;
         var tankL, tankR, wet, mix, sig;
+        var dlyMix, dlyFeedbackAmt, dlyBaseMs, dlyBaseSec, dlyClockMs, dlySpreadAmt, dlyDecaySec;
+        var dlyTapBase, dlyTapTimesL, dlyTapTimesR, dlyTapL, dlyTapR, dlyWetSig;
+        var dlyClockOn, dlyTapMul, dlyDetuneR;
 
         in = In.ar(out, 2);
 
@@ -372,6 +419,43 @@ s.waitForBoot {
 
         mix = Lag.kr(revWet.clip(0, 1), 0.05);
         sig = (in * (1 - mix)) + (wet * mix);
+        // Lightweight 4-tap delay: static taps + CombN tails for stable CPU on Pi.
+        dlyMix = Lag.kr(dlyWet.clip(0, 1), 0.05);
+        dlyFeedbackAmt = dlyFeedback.clip(0, 0.88);
+        dlySpreadAmt = dlySpread.clip(0, 1);
+        // Divide the beat length by Clock Ratio: /N lengthens (slows) the delay, xN shortens it.
+        dlyClockMs = (1000 / dlyClockHz.max(0.001)) / dlyClockRatio.clip(0.0625, 16);
+        dlyClockOn = (dlySyncMode > 0.5) * (dlyClockHz > 0.001);
+        dlyBaseMs = Select.kr(dlyClockOn, [
+            dlyTimeMs.clip(20, 2000),
+            dlyClockMs.clip(20, 2000)
+        ]);
+        dlyBaseSec = Lag.kr(dlyBaseMs * 0.001, 0.04);
+        dlyDecaySec = ((log(0.001) / log((dlyFeedbackAmt * 0.98).max(0.001))).abs * dlyBaseSec).clip(0.05, 12);
+
+        // Free mode keeps continuous spread; MIDI Clock mode quantizes each tap to the
+        // nearest whole multiple of the clock-synced base time so every tap lands on the grid.
+        dlyTapMul = [1.0, 1.0 + (0.45 * dlySpreadAmt), 1.0 + (0.95 * dlySpreadAmt), 1.0 + (1.55 * dlySpreadAmt)];
+        dlyTapMul = (dlyTapMul * (1 - dlyClockOn)) + (dlyTapMul.round(1.0) * dlyClockOn);
+        dlyTapMul = Lag.kr(dlyTapMul, 0.04);
+        dlyTapBase = dlyBaseSec * dlyTapMul;
+        // Stereo time-detune applies in free mode only; clock mode keeps both channels grid-locked.
+        dlyDetuneR = ([1.11, 0.93, 1.19, 0.89] * (1 - dlyClockOn)) + dlyClockOn;
+        dlyTapTimesL = dlyTapBase.clip(0.01, 2.4);
+        dlyTapTimesR = (dlyTapBase * dlyDetuneR).clip(0.01, 2.4);
+
+        dlyTapL = (CombN.ar(in[0], 2.5, dlyTapTimesL[0], dlyDecaySec) * 0.34)
+            + (CombN.ar(in[1], 2.5, dlyTapTimesL[1], dlyDecaySec * 0.92) * 0.27)
+            + (CombN.ar(in[0], 2.5, dlyTapTimesL[2], dlyDecaySec * 0.84) * 0.22)
+            + (CombN.ar(in[1], 2.5, dlyTapTimesL[3], dlyDecaySec * 0.76) * 0.17);
+        dlyTapR = (CombN.ar(in[1], 2.5, dlyTapTimesR[0], dlyDecaySec) * 0.34)
+            + (CombN.ar(in[0], 2.5, dlyTapTimesR[1], dlyDecaySec * 0.92) * 0.27)
+            + (CombN.ar(in[1], 2.5, dlyTapTimesR[2], dlyDecaySec * 0.84) * 0.22)
+            + (CombN.ar(in[0], 2.5, dlyTapTimesR[3], dlyDecaySec * 0.76) * 0.17);
+        dlyWetSig = LeakDC.ar(LPF.ar(HPF.ar([dlyTapL, dlyTapR], 70), 6800));
+        dlyWetSig = Limiter.ar(dlyWetSig, 0.97, 0.005);
+
+        sig = (sig * (1 - (dlyMix * 0.35))) + (dlyWetSig * dlyMix);
         ReplaceOut.ar(out, sig);
     }).add;
 
