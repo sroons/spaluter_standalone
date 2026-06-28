@@ -1274,7 +1274,7 @@ function drawWindowView(v) {
 function drawDutyView(v) {
   if (!dutyWaveCanvas) return;
   if (dutyWaveLabelEl) {
-    dutyWaveLabelEl.textContent = `${v.duty.toFixed(2)} • ${v.dutyMode}`;
+    dutyWaveLabelEl.textContent = `DUTY · ${v.duty.toFixed(2)} • ${v.dutyMode}`;
   }
   drawDutyScopeWithOverlay(dutyWaveCanvas, v.duty, v.windowType);
 }
@@ -2136,6 +2136,17 @@ function setParamValue(param, rawValue, send = true) {
 const LFO_MAX = 16;
 const LFO_RATE_MIN = 0.01;
 const LFO_RATE_MAX = 20;
+// When free-running (not MIDI clock), the rate slider position 0..1 maps to Hz on an
+// exponential curve so slow rates get more of the slider travel: rate = MIN*(MAX/MIN)^pos.
+const LFO_RATE_LOG_SPAN = Math.log(LFO_RATE_MAX / LFO_RATE_MIN);
+function lfoRateToSliderPos(rate) {
+  const r = clamp(Number(rate) || LFO_RATE_MIN, LFO_RATE_MIN, LFO_RATE_MAX);
+  return clamp(Math.log(r / LFO_RATE_MIN) / LFO_RATE_LOG_SPAN, 0, 1);
+}
+function lfoSliderPosToRate(pos) {
+  const p = clamp(Number(pos) || 0, 0, 1);
+  return clamp(LFO_RATE_MIN * Math.exp(LFO_RATE_LOG_SPAN * p), LFO_RATE_MIN, LFO_RATE_MAX);
+}
 const LFO_CONFIG_VERSION = 3;
 const LFO_SHAPE_NAMES = ["Sine", "Triangle", "Saw Up", "Saw Down", "Square", "S&H", "Smooth Rnd"];
 const LFO_CLOCK_RATIO_OPTIONS = (() => {
@@ -2711,10 +2722,10 @@ function createLfoStrip(index) {
   const rateEl = document.createElement("input");
   rateEl.type = "range";
   rateEl.className = "lfo-range";
-  rateEl.min = String(LFO_RATE_MIN);
-  rateEl.max = String(LFO_RATE_MAX);
-  rateEl.step = "0.01";
-  rateEl.value = String(cfg.rate);
+  rateEl.min = "0";
+  rateEl.max = "1";
+  rateEl.step = "0.001";
+  rateEl.value = String(lfoRateToSliderPos(cfg.rate));
   rateRow.append(rateTop, rateEl);
 
   const ratioRow = document.createElement("div");
@@ -2837,7 +2848,7 @@ function createLfoStrip(index) {
     if (c.useMidiClock) {
       if (clockRate !== null) c.rate = clamp(clockRate * c.clockRatio, LFO_RATE_MIN, LFO_RATE_MAX);
     } else {
-      c.rate = clamp(Number(rateEl.value) || 0, LFO_RATE_MIN, LFO_RATE_MAX);
+      c.rate = lfoSliderPosToRate(rateEl.value);
     }
     c.depth = clamp(Number(depthEl.value) || 0, -1, 1) * lfoCapFor(c.target);
     c.enabled = enableInput.checked;
@@ -2908,7 +2919,7 @@ function refreshLfoStrip(index) {
   if (r.rateEl) {
     r.rateEl.disabled = Boolean(c.useMidiClock);
     r.rateEl.classList.toggle("is-locked", Boolean(c.useMidiClock));
-    r.rateEl.value = String(displayedRate);
+    r.rateEl.value = String(lfoRateToSliderPos(displayedRate));
     refreshSliderFill(r.rateEl, LFO_PRIMARY_ACCENT);
   }
   if (r.depthEl) refreshSliderFill(r.depthEl, LFO_PRIMARY_ACCENT);
@@ -2940,7 +2951,7 @@ function syncLfoStripFromConfig(index) {
   const c = lfoConfigs[index];
   r.targetSel.value = c.target;
   r.shapeSel.value = String(c.shape);
-  r.rateEl.value = String(c.rate);
+  r.rateEl.value = String(lfoRateToSliderPos(c.rate));
   r.depthEl.value = String(lfoDepthFractionSigned(c));
   r.enableInput.checked = c.enabled;
   refreshLfoStrip(index);

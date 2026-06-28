@@ -56,6 +56,16 @@ Macros write directly to the same parameters exposed on the Edit and Mods screen
 
 `[01] Perform · [02] Edit · [03] Mods · [04] Reverb · [05] Presets` switch between the five screens; the orange **Stop Synth** button on the far right is the held emergency stop.
 
+## The Edit screen
+
+The Edit screen exposes the full synthesis engine as grouped cards — **Core Engine** (01), **Formant System** (02), **Mask** (03), **Texture** (04), and **Voice · Envelope** (05).
+
+The **Core Engine** card carries three live preview scopes that redraw in real time as you move sliders or while LFOs sweep the parameters:
+
+- **Pulsaret** — the current pulsaret waveform, morphing across the wavetable as `pulsaret` changes.
+- **Window** — the grain window/envelope shape selected by `window`.
+- **Duty** — the active (gated) portion of each grain cycle, centred in the window, with the grain-window envelope overlaid on the active region. Reflects both `duty` and `dutyMode`.
+
 ## The Mods screen
 
 The Mods screen hosts 16 internal LFOs with per-LFO shape, rate, depth, target routing, and optional MIDI clock sync + div/mult.
@@ -65,6 +75,7 @@ To make modulation audibility easier to verify, the UI now includes:
 - **Per-LFO target delta panel** (inside each LFO card): shows `Base → Live` target value plus instantaneous `ΔLFO` and summed `Σ` modulation.
 - **Impact matrix** (above LFO cards): compact row-per-LFO view showing current target and signed modulation amount.
 - **Edit-screen live markers**: when an LFO targets a parameter with a slider, a live marker overlays that slider to show the effective modulated value in real time while preserving the base setting.
+- **Exponential rate fader**: in free-run mode (MIDI clock off), the LFO rate fader follows an exponential curve so the lower, more musical rates get most of the slider travel (≈ the bottom three-quarters covers up to ~3 Hz); the full range is still 0.01–20 Hz. In MIDI clock mode the rate is derived from the incoming clock × the div/mult ratio instead, and the fader is locked.
 
 ## The VERB/DLY screen
 
@@ -90,6 +101,34 @@ The controls are plain faders, styled like the Edit screen:
 | **Clock Ratio** | `dlyClockRatio` | `/16 … x16` | x1 | Divides the beat length when Sync is MIDI Clock: `/N` lengthens (slows) the delay, `xN` shortens (speeds) it. |
 
 Effect params are sent over the same `/spaluter/set` path as every other parameter; the runtime routes `rev*` and `dly*` keys to the effect synth. They are captured and restored by presets like any other control.
+
+### Using the reverb
+
+1. Raise **Mix** (`revWet`) to ~0.2–0.4 to blend the tail with the dry signal. At 0 the reverb is fully bypassed (and the whole FX node costs no DSP when **Delay Mix** is also 0).
+2. Set **Decay** for tail length: short (~0.3) for room ambience, high (~0.85) for long washes. It is capped below self-oscillation, so it will not run away.
+3. Use **Diffusion** for density — low gives discrete early-reflection character, high gives a smooth smear.
+4. Pull **Damping** up to darken long tails (absorbs highs inside the loop); useful to keep washes from getting harsh.
+5. Raise **Low Cut** (e.g. 150–300 Hz) when the wet signal muddies the low end.
+6. Use **Pre-delay** (0–250 ms) to separate the dry transient from the tail for extra clarity and a sense of space.
+7. Leave **Movement** around 0.3 to keep the tail alive (it modulates the loop delays and de-metals the ring); raise it for a more chorused tail.
+8. Bring **Shimmer** up slowly with a longer Decay for the classic ascending octave bloom. Shimmer costs extra DSP only when above 0.
+
+*Ambient pad wash:* Decay ~0.85, Diffusion ~0.8, Damping ~0.4, Movement ~0.4, Shimmer ~0.3, Low Cut ~200 Hz, Mix ~0.35.
+
+### Using the delay
+
+1. Raise **Delay Mix** (`dlyWet`) to bring the taps in. At 0 the delay is silent (and, with reverb also at 0, the FX node is bypassed).
+2. Pick a timing mode with **Sync**:
+   - **Free ms** — set **Base Time** (20–2000 ms) directly for a fixed delay time, independent of tempo.
+   - **MIDI Clock** — the delay locks to incoming MIDI clock. **Base Time** is disabled and **Clock Ratio** chooses the note value instead.
+3. In **MIDI Clock** mode, choose **Clock Ratio**: `x1` = one beat (quarter note), `/2` = eighth, `/4` = sixteenth, `x2` = half note. Remember `/N` lengthens (slows) the delay and `xN` shortens (speeds) it. (Requires a MIDI clock source; see the Mods/MIDI sections.)
+4. Use **Tap Spread** to fan the 4 taps out from the base time:
+   - At 0 all four taps collapse onto the base time (one tight echo).
+   - Higher values push taps to later times for a rhythmic, cascading pattern.
+   - In **MIDI Clock** mode the spread snaps taps onto whole clock divisions, so every tap stays locked to the grid.
+5. Set **Delay Feedback** for repeat length (capped at 0.88 for stability): low for a couple of slaps, high for long trailing repeats.
+
+*Tempo-synced rhythmic delay:* Sync = MIDI Clock, Clock Ratio = `/4` (sixteenths), Tap Spread ~0.6, Feedback ~0.45, Delay Mix ~0.3.
 
 ## Default MIDI channel values (CC mappings)
 
