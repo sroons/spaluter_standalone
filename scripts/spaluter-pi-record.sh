@@ -36,6 +36,12 @@ REC_CPUS="${REC_CPUS-2,3}"
 REC_NICE="${REC_NICE:-19}"
 AUDIO_MODE="${AUDIO_MODE:-decoupled}"
 AV_OFFSET="${AV_OFFSET:-0}"
+# Optional scripted UI tour (xdotool). When CHOREO points at an executable, the
+# recorder starts capture, waits LEAD_IN, runs the choreography, waits TAIL, then
+# stops the encoder — so the clip length auto-matches the tour (no q / DURATION).
+CHOREO="${CHOREO:-}"
+LEAD_IN="${LEAD_IN:-1.5}"
+TAIL="${TAIL:-1.5}"
 
 base="${OUT%.*}"
 TMP_MKV="${base}.mkv"
@@ -63,15 +69,32 @@ if [ -n "$REC_CPUS" ] && command -v taskset >/dev/null 2>&1; then
   launcher+=(taskset -c "$REC_CPUS")
 fi
 
+# Run the scripted UI tour against a running encoder (PID $1): let a little video
+# roll first (LEAD_IN), perform the tour, hold briefly (TAIL), then SIGINT the
+# encoder so it finalises the file. Recording length tracks the tour length.
+run_choreography() {
+  local pid="$1"
+  sleep "$LEAD_IN"
+  echo "Running choreography: $CHOREO"
+  DISPLAY="${DISP%.*}" "$CHOREO" || true
+  sleep "$TAIL"
+  kill -INT "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+}
+
 if [ "$AUDIO_MODE" = "monitor" ]; then
   echo "Recording (monitor mode) ${SIZE}@${FPS} + ${AUDIO_SRC}  (press q to stop)"
-  "${launcher[@]}" ffmpeg -hide_banner -y \
-    -thread_queue_size 1024 -f x11grab -framerate "$FPS" -video_size "$SIZE" -i "$DISP" \
-    -thread_queue_size 1024 -f pulse -i "$AUDIO_SRC" \
-    -c:v h264_v4l2m2m -b:v "$VBITRATE" -pix_fmt yuv420p \
-    -c:a aac -b:a 192k \
-    "${dur_args[@]}" \
-    "$TMP_MKV"
+  mon_cmd=("${launcher[@]}" ffmpeg -hide_banner -y
+    -thread_queue_size 1024 -f x11grab -framerate "$FPS" -video_size "$SIZE" -i "$DISP"
+    -thread_queue_size 1024 -f pulse -i "$AUDIO_SRC"
+    -c:v h264_v4l2m2m -b:v "$VBITRATE" -pix_fmt yuv420p
+    -c:a aac -b:a 192k)
+  if [ -n "$CHOREO" ]; then
+    "${mon_cmd[@]}" "$TMP_MKV" &
+    run_choreography "$!"
+  else
+    "${mon_cmd[@]}" "${dur_args[@]}" "$TMP_MKV"
+  fi
   echo "Remuxing -> ${OUT}"
   ffmpeg -hide_banner -loglevel error -y -i "$TMP_MKV" -c copy "$OUT" && rm -f "$TMP_MKV"
   echo "Done: ${OUT}"
@@ -87,11 +110,15 @@ pw-record --target "$AUDIO_SRC" --rate 48000 --channels 2 --format s32 --latency
 APID=$!
 
 # Video only (no audio) — hardware encoded, de-prioritised and CPU-pinned.
-"${launcher[@]}" ffmpeg -hide_banner -y \
-  -thread_queue_size 1024 -f x11grab -framerate "$FPS" -video_size "$SIZE" -i "$DISP" \
-  -an -c:v h264_v4l2m2m -b:v "$VBITRATE" -pix_fmt yuv420p \
-  "${dur_args[@]}" \
-  "$TMP_V"
+vid_cmd=("${launcher[@]}" ffmpeg -hide_banner -y
+  -thread_queue_size 1024 -f x11grab -framerate "$FPS" -video_size "$SIZE" -i "$DISP"
+  -an -c:v h264_v4l2m2m -b:v "$VBITRATE" -pix_fmt yuv420p)
+if [ -n "$CHOREO" ]; then
+  "${vid_cmd[@]}" "$TMP_V" &
+  run_choreography "$!"
+else
+  "${vid_cmd[@]}" "${dur_args[@]}" "$TMP_V"
+fi
 
 # Stop the audio capture and let it finalise the WAV.
 kill -INT "$APID" 2>/dev/null || true
