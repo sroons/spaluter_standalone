@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
 # Pi-side recorder for Spaluter (X11 + PipeWire/Pisound, Raspberry Pi 4).
 #
-# Single hardware-encoded pass: captures the X display (:0, 1024x600) plus the
-# PipeWire monitor of the Pisound sink (which carries scsynth's output) into one
-# file. Records to a robust .mkv first (valid even if interrupted), then losslessly
-# remuxes to .mp4 and removes the .mkv.
+# Captures the X display (:0, 1024x600) plus the synth audio into one .mp4.
+#
+# AUDIO_MODE (default: decoupled)
+#   decoupled  Audio is captured by a dedicated pw-record client (independent of
+#              the video encoder, so encoder/CPU stalls can't drop samples) while
+#              ffmpeg captures video only; the two are muxed at the end. Cleanest.
+#   monitor    Single ffmpeg pass: x11grab video + pulse audio from the sink
+#              monitor in one file. Simpler, slightly more dropout-prone.
 #
 # This script is deployed and driven by scripts/record-demo.sh on the Mac, but can
 # also be run directly on the Pi:  spaluter-pi-record.sh [output.mp4]
@@ -18,11 +22,10 @@
 #   * Runs ffmpeg with nice + taskset so it cannot preempt the audio thread.
 #   * Defaults to 24 fps to cut framebuffer-read/encode load.
 # Tunables: REC_QUANTUM (0 disables), REC_CPUS (cores for ffmpeg, "" disables
-# pinning), REC_NICE.
+# pinning), REC_NICE, AV_OFFSET (seconds to shift audio in decoupled mux).
 set -uo pipefail
 
 OUT="${1:-$HOME/spaluter-$(date +%Y%m%d-%H%M%S).mp4}"
-TMP="${OUT%.*}.mkv"
 DISP="${DISP:-:0.0}"
 SIZE="${SIZE:-1024x600}"
 FPS="${FPS:-24}"
@@ -31,14 +34,26 @@ VBITRATE="${VBITRATE:-6M}"
 REC_QUANTUM="${REC_QUANTUM:-2048}"
 REC_CPUS="${REC_CPUS-2,3}"
 REC_NICE="${REC_NICE:-19}"
+AUDIO_MODE="${AUDIO_MODE:-decoupled}"
+AV_OFFSET="${AV_OFFSET:-0}"
+
+base="${OUT%.*}"
+TMP_MKV="${base}.mkv"
+TMP_V="${base}.video.mkv"
+TMP_A="${base}.audio.wav"
 
 dur_args=()
 [ -n "${DURATION:-}" ] && dur_args=(-t "$DURATION")
 
+# Restore PipeWire quantum and remove any leftover temp files on exit.
+cleanup() {
+  pw-metadata -n settings 0 clock.force-quantum 0 >/dev/null 2>&1 || true
+  rm -f "$TMP_MKV" "$TMP_V" "$TMP_A" 2>/dev/null || true
+}
+trap cleanup EXIT INT TERM
+
 # Give the real-time audio graph more headroom for the duration of the capture.
-restore_quantum() { pw-metadata -n settings 0 clock.force-quantum 0 >/dev/null 2>&1 || true; }
 if [ "$REC_QUANTUM" != "0" ] && command -v pw-metadata >/dev/null 2>&1; then
-  trap restore_quantum EXIT INT TERM
   pw-metadata -n settings 0 clock.force-quantum "$REC_QUANTUM" >/dev/null 2>&1 || true
 fi
 
@@ -48,15 +63,45 @@ if [ -n "$REC_CPUS" ] && command -v taskset >/dev/null 2>&1; then
   launcher+=(taskset -c "$REC_CPUS")
 fi
 
-echo "Recording ${SIZE}@${FPS} + ${AUDIO_SRC}  (press q to stop)"
+if [ "$AUDIO_MODE" = "monitor" ]; then
+  echo "Recording (monitor mode) ${SIZE}@${FPS} + ${AUDIO_SRC}  (press q to stop)"
+  "${launcher[@]}" ffmpeg -hide_banner -y \
+    -thread_queue_size 1024 -f x11grab -framerate "$FPS" -video_size "$SIZE" -i "$DISP" \
+    -thread_queue_size 1024 -f pulse -i "$AUDIO_SRC" \
+    -c:v h264_v4l2m2m -b:v "$VBITRATE" -pix_fmt yuv420p \
+    -c:a aac -b:a 192k \
+    "${dur_args[@]}" \
+    "$TMP_MKV"
+  echo "Remuxing -> ${OUT}"
+  ffmpeg -hide_banner -loglevel error -y -i "$TMP_MKV" -c copy "$OUT" && rm -f "$TMP_MKV"
+  echo "Done: ${OUT}"
+  exit 0
+fi
+
+# --- decoupled mode ---
+echo "Recording (decoupled) ${SIZE}@${FPS} + ${AUDIO_SRC}  (press q to stop)"
+
+# Dedicated audio capture: native PipeWire client with a generous buffer so it
+# never underruns even if the video encoder/CPU stalls. Run at normal priority.
+pw-record --target "$AUDIO_SRC" --rate 48000 --channels 2 --format s32 --latency 200ms "$TMP_A" &
+APID=$!
+
+# Video only (no audio) — hardware encoded, de-prioritised and CPU-pinned.
 "${launcher[@]}" ffmpeg -hide_banner -y \
   -thread_queue_size 1024 -f x11grab -framerate "$FPS" -video_size "$SIZE" -i "$DISP" \
-  -thread_queue_size 1024 -f pulse -i "$AUDIO_SRC" \
-  -c:v h264_v4l2m2m -b:v "$VBITRATE" -pix_fmt yuv420p \
-  -c:a aac -b:a 192k \
+  -an -c:v h264_v4l2m2m -b:v "$VBITRATE" -pix_fmt yuv420p \
   "${dur_args[@]}" \
-  "$TMP"
+  "$TMP_V"
 
-echo "Remuxing -> ${OUT}"
-ffmpeg -hide_banner -loglevel error -y -i "$TMP" -c copy "$OUT" && rm -f "$TMP"
+# Stop the audio capture and let it finalise the WAV.
+kill -INT "$APID" 2>/dev/null || true
+wait "$APID" 2>/dev/null || true
+
+echo "Muxing audio + video -> ${OUT}"
+ffmpeg -hide_banner -loglevel error -y \
+  -i "$TMP_V" \
+  -itsoffset "$AV_OFFSET" -i "$TMP_A" \
+  -map 0:v:0 -map 1:a:0 \
+  -c:v copy -c:a aac -b:a 192k -shortest \
+  "$OUT" && rm -f "$TMP_V" "$TMP_A"
 echo "Done: ${OUT}"

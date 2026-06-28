@@ -13,6 +13,7 @@
 #   DEST       local directory for recordings     (default: ~/Movies/spaluter)
 #   DURATION   fixed length in seconds, optional  (auto-stops; skips q)
 #   FPS SIZE VBITRATE AUDIO_SRC DISP              forwarded to the Pi recorder
+#   AUDIO_MODE AV_OFFSET                          decoupled (default) | monitor
 #   REC_QUANTUM REC_CPUS REC_NICE                 RT-protection tunables (see recorder)
 set -uo pipefail
 
@@ -33,7 +34,7 @@ ssh "$SSH_HOST" "chmod +x ${PI_SCRIPT_DST}"
 
 # Forward any tuning vars that are set in this environment.
 remote_env=""
-for v in DURATION FPS SIZE VBITRATE AUDIO_SRC DISP REC_QUANTUM REC_CPUS REC_NICE; do
+for v in DURATION FPS SIZE VBITRATE AUDIO_SRC DISP REC_QUANTUM REC_CPUS REC_NICE AUDIO_MODE AV_OFFSET; do
   if [ -n "${!v:-}" ]; then remote_env+="${v}=${!v} "; fi
 done
 
