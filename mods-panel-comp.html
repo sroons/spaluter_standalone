@@ -74,11 +74,23 @@ body{
 }
 
 /* Row 2: Controls */
-.lfo-card-row-2 { display: grid; grid-template-columns: 1fr 1.5fr 1.5fr; gap: 16px; align-items: end; position:relative; z-index:1;}
+.lfo-card-row-2 { display: grid; grid-template-columns: 1fr 1.6fr 1.4fr; gap: 16px; align-items: end; position:relative; z-index:1;}
 .lfo-ctrl-col { display: flex; flex-direction: column; gap: 6px; }
-.lfo-ctrl-col .k { font-family:var(--mono); font-size:10px; color:var(--mute-2);
-  letter-spacing:.07em; text-transform:uppercase; display: flex; justify-content: space-between;}
-.lfo-ctrl-col .v { color: var(--shock); font-family: var(--dinc); font-size: 16px; line-height: 1; letter-spacing: 0.05em; }
+
+.lfo-ctrl-header { display: flex; justify-content: space-between; align-items: center; }
+.lfo-ctrl-header .k { font-family:var(--mono); font-size:10px; color:var(--mute-2);
+  letter-spacing:.07em; text-transform:uppercase; }
+.lfo-ctrl-header .v { color: var(--shock); font-family: var(--dinc); font-size: 16px; line-height: 1; letter-spacing: 0.05em; }
+
+/* Small inline toggle for MIDI Sync */
+.compact-sync-toggle {
+  display: flex; align-items: center; gap: 4px;
+  font-family: var(--din); font-size: 9px; text-transform: uppercase;
+  color: var(--paper-2); background: rgba(0,0,0,0.3); border: 1px solid var(--line-2);
+  padding: 2px 4px; border-radius: 2px; cursor: pointer; letter-spacing: 0.05em;
+}
+.compact-sync-toggle input { margin: 0; width: 10px; height: 10px; accent-color: var(--shock); }
+.compact-sync-toggle.active { color: var(--shock); border-color: rgba(255, 111, 36, 0.4); background: rgba(255, 111, 36, 0.1); }
 
 .lfo-shape {
   min-height:40px; padding:0 10px;
@@ -140,11 +152,10 @@ body{
 
   <div class="lfo-card-grid">
     
-    <!-- LFO 1: Positive Example -->
+    <!-- LFO 1: Free Rate Example -->
     <div class="lfo-card" style="--lfo-accent: var(--acid);">
       <span class="lfo-ghost">01</span>
       
-      <!-- Compact Header/Target -->
       <div class="lfo-card-row-1">
         <button class="lfo-run on">ON</button>
         <span class="lfo-id">LFO·01</span>
@@ -153,23 +164,28 @@ body{
         </select>
       </div>
 
-      <!-- Compact Controls -->
       <div class="lfo-card-row-2">
         <div class="lfo-ctrl-col">
-          <span class="k">SHAPE</span>
+          <div class="lfo-ctrl-header"><span class="k">SHAPE</span></div>
           <select class="lfo-shape"><option>Sine</option></select>
         </div>
         <div class="lfo-ctrl-col">
-          <span class="k"><span>RATE</span> <span class="v">1.20</span></span>
+          <div class="lfo-ctrl-header">
+            <span class="k">RATE</span>
+            <label class="compact-sync-toggle"><input type="checkbox"> SYNC</label>
+            <span class="v">1.20</span>
+          </div>
           <input type="range" class="lfo-range" value="40">
         </div>
         <div class="lfo-ctrl-col">
-          <span class="k"><span>DEPTH</span> <span class="v">+70%</span></span>
+          <div class="lfo-ctrl-header">
+            <span class="k">DEPTH</span>
+            <span class="v">+70%</span>
+          </div>
           <input type="range" class="lfo-range lfo-depth" value="85">
         </div>
       </div>
 
-      <!-- Realistic Output Visualization -->
       <div class="lfo-card-row-3">
         <div class="lfo-viz-header">
           <span class="k">Output</span>
@@ -183,7 +199,7 @@ body{
       </div>
     </div>
 
-    <!-- LFO 2: Negative Example -->
+    <!-- LFO 2: MIDI Sync Example -->
     <div class="lfo-card" style="--lfo-accent: var(--ok);">
       <span class="lfo-ghost">02</span>
       
@@ -197,15 +213,22 @@ body{
 
       <div class="lfo-card-row-2">
         <div class="lfo-ctrl-col">
-          <span class="k">SHAPE</span>
+          <div class="lfo-ctrl-header"><span class="k">SHAPE</span></div>
           <select class="lfo-shape"><option>Saw</option></select>
         </div>
         <div class="lfo-ctrl-col">
-          <span class="k"><span>RATIO</span> <span class="v">1/4</span></span>
+          <div class="lfo-ctrl-header">
+            <span class="k">RATIO</span>
+            <label class="compact-sync-toggle active"><input type="checkbox" checked> SYNC</label>
+            <span class="v">1/4</span>
+          </div>
           <input type="range" class="lfo-range" value="60">
         </div>
         <div class="lfo-ctrl-col">
-          <span class="k"><span>DEPTH</span> <span class="v">-40%</span></span>
+          <div class="lfo-ctrl-header">
+            <span class="k">DEPTH</span>
+            <span class="v">-40%</span>
+          </div>
           <input type="range" class="lfo-range lfo-depth" value="30">
         </div>
       </div>
@@ -237,15 +260,22 @@ body{
 
       <div class="lfo-card-row-2">
         <div class="lfo-ctrl-col">
-          <span class="k">SHAPE</span>
+          <div class="lfo-ctrl-header"><span class="k">SHAPE</span></div>
           <select class="lfo-shape"><option>Square</option></select>
         </div>
         <div class="lfo-ctrl-col">
-          <span class="k"><span>RATE</span> <span class="v">0.50</span></span>
+          <div class="lfo-ctrl-header">
+            <span class="k">RATE</span>
+            <label class="compact-sync-toggle"><input type="checkbox"> SYNC</label>
+            <span class="v">0.50</span>
+          </div>
           <input type="range" class="lfo-range" value="20">
         </div>
         <div class="lfo-ctrl-col">
-          <span class="k"><span>DEPTH</span> <span class="v">0%</span></span>
+          <div class="lfo-ctrl-header">
+            <span class="k">DEPTH</span>
+            <span class="v">0%</span>
+          </div>
           <input type="range" class="lfo-range lfo-depth" value="50">
         </div>
       </div>
