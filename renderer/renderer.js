@@ -2577,7 +2577,7 @@ function refreshLfoStripImpact(index, nowSec = performance.now() / 1000) {
   const target = cfg.target;
   const cap = lfoCapFor(target);
   if (!lfoIsActive(cfg) || cap <= 0) {
-    refs.impactLiveEl.textContent = "No active modulation";
+    refs.impactLiveEl.textContent = "0.00";
     refs.impactDeltaEl.textContent = "ΔLFO 0 · Σ 0";
     applyCenteredMeterFill(refs.impactFillEl, 0);
     return;
@@ -2940,7 +2940,7 @@ function buildLfoStrips() {
 }
 
 function refreshLfoStrip(index) {
-  const r = lfoRefs[index];
+  const r = lfoStripEls[index];
   if (!r) return;
   const c = lfoConfigs[index];
   const clockRatio = lfoClockRatioValue(c);
@@ -3016,7 +3016,7 @@ function updateLfoHint() {
 }
 
 function syncLfoStripFromConfig(index) {
-  const refs = lfoRefs[index];
+  const refs = lfoStripEls[index];
   const cfg = lfoConfigs[index];
   if (!refs) return;
 
@@ -3116,10 +3116,18 @@ function sendAllLfos() {
 }
 
 function syncLfosToEngine() {
-  if (currentScreen !== "mods") return;
+  // Always push the current LFO state to the audio engine. This must run
+  // regardless of the active screen so the engine matches the UI after a
+  // synth (re)start or a preset load.
+  window.spaluterApi.setLfoCount(lfoCount);
+  sendAllLfos();
+
+  // The remaining work only updates the on-screen modulation gauges, so it
+  // can be skipped when the modulation screen is not visible.
+  if (currentMainScreen !== "mods") return;
   const nowSec = Date.now() / 1000;
 
-  lfoRefs.forEach((refs) => {
+  lfoStripEls.forEach((refs) => {
     if (!refs) return;
     const c = lfoConfigs[refs.index];
     if (!c.enabled || c.target === "none") {

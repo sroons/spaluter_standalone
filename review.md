@@ -283,3 +283,75 @@ If the `.app` bundle isn't at the expected path (e.g., the user chose a custom i
 **File:** `main.js` — `createOscClient()` (~line 33)
 
 If port `57131` is already bound (another instance of the app, or any other application), `oscPort.open()` emits an `"error"` event which is handled only by updating the status string. The app continues without a working OSC receive path, meaning status updates and scope data from SuperCollider are silently dropped. There is no fallback port selection and no user-visible indication that OSC is non-functional beyond a brief status message.
+
+---
+---
+
+# Code Review: `mods_update` branch — LFO panel rewrite
+
+**Scope:** changes vs `main` (merge-base `bb64fdc`) — `renderer/renderer.js` (+437/-151), `renderer/styles.css` (+99), `mods-panel-comp.html` (new, 595 lines). Focus: **stability & performance** of the LFO / modulation panel rewrite.
+
+## Critical stability issues
+
+### 1. `currentScreen` is undefined → `syncLfosToEngine()` throws on every call
+`renderer/renderer.js:3119`
+```js
+function syncLfosToEngine() {
+  if (currentScreen !== "mods") return;   // currentScreen is never declared
+```
+The variable used everywhere else is **`currentMainScreen`** (lines 110, 2335, etc.). `currentScreen` is declared nowhere, so reading it throws `ReferenceError: currentScreen is not defined`. Both callers are aborted mid-flow:
+- **Preset/state load** (`renderer.js:3221`) — throw kills the tail of the apply flow (`scheduleParamModAnim()`, waveform redraw).
+- **Synth (re)start** (`renderer.js:3687`) — handler throws *before* running `syncDelayClockParam(true)` on the next line.
+
+**Impact:** hard runtime error on every preset load and every synth start/restart.
+
+### 2. `syncLfosToEngine()` no longer sends anything to the audio engine
+Old (`bb64fdc`):
+```js
+function syncLfosToEngine() {
+  window.spaluterApi.setLfoCount(lfoCount);
+  sendAllLfos();
+}
+```
+New implementation only updates UI gauges and never calls `setLfoCount`/`sendAllLfos`.
+- Call site `renderer.js:3687` is commented *"Re-push LFO state so the engine matches the UI after a (re)start."* — it no longer does this. After a synth restart the engine has **no LFO modulation** until each strip is manually toggled.
+- Preset load (`renderer.js:3221`) no longer bulk-pushes LFOs to the engine either. Live single-strip edits still work (`onChange` → `sendLfo(index)`); bulk application does not.
+
+### 3. `setLfoCount` never called; `sendAllLfos` is dead code
+With #2, `setLfoCount(...)` is invoked nowhere and `sendAllLfos()` (`renderer.js:3112`) has no remaining callers. The engine is never told how many LFOs are active.
+
+### 4. Screen guard also breaks the restart re-push
+Even once `currentScreen` is corrected to `currentMainScreen`, `if (currentMainScreen !== "mods") return;` makes the function a no-op when the user isn't on the mods screen — but the synth-restart re-push (`renderer.js:3687`) must run regardless of the visible screen. Gating engine sync on the active screen is wrong for that path.
+
+## Performance issues
+
+### 5. Invisible dummy canvas is fully re-rendered every animation frame
+`createLfoStrip` replaced the real waveform canvas with a **detached** dummy never added to the DOM:
+```js
+const dummyCanvas = document.createElement("canvas"); // never appended
+...
+canvas: dummyCanvas, // Removed the real canvas!
+```
+The cursor RAF loop still draws to it every tick (`lfoCursorTick`, `renderer.js:3253` → `drawLfoThumb(r.canvas, ...)`). `drawLfoThumb` runs `ensureLfoThumbCache` (allocates offscreen canvases), `getContext`, `clearRect`, `drawImage`, `drawLfoCursor` — output that is **never visible**. Up to 8 LFOs = wasted CPU + canvas allocation every ~50 ms. Matters on the Raspberry Pi target. **Fix:** stop calling `drawLfoThumb` now that the canvas is gone.
+
+### 6. Per-frame writes to detached/unused elements
+`refreshLfoStripImpact` (`renderer.js:2573`) runs every RAF tick and writes `refs.impactDeltaEl`, now a throw-away element (`impactDeltaEl: document.createElement("div") // unused`). Dead work in a hot loop.
+
+## Correctness issues (related)
+
+### 7. Two writers fight over the same gauge DOM with different semantics
+`refreshLfoStripImpact` (per-frame) writes `impactLiveEl` as `"base → live"` text and drives `impactFillEl` via `applyCenteredMeterFill` (toggles only `neg`). `syncLfosToEngine` writes the same `impactLiveEl` as a signed `"+0.05"` delta and sets `impactFillEl.className = "lfo-bipolar-fill pos|neg"` with different width math. Class handling is inconsistent (`applyCenteredMeterFill` never clears a `pos` it doesn't set), so the fill can stick in a stale state. The new bipolar cursor (`impactCursor`) is only updated inside `syncLfosToEngine` — which effectively never runs per-frame (and currently throws), so the live cursor never animates.
+
+### 8. Single slider aliased for both Rate and Ratio
+`const ratioEl = rateEl;` — the same `<input>` has `min`/`max`/`step` mutated at runtime when toggling MIDI clock. If `refreshLfoStrip`/`syncLfoStripFromConfig` runs mid mode-switch, the slider value can be read against the wrong range briefly. Lower priority but fragile.
+
+## Minor / housekeeping
+- `mods-panel-comp.html` (595 lines) is a standalone mockup not referenced by `index.html` or any renderer code — dead artifact committed to the branch.
+- Stray double blank lines around refactored functions (`renderer.js` ~2934, 3018, 3072).
+- Several `refs` fields are now permanent unused placeholders (`impactDeltaEl`, `metaEl`); `clockRatioEl` is no longer referenced by `refreshLfoStrip`. Prune the refs object.
+
+## Suggested priority order
+1. Fix `currentScreen` → `currentMainScreen` (**#1** — hard crash).
+2. Restore engine push in `syncLfosToEngine` (`setLfoCount` + `sendAllLfos`), separate it from the UI-gauge update, and don't gate the engine push on the active screen (**#2, #3, #4**).
+3. Stop rendering the invisible dummy canvas (**#5**).
+4. Consolidate the gauge writers and animate the new cursor from the RAF loop (**#6, #7**).
