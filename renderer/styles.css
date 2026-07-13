@@ -263,15 +263,15 @@ input.edit-slider{ height:30px; border:none; background:transparent; }
 .lfo-card-grid{ flex:1; min-height:0; overflow-y:auto; display:grid; grid-auto-rows:max-content;
   grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; padding-right:4px; align-content:start; }
 .lfo-card{ position:relative; overflow:hidden; background:var(--ink-2);
-  border:1px solid var(--line-2); border-top:2px solid var(--lfo-accent,var(--acid));
-  display:flex; flex-direction:column; }
+  border:1px solid var(--line-2); border-left:4px solid var(--lfo-accent,var(--acid));
+  display:flex; flex-direction:column; padding: 18px 20px; gap: 14px; }
 .lfo-card.lfo-disabled{ border-color:var(--line); border-top-color:rgba(233,227,214,.2); }
 .lfo-card.lfo-disabled .lfo-id{ color:var(--mute-2); }
 .lfo-card.lfo-disabled .lfo-field .v{ color:var(--paper-2); }
 .lfo-card.lfo-disabled .lfo-wv{ opacity:.7; }
-.lfo-ghost{ position:absolute; right:-6px; bottom:-26px; font-family:var(--dinc);
-  font-weight:700; font-size:118px; line-height:1; color:rgba(255,255,255,.04);
-  pointer-events:none; }
+.lfo-ghost{ position:absolute; right:-6px; bottom:-20px; font-family:var(--dinc);
+  font-weight:700; font-size:100px; line-height:1; color:rgba(255,255,255,.03);
+  pointer-events:none; z-index:0; }
 .lfo-card-head{ display:flex; align-items:center; justify-content:space-between;
   padding:10px 12px; border-bottom:1px solid var(--line-2); min-height:56px; }
 .lfo-id{ font-family:var(--din); font-weight:700; font-size:14px; letter-spacing:.05em;
@@ -528,7 +528,7 @@ pre#log{ margin:0; padding:8px; height:200px; overflow:auto; background:#070708;
 .lfo-bipolar-cursor.neg { left: 50%; }
 
 .lfo-card-row-2 { display: grid; grid-template-columns: 1fr 2.1fr; gap: 16px; position:relative; z-index:1; margin-top: 12px;}
-.lfo-ctrl-col { display: flex; flex-direction: column; gap: 6px; }
+.lfo-ctrl-col { display: flex; flex-direction: column; gap: 4px; }
 
 .lfo-ctrl-header { display: flex; justify-content: space-between; align-items: center; min-height: 20px;}
 .lfo-ctrl-header .k { font-family:var(--mono); font-size:10px; color:var(--mute-2);
@@ -554,9 +554,9 @@ pre#log{ margin:0; padding:8px; height:200px; overflow:auto; background:#070708;
 .lfo-sync-toggle.active { color: var(--shock); border-color: rgba(255, 111, 36, 0.4); background: rgba(255, 111, 36, 0.1); }
 
 .lfo-sliders-group { display: flex; flex-direction: column; gap: 16px; }
-.lfo-slider-row { display: flex; flex-direction: column; gap: 6px; }
+.lfo-slider-row { display: flex; flex-direction: column; gap: 2px; }
 
-.lfo-range{ height:44px; width: 100%; border:none; background:transparent; margin: 0; cursor:pointer;}
+.lfo-range{ height:36px; width: 100%; border:none; background:transparent; margin: 0; cursor:pointer;}
 .lfo-range::-webkit-slider-runnable-track{ height:12px; background:#070708; border:1px solid var(--line); border-radius: 6px; }
 .lfo-range::-webkit-slider-thumb{ -webkit-appearance:none; appearance:none; width: 16px; height: 28px; background: var(--paper); margin-top: -9px; border-radius: 3px; border: 1px solid var(--paper-ink);}
 .lfo-range.lfo-depth::-webkit-slider-thumb{ background: var(--shock); border-color: #000; }

@@ -2940,7 +2940,7 @@ function buildLfoStrips() {
 }
 
 function refreshLfoStrip(index) {
-  const r = lfoStripEls[index];
+  const r = lfoRefs[index];
   if (!r) return;
   const c = lfoConfigs[index];
   const clockRatio = lfoClockRatioValue(c);
@@ -2949,41 +2949,54 @@ function refreshLfoStrip(index) {
     ? clamp(midiClockHz * clockRatio, LFO_RATE_MIN, LFO_RATE_MAX)
     : c.rate;
   const running = lfoIsActive(c);
+
   r.strip.classList.toggle("lfo-disabled", !c.enabled);
   r.strip.classList.toggle("lfo-running", running);
-  if (r.metaEl) {
-    const tgt = LFO_TARGET_BY_NAME.get(c.target);
-    r.metaEl.textContent = `${tgt ? tgt.label : "none"} • ${LFO_SHAPE_NAMES[c.shape]} • ${c.rate.toFixed(2)} Hz`;
-  }
+
   if (r.runBtn) {
-    r.runBtn.textContent = c.enabled ? "RUNNING" : "OFF";
+    r.runBtn.textContent = c.enabled ? "ON" : "OFF";
     r.runBtn.classList.toggle("on", c.enabled);
   }
   if (r.clockCheck) r.clockCheck.checked = Boolean(c.useMidiClock);
+
+  // Rate/Ratio Label
   if (r.rateLabelVal) {
-    r.rateLabelVal.textContent = c.useMidiClock && !hasClockTempo
-      ? "CLOCK —"
-      : `${displayedRate.toFixed(2)} Hz`;
+    if (c.useMidiClock) {
+      r.rateLabelVal.textContent = lfoClockRatioLabel(clockRatio);
+    } else {
+      r.rateLabelVal.textContent = `${displayedRate.toFixed(2)} Hz`;
+    }
   }
-  if (r.clockRatioLabelVal) r.clockRatioLabelVal.textContent = lfoClockRatioLabel(clockRatio);
-  if (r.clockRatioEl) {
-    r.clockRatioEl.value = String(lfoClockRatioIndexFromValue(clockRatio));
-    r.clockRatioEl.disabled = !c.useMidiClock;
-    r.clockRatioEl.classList.toggle("is-locked", !c.useMidiClock);
-    refreshSliderFill(r.clockRatioEl, LFO_PRIMARY_ACCENT);
-  }
-  if (r.depthLabelVal) r.depthLabelVal.textContent = `${Math.round(lfoDepthFractionSigned(c) * 100)}%`;
+
+  // Rate/Ratio Slider Value
   if (r.rateEl) {
-    r.rateEl.disabled = Boolean(c.useMidiClock);
-    r.rateEl.classList.toggle("is-locked", Boolean(c.useMidiClock));
-    r.rateEl.value = String(lfoRateToSliderPos(displayedRate));
+    let newVal;
+    if (c.useMidiClock) {
+      newVal = String(lfoClockRatioIndexFromValue(clockRatio));
+    } else {
+      newVal = String(lfoRateToSliderPos(displayedRate));
+    }
+    // ONLY set if different to prevent canceling drag events
+    if (r.rateEl.value !== newVal) {
+      r.rateEl.value = newVal;
+    }
     refreshSliderFill(r.rateEl, LFO_PRIMARY_ACCENT);
   }
-  if (r.depthEl) refreshSliderFill(r.depthEl, LFO_PRIMARY_ACCENT);
-  drawLfoThumb(r.canvas, c, index);
-  refreshLfoStripImpact(index);
-  refreshLfoImpactMatrix(undefined, true);
+
+  // Depth Label
+  if (r.depthLabelVal) r.depthLabelVal.textContent = `${(lfoDepthFractionSigned(c) * 100).toFixed(0)}%`;
+  
+  // Depth Slider Value
+  if (r.depthEl) {
+    const newDepthVal = String(lfoDepthFractionSigned(c));
+    if (r.depthEl.value !== newDepthVal) {
+      r.depthEl.value = newDepthVal;
+    }
+    refreshSliderFill(r.depthEl, LFO_PRIMARY_ACCENT);
+  }
 }
+
+
 
 function lfoActiveCount() {
   let n = 0;
@@ -3030,16 +3043,10 @@ function syncLfoStripFromConfig(index) {
   refs.depthEl.value = String(lfoDepthFractionSigned(cfg));
   refs.enableInput.checked = cfg.enabled;
 
-  if (cfg.enabled) {
-    refs.runBtn.textContent = "ON";
-    refs.runBtn.classList.add("on");
-    refs.strip.classList.remove("lfo-disabled");
-  } else {
-    refs.runBtn.textContent = "OFF";
-    refs.runBtn.classList.remove("on");
-    refs.strip.classList.add("lfo-disabled");
-  }
+  // Let refreshLfoStrip handle updating the labels, buttons, and slider fills
+  refreshLfoStrip(index);
 }
+
 
 
 function rebuildLfoOverview() {
