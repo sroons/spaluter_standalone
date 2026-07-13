@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Mods Panel Proposal</title>
+<style>
+/* Base aesthetics copied directly from styles.css */
+@font-face { font-family:"DINCond"; src:local("DIN Condensed Bold"); font-weight:700; }
+@font-face { font-family:"DINAlt"; src:local("DIN Alternate Bold"); font-weight:700; }
+
+:root{
+  --ink:#0b0b0d; --ink-2:#131318; --ink-3:#1b1b22;
+  --paper:#e9e3d6; --paper-2:#d8d1c0; --paper-ink:#16120b;
+  --mute:#74737e; --mute-2:#9a99a4;
+  --line:rgba(233,227,214,.10); --line-2:rgba(233,227,214,.18);
+  --shock:#ff6f24; --shock-dim:#c2531a;
+  --ice:#cfe6ff; --acid:#1f8bff; --ok:#8fe39b; --warn:#ffd23a; --red:#ff5a5f;
+  --mono:"Andale Mono","Menlo",monospace;
+  --din:"DINAlt","DIN Alternate",sans-serif;
+  --dinc:"DINCond","DIN Condensed",Impact,sans-serif;
+}
+
+*{ box-sizing:border-box; margin:0; padding:0;
+  font-family:"Helvetica Neue",Arial,sans-serif; }
+
+body{
+  background:radial-gradient(120% 90% at 78% -10%, #17171d 0%, var(--ink) 55%), var(--ink);
+  color:var(--paper); -webkit-font-smoothing:antialiased;
+  display:flex; flex-direction:column; user-select:none;
+  padding: 20px;
+  height: 100vh;
+}
+
+/* Modbar */
+.modbar{ flex:0 0 auto; display:flex; align-items:center; justify-content:space-between;
+  padding:10px 12px; background:var(--ink-2); border:1px solid var(--line-2); gap:10px; margin-bottom: 12px;}
+.modbar-title{ font-family:var(--din); font-weight:700; font-size:15px; text-transform:uppercase;
+  letter-spacing:.04em; color:var(--paper); }
+.modbar-title b{ color:var(--shock); }
+.modbar-meta{ font-family:var(--mono); font-size:11px; color:var(--mute-2); letter-spacing:.04em; }
+
+/* Grid */
+.lfo-card-grid{ flex:1; overflow-y:auto; display:grid; grid-auto-rows:max-content;
+  grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; align-content:start; padding-bottom: 20px;}
+
+/* Proposed Card Design */
+.lfo-card{ position:relative; overflow:hidden; background:var(--ink-2);
+  border:1px solid var(--line-2); border-left:4px solid var(--lfo-accent,var(--acid));
+  display:flex; flex-direction:column; padding: 10px 12px; gap: 12px; }
+
+.lfo-ghost{ position:absolute; right:-6px; bottom:-20px; font-family:var(--dinc);
+  font-weight:700; font-size:100px; line-height:1; color:rgba(255,255,255,.03);
+  pointer-events:none; z-index:0; }
+
+/* Row 1: Header / Target */
+.lfo-card-row-1 { display: flex; align-items: center; gap: 12px; position:relative; z-index:1; }
+.lfo-run{ font-family:var(--mono); font-size:11px; min-height:40px; padding:0 16px;
+  background:transparent; border:1px solid var(--line-2); color:var(--mute-2); letter-spacing:.08em; cursor:pointer;}
+.lfo-run.on{ background:var(--shock); border-color:var(--shock); color:#fff; }
+.lfo-id{ font-family:var(--din); font-weight:700; font-size:15px; letter-spacing:.05em;
+  color:var(--lfo-accent,var(--acid)); min-width: 50px;}
+.lfo-target-sel{
+  flex:1; min-height:40px; padding:0 30px 0 10px;
+  border:1px solid var(--line-2); background-color:#070708;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--mute-2) 50%),
+    linear-gradient(135deg, var(--mute-2) 50%, transparent 50%);
+  background-position:calc(100% - 16px) calc(50% + 1px), calc(100% - 11px) calc(50% + 1px);
+  background-size:5px 5px, 5px 5px;
+  background-repeat:no-repeat;
+  appearance:none; -webkit-appearance:none;
+  font-family:var(--din); font-weight:700; font-size:14px; letter-spacing:.03em;
+  text-transform:uppercase; color:var(--paper); cursor:pointer;
+}
+
+/* Row 2: Controls */
+.lfo-card-row-2 { display: grid; grid-template-columns: 1fr 1.5fr 1.5fr; gap: 16px; align-items: end; position:relative; z-index:1;}
+.lfo-ctrl-col { display: flex; flex-direction: column; gap: 6px; }
+.lfo-ctrl-col .k { font-family:var(--mono); font-size:10px; color:var(--mute-2);
+  letter-spacing:.07em; text-transform:uppercase; display: flex; justify-content: space-between;}
+.lfo-ctrl-col .v { color: var(--shock); font-family: var(--dinc); font-size: 16px; line-height: 1; letter-spacing: 0.05em; }
+
+.lfo-shape {
+  min-height:40px; padding:0 10px;
+  border:1px solid var(--line-2); background-color:#070708;
+  appearance:none; -webkit-appearance:none;
+  font-family:var(--din); font-weight:700; font-size:13px; letter-spacing:.03em;
+  text-transform:uppercase; color:var(--paper); cursor:pointer;
+}
+
+.lfo-range{ height:40px; width: 100%; border:none; background:transparent; margin: 0; cursor:pointer;}
+.lfo-range::-webkit-slider-runnable-track{ height:12px; background:#070708; border:1px solid var(--line); border-radius: 6px; }
+.lfo-range::-webkit-slider-thumb{ -webkit-appearance:none; appearance:none; width: 16px; height: 24px; background: var(--paper); margin-top: -7px; border-radius: 3px; border: 1px solid var(--paper-ink);}
+.lfo-range.lfo-depth::-webkit-slider-thumb{ background: var(--shock); border-color: #000; }
+
+/* Row 3: Output Viz */
+.lfo-card-row-3 { margin-top: 8px; position:relative; z-index:1; padding-top: 12px; border-top: 1px solid var(--line); }
+.lfo-viz-header { display: flex; justify-content: space-between; margin-bottom: 8px; }
+.lfo-viz-header .k { font-family:var(--mono); font-size:10px; color:var(--mute-2); letter-spacing:.07em; text-transform:uppercase; }
+.lfo-viz-header .v { font-family:var(--mono); font-size:10px; color:var(--paper); letter-spacing:.05em; }
+
+.lfo-bipolar-track {
+  position: relative; height: 16px; background: rgba(0,0,0,0.5); border: 1px solid var(--line-2);
+  border-radius: 8px; overflow: hidden; box-shadow: inset 0 1px 3px rgba(0,0,0,0.8);
+}
+.lfo-bipolar-center {
+  position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: rgba(233,227,214,.3); z-index: 2;
+}
+.lfo-bipolar-fill {
+  position: absolute; top: 0; bottom: 0; background: var(--shock); opacity: 0.6; z-index: 1;
+}
+/* Positive goes right from center */
+.lfo-bipolar-fill.pos { left: 50%; width: 35%; }
+/* Negative goes left from center */
+.lfo-bipolar-fill.neg { right: 50%; width: 20%; background: var(--acid); }
+
+.lfo-bipolar-cursor {
+  position: absolute; top: -2px; bottom: -2px; width: 4px; background: #fff; z-index: 3;
+  box-shadow: 0 0 6px rgba(255,255,255,0.8); border-radius: 2px;
+}
+.lfo-bipolar-cursor.pos { left: 85%; }
+.lfo-bipolar-cursor.neg { left: 30%; }
+
+
+/* Animation for comp */
+@keyframes lfo1 { 0% { left: 50%; width: 0%; } 50% { left: 50%; width: 35%; } 100% { left: 50%; width: 0%; } }
+@keyframes cursor1 { 0% { left: 50%; } 50% { left: 85%; } 100% { left: 50%; } }
+
+.anim-fill-1 { animation: lfo1 2s infinite ease-in-out; transform-origin: left center; }
+.anim-cursor-1 { animation: cursor1 2s infinite ease-in-out; }
+
+</style>
+</head>
+<body>
+
+  <div class="modbar">
+    <span class="modbar-title">Proposed LFO Design · <b>Easier Navigation & Clearer Viz</b></span>
+    <span class="modbar-meta">This layout shrinks the LFO card vertically by ~50%, replacing the canvas waveform with a real-time output gauge.</span>
+  </div>
+
+  <div class="lfo-card-grid">
+    
+    <!-- LFO 1: Positive Example -->
+    <div class="lfo-card" style="--lfo-accent: var(--acid);">
+      <span class="lfo-ghost">01</span>
+      
+      <!-- Compact Header/Target -->
+      <div class="lfo-card-row-1">
+        <button class="lfo-run on">ON</button>
+        <span class="lfo-id">LFO·01</span>
+        <select class="lfo-target-sel">
+          <option>Pulsaret Size</option>
+        </select>
+      </div>
+
+      <!-- Compact Controls -->
+      <div class="lfo-card-row-2">
+        <div class="lfo-ctrl-col">
+          <span class="k">SHAPE</span>
+          <select class="lfo-shape"><option>Sine</option></select>
+        </div>
+        <div class="lfo-ctrl-col">
+          <span class="k"><span>RATE</span> <span class="v">1.20</span></span>
+          <input type="range" class="lfo-range" value="40">
+        </div>
+        <div class="lfo-ctrl-col">
+          <span class="k"><span>DEPTH</span> <span class="v">+70%</span></span>
+          <input type="range" class="lfo-range lfo-depth" value="85">
+        </div>
+      </div>
+
+      <!-- Realistic Output Visualization -->
+      <div class="lfo-card-row-3">
+        <div class="lfo-viz-header">
+          <span class="k">Output</span>
+          <span class="v">+0.700</span>
+        </div>
+        <div class="lfo-bipolar-track">
+          <div class="lfo-bipolar-center"></div>
+          <div class="lfo-bipolar-fill pos anim-fill-1"></div>
+          <div class="lfo-bipolar-cursor pos anim-cursor-1"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- LFO 2: Negative Example -->
+    <div class="lfo-card" style="--lfo-accent: var(--ok);">
+      <span class="lfo-ghost">02</span>
+      
+      <div class="lfo-card-row-1">
+        <button class="lfo-run on">ON</button>
+        <span class="lfo-id">LFO·02</span>
+        <select class="lfo-target-sel">
+          <option>Formant 1</option>
+        </select>
+      </div>
+
+      <div class="lfo-card-row-2">
+        <div class="lfo-ctrl-col">
+          <span class="k">SHAPE</span>
+          <select class="lfo-shape"><option>Saw</option></select>
+        </div>
+        <div class="lfo-ctrl-col">
+          <span class="k"><span>RATIO</span> <span class="v">1/4</span></span>
+          <input type="range" class="lfo-range" value="60">
+        </div>
+        <div class="lfo-ctrl-col">
+          <span class="k"><span>DEPTH</span> <span class="v">-40%</span></span>
+          <input type="range" class="lfo-range lfo-depth" value="30">
+        </div>
+      </div>
+
+      <div class="lfo-card-row-3">
+        <div class="lfo-viz-header">
+          <span class="k">Output (Inverted)</span>
+          <span class="v">-0.400</span>
+        </div>
+        <div class="lfo-bipolar-track">
+          <div class="lfo-bipolar-center"></div>
+          <div class="lfo-bipolar-fill neg" style="width: 20%; right: 50%; left: auto;"></div>
+          <div class="lfo-bipolar-cursor neg" style="left: 30%;"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- LFO 3: Off Example -->
+    <div class="lfo-card" style="--lfo-accent: var(--warn); opacity: 0.7;">
+      <span class="lfo-ghost">03</span>
+      
+      <div class="lfo-card-row-1">
+        <button class="lfo-run">OFF</button>
+        <span class="lfo-id">LFO·03</span>
+        <select class="lfo-target-sel">
+          <option>None</option>
+        </select>
+      </div>
+
+      <div class="lfo-card-row-2">
+        <div class="lfo-ctrl-col">
+          <span class="k">SHAPE</span>
+          <select class="lfo-shape"><option>Square</option></select>
+        </div>
+        <div class="lfo-ctrl-col">
+          <span class="k"><span>RATE</span> <span class="v">0.50</span></span>
+          <input type="range" class="lfo-range" value="20">
+        </div>
+        <div class="lfo-ctrl-col">
+          <span class="k"><span>DEPTH</span> <span class="v">0%</span></span>
+          <input type="range" class="lfo-range lfo-depth" value="50">
+        </div>
+      </div>
+
+      <div class="lfo-card-row-3">
+        <div class="lfo-viz-header">
+          <span class="k">Output</span>
+          <span class="v">0.000</span>
+        </div>
+        <div class="lfo-bipolar-track">
+          <div class="lfo-bipolar-center"></div>
+          <div class="lfo-bipolar-cursor" style="left: 50%;"></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</body>
+</html>
