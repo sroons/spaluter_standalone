@@ -225,7 +225,7 @@ input.edit-slider{ height:30px; border:none; background:transparent; }
   letter-spacing:.04em; color:var(--paper); }
 .modbar-title b{ color:var(--shock); }
 .modbar-meta{ font-family:var(--mono); font-size:11px; color:var(--mute-2); letter-spacing:.04em; }
-.lfo-impact-matrix{
+.lfo-impact-matrix{ display: none !important;
   flex:0 0 auto; display:flex; flex-direction:column; gap:4px;
   padding:8px 10px; background:var(--ink-2); border:1px solid var(--line-2);
   max-height:148px; overflow-y:auto;
@@ -473,3 +473,90 @@ pre#log{ margin:0; padding:8px; height:200px; overflow:auto; background:#070708;
 
 /* registry of param controls is never shown */
 #paramRegistry{ display:none !important; }
+
+/* === NEW LFO MODS PANEL PROPOSAL CSS === */
+
+.lfo-card-row-1 { display: grid; grid-template-columns: 1fr 2.1fr; gap: 16px; position:relative; z-index:1; }
+
+.lfo-row-1-left { display: flex; align-items: center; gap: 10px; }
+.lfo-run{ font-family:var(--mono); font-size:11px; min-height:44px; padding:0 12px;
+  background:transparent; border:1px solid var(--line-2); color:var(--mute-2); letter-spacing:.08em; cursor:pointer;}
+.lfo-run.on{ background:var(--shock); border-color:var(--shock); color:#fff; }
+.lfo-id{ font-family:var(--din); font-weight:700; font-size:15px; letter-spacing:.05em;
+  color:var(--lfo-accent,var(--acid)); }
+
+.lfo-row-1-right { display: flex; align-items: center; gap: 16px; }
+
+.lfo-target-sel{
+  flex: 0 0 160px; min-height:44px; padding:0 24px 0 10px;
+  border:1px solid var(--line-2); background-color:#070708;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--mute-2) 50%),
+    linear-gradient(135deg, var(--mute-2) 50%, transparent 50%);
+  background-position:calc(100% - 12px) calc(50% + 1px), calc(100% - 7px) calc(50% + 1px);
+  background-size:5px 5px, 5px 5px;
+  background-repeat:no-repeat;
+  appearance:none; -webkit-appearance:none;
+  font-family:var(--din); font-weight:700; font-size:13px; letter-spacing:.03em;
+  text-transform:uppercase; color:var(--paper); cursor:pointer;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+.lfo-viz-header { display: flex; flex-direction: column; flex: 1; justify-content: center; height: 44px; padding: 0 4px; }
+.lfo-viz-labels { display: flex; justify-content: space-between; margin-bottom: 5px; }
+.lfo-viz-labels .k { font-family:var(--mono); font-size:9px; color:var(--mute-2); letter-spacing:.07em; text-transform:uppercase; }
+.lfo-viz-labels .v { font-family:var(--mono); font-size:9px; color:var(--paper); letter-spacing:.05em; }
+
+.lfo-bipolar-track {
+  position: relative; height: 10px; background: rgba(0,0,0,0.5); border: 1px solid var(--line-2);
+  border-radius: 5px; overflow: hidden; box-shadow: inset 0 1px 3px rgba(0,0,0,0.8);
+}
+.lfo-bipolar-center {
+  position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: rgba(233,227,214,.3); z-index: 2;
+}
+.lfo-bipolar-fill {
+  position: absolute; top: 0; bottom: 0; background: var(--shock); opacity: 0.6; z-index: 1;
+}
+.lfo-bipolar-fill.pos { left: 50%; width: 0%; }
+.lfo-bipolar-fill.neg { right: 50%; width: 0%; background: var(--acid); left: auto;}
+
+.lfo-bipolar-cursor {
+  position: absolute; top: -1px; bottom: -1px; width: 3px; background: #fff; z-index: 3;
+  box-shadow: 0 0 6px rgba(255,255,255,0.8); border-radius: 2px;
+}
+.lfo-bipolar-cursor.pos { left: 50%; }
+.lfo-bipolar-cursor.neg { left: 50%; }
+
+.lfo-card-row-2 { display: grid; grid-template-columns: 1fr 2.1fr; gap: 16px; position:relative; z-index:1; margin-top: 12px;}
+.lfo-ctrl-col { display: flex; flex-direction: column; gap: 6px; }
+
+.lfo-ctrl-header { display: flex; justify-content: space-between; align-items: center; min-height: 20px;}
+.lfo-ctrl-header .k { font-family:var(--mono); font-size:10px; color:var(--mute-2);
+  letter-spacing:.07em; text-transform:uppercase; }
+.lfo-ctrl-header .v { color: var(--shock); font-family: var(--dinc); font-size: 16px; line-height: 1; letter-spacing: 0.05em; }
+
+.lfo-shape {
+  min-height:44px; padding:0 10px;
+  border:1px solid var(--line-2); background-color:#070708;
+  appearance:none; -webkit-appearance:none;
+  font-family:var(--din); font-weight:700; font-size:13px; letter-spacing:.03em;
+  text-transform:uppercase; color:var(--paper); cursor:pointer;
+}
+
+.lfo-sync-toggle {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 44px;
+  font-family: var(--din); font-size: 12px; text-transform: uppercase;
+  color: var(--paper-2); background: rgba(0,0,0,0.3); border: 1px solid var(--line-2);
+  cursor: pointer; letter-spacing: 0.05em;
+}
+.lfo-sync-toggle input { margin: 0; width: 14px; height: 14px; accent-color: var(--shock); }
+.lfo-sync-toggle.active { color: var(--shock); border-color: rgba(255, 111, 36, 0.4); background: rgba(255, 111, 36, 0.1); }
+
+.lfo-sliders-group { display: flex; flex-direction: column; gap: 16px; }
+.lfo-slider-row { display: flex; flex-direction: column; gap: 6px; }
+
+.lfo-range{ height:44px; width: 100%; border:none; background:transparent; margin: 0; cursor:pointer;}
+.lfo-range::-webkit-slider-runnable-track{ height:12px; background:#070708; border:1px solid var(--line); border-radius: 6px; }
+.lfo-range::-webkit-slider-thumb{ -webkit-appearance:none; appearance:none; width: 16px; height: 28px; background: var(--paper); margin-top: -9px; border-radius: 3px; border: 1px solid var(--paper-ink);}
+.lfo-range.lfo-depth::-webkit-slider-thumb{ background: var(--shock); border-color: #000; }

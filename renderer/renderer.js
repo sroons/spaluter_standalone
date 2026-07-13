@@ -2653,129 +2653,28 @@ function createLfoStrip(index) {
   ghost.className = "lfo-ghost";
   ghost.textContent = String(index + 1).padStart(2, "0");
 
-  const head = document.createElement("div");
-  head.className = "lfo-card-head";
-  const idEl = document.createElement("span");
-  idEl.className = "lfo-id";
-  idEl.textContent = `LFO·${String(index + 1).padStart(2, "0")}`;
+  // Row 1: Power, ID, Target, Output Viz
+  const row1 = document.createElement("div");
+  row1.className = "lfo-card-row-1";
+
+  const row1Left = document.createElement("div");
+  row1Left.className = "lfo-row-1-left";
+  
   const runBtn = document.createElement("button");
   runBtn.type = "button";
   runBtn.className = "lfo-run";
-  runBtn.textContent = "OFF";
-  head.append(idEl, runBtn);
+  runBtn.textContent = cfg.enabled ? "ON" : "OFF";
+  if (cfg.enabled) runBtn.classList.add("on");
+  
+  const idEl = document.createElement("span");
+  idEl.className = "lfo-id";
+  idEl.textContent = String(index + 1).padStart(2, "0");
+  
+  row1Left.append(runBtn, idEl);
 
-  const waveBox = document.createElement("div");
-  waveBox.className = "lfo-wv-box";
-  const canvas = document.createElement("canvas");
-  canvas.className = "lfo-wv";
-  canvas.width = 240;
-  canvas.height = 56;
-  waveBox.appendChild(canvas);
+  const row1Right = document.createElement("div");
+  row1Right.className = "lfo-row-1-right";
 
-  const body = document.createElement("div");
-  body.className = "lfo-card-body";
-
-  // Shape field — value styled select
-  const shapeRow = document.createElement("div");
-  shapeRow.className = "lfo-field";
-  const shapeKey = document.createElement("span");
-  shapeKey.className = "k";
-  shapeKey.textContent = "Shape";
-  const shapeSel = document.createElement("select");
-  shapeSel.className = "lfo-shape";
-  LFO_SHAPE_NAMES.forEach((shapeName, shapeIdx) => {
-    const option = document.createElement("option");
-    option.value = String(shapeIdx);
-    option.textContent = shapeName;
-    shapeSel.appendChild(option);
-  });
-  shapeSel.value = String(cfg.shape);
-  shapeRow.append(shapeKey, shapeSel);
-
-  const clockRow = document.createElement("div");
-  clockRow.className = "lfo-field lfo-clock-row";
-  const clockKey = document.createElement("span");
-  clockKey.className = "k";
-  clockKey.textContent = "Rate Source";
-  const clockToggle = document.createElement("label");
-  clockToggle.className = "lfo-clock-toggle";
-  const clockCheck = document.createElement("input");
-  clockCheck.type = "checkbox";
-  clockCheck.className = "lfo-clock-check";
-  clockCheck.checked = Boolean(cfg.useMidiClock);
-  const clockText = document.createElement("span");
-  clockText.textContent = "Use MIDI Clock";
-  clockToggle.append(clockCheck, clockText);
-  clockRow.append(clockKey, clockToggle);
-
-  // Rate field — big value + thin slider
-  const rateRow = document.createElement("div");
-  rateRow.className = "lfo-field lfo-field-slider";
-  const rateTop = document.createElement("div");
-  rateTop.className = "lfo-field-top";
-  const rateKey = document.createElement("span");
-  rateKey.className = "k";
-  rateKey.textContent = "Rate";
-  const rateVal = document.createElement("span");
-  rateVal.className = "v is-accent";
-  rateTop.append(rateKey, rateVal);
-  const rateEl = document.createElement("input");
-  rateEl.type = "range";
-  rateEl.className = "lfo-range";
-  rateEl.min = "0";
-  rateEl.max = "1";
-  rateEl.step = "0.001";
-  rateEl.value = String(lfoRateToSliderPos(cfg.rate));
-  rateRow.append(rateTop, rateEl);
-
-  const ratioRow = document.createElement("div");
-  ratioRow.className = "lfo-field lfo-field-slider";
-  const ratioTop = document.createElement("div");
-  ratioTop.className = "lfo-field-top";
-  const ratioKey = document.createElement("span");
-  ratioKey.className = "k";
-  ratioKey.textContent = "Clock Div/Mult";
-  const ratioVal = document.createElement("span");
-  ratioVal.className = "v is-accent";
-  ratioTop.append(ratioKey, ratioVal);
-  const ratioEl = document.createElement("input");
-  ratioEl.type = "range";
-  ratioEl.className = "lfo-range lfo-clock-ratio-range";
-  ratioEl.min = "0";
-  ratioEl.max = String(LFO_CLOCK_RATIO_OPTIONS.length - 1);
-  ratioEl.step = "1";
-  ratioEl.value = String(lfoClockRatioIndexFromValue(cfg.clockRatio));
-  ratioRow.append(ratioTop, ratioEl);
-
-  // Depth field — big value + thin slider
-  const depthRow = document.createElement("div");
-  depthRow.className = "lfo-field lfo-field-slider lfo-field-slider-depth";
-  const depthTop = document.createElement("div");
-  depthTop.className = "lfo-field-top";
-  const depthKey = document.createElement("span");
-  depthKey.className = "k";
-  depthKey.textContent = "Depth";
-  const depthVal = document.createElement("span");
-  depthVal.className = "v is-accent";
-  depthTop.append(depthKey, depthVal);
-  const depthEl = document.createElement("input");
-  depthEl.type = "range";
-  depthEl.className = "lfo-range";
-  depthEl.dataset.bipolar = "1";
-  depthEl.min = "-1";
-  depthEl.max = "1";
-  depthEl.step = "0.01";
-  depthEl.value = String(lfoDepthFractionSigned(cfg));
-  depthRow.append(depthTop, depthEl);
-
-  // Bus target — routed box
-  const targetBox = document.createElement("div");
-  targetBox.className = "lfo-route";
-  const targetKey = document.createElement("div");
-  targetKey.className = "k";
-  targetKey.textContent = "BUS TARGET";
-  const targetVal = document.createElement("div");
-  targetVal.className = "lfo-route-v";
   const targetSel = document.createElement("select");
   targetSel.className = "lfo-target-sel";
   LFO_TARGETS.forEach((t) => {
@@ -2785,25 +2684,136 @@ function createLfoStrip(index) {
     targetSel.appendChild(option);
   });
   targetSel.value = cfg.target;
-  targetVal.appendChild(targetSel);
 
-  const impact = document.createElement("div");
-  impact.className = "lfo-target-impact";
-  const impactKey = document.createElement("div");
-  impactKey.className = "k";
-  impactKey.textContent = "Target Delta";
-  const impactLive = document.createElement("div");
-  impactLive.className = "lfo-target-impact-live";
-  const impactDelta = document.createElement("div");
-  impactDelta.className = "lfo-target-impact-delta";
-  const impactBar = document.createElement("div");
-  impactBar.className = "lfo-target-impact-bar";
-  const impactFill = document.createElement("span");
-  impactFill.className = "lfo-target-impact-fill";
-  impactBar.appendChild(impactFill);
-  impact.append(impactKey, impactLive, impactDelta, impactBar);
+  // New Output Viz
+  const vizHeader = document.createElement("div");
+  vizHeader.className = "lfo-viz-header";
+  const vizLabels = document.createElement("div");
+  vizLabels.className = "lfo-viz-labels";
+  const vizK = document.createElement("span");
+  vizK.className = "k";
+  vizK.textContent = "Out";
+  const impactLive = document.createElement("span");
+  impactLive.className = "v";
+  impactLive.textContent = "0.00";
+  vizLabels.append(vizK, impactLive);
 
-  targetBox.append(targetKey, targetVal, impact);
+  const bipolarTrack = document.createElement("div");
+  bipolarTrack.className = "lfo-bipolar-track";
+  const bipolarCenter = document.createElement("div");
+  bipolarCenter.className = "lfo-bipolar-center";
+  const impactFill = document.createElement("div");
+  impactFill.className = "lfo-bipolar-fill";
+  const impactCursor = document.createElement("div");
+  impactCursor.className = "lfo-bipolar-cursor";
+  bipolarTrack.append(bipolarCenter, impactFill, impactCursor);
+  vizHeader.append(vizLabels, bipolarTrack);
+
+  row1Right.append(targetSel, vizHeader);
+  row1.append(row1Left, row1Right);
+
+  // Row 2: Controls Grid (Left: Config, Right: Sliders)
+  const row2 = document.createElement("div");
+  row2.className = "lfo-card-row-2";
+
+  // Col 1 (Shape, Clock)
+  const ctrlCol = document.createElement("div");
+  ctrlCol.className = "lfo-ctrl-col";
+
+  const shapeRow = document.createElement("div");
+  shapeRow.className = "lfo-slider-row";
+  const shapeHead = document.createElement("div");
+  shapeHead.className = "lfo-ctrl-header";
+  const shapeKey = document.createElement("span");
+  shapeKey.className = "k";
+  shapeKey.textContent = "Shape";
+  shapeHead.appendChild(shapeKey);
+  const shapeSel = document.createElement("select");
+  shapeSel.className = "lfo-shape";
+  LFO_SHAPE_NAMES.forEach((shapeName, shapeIdx) => {
+    const option = document.createElement("option");
+    option.value = String(shapeIdx);
+    option.textContent = shapeName;
+    shapeSel.appendChild(option);
+  });
+  shapeSel.value = String(cfg.shape);
+  shapeRow.append(shapeHead, shapeSel);
+
+  const clockRow = document.createElement("div");
+  clockRow.className = "lfo-slider-row";
+  clockRow.style.marginTop = "8px";
+  const clockHead = document.createElement("div");
+  clockHead.className = "lfo-ctrl-header";
+  const clockKey = document.createElement("span");
+  clockKey.className = "k";
+  clockKey.textContent = "Clock";
+  clockHead.appendChild(clockKey);
+  const clockToggle = document.createElement("label");
+  clockToggle.className = "lfo-sync-toggle";
+  if (cfg.useMidiClock) clockToggle.classList.add("active");
+  const clockCheck = document.createElement("input");
+  clockCheck.type = "checkbox";
+  clockCheck.className = "lfo-clock-check";
+  clockCheck.checked = Boolean(cfg.useMidiClock);
+  const clockText = document.createTextNode(" MIDI SYNC");
+  clockToggle.append(clockCheck, clockText);
+  clockRow.append(clockHead, clockToggle);
+
+  ctrlCol.append(shapeRow, clockRow);
+
+  // Col 2 (Rate/Ratio, Depth)
+  const sliderCol = document.createElement("div");
+  sliderCol.className = "lfo-sliders-group";
+
+  // Rate/Ratio Row
+  const rateRow = document.createElement("div");
+  rateRow.className = "lfo-slider-row";
+  const rateHead = document.createElement("div");
+  rateHead.className = "lfo-ctrl-header";
+  const rateKey = document.createElement("span");
+  rateKey.className = "k";
+  rateKey.textContent = cfg.useMidiClock ? "Ratio" : "Rate";
+  const rateVal = document.createElement("span");
+  rateVal.className = "v";
+  rateHead.append(rateKey, rateVal);
+
+  const rateEl = document.createElement("input");
+  rateEl.type = "range";
+  rateEl.className = "lfo-range";
+  // Initial setup, will be updated by syncLfoStripFromConfig
+  rateEl.min = "0";
+  rateEl.max = cfg.useMidiClock ? String(LFO_CLOCK_RATIO_OPTIONS.length - 1) : "1";
+  rateEl.step = cfg.useMidiClock ? "1" : "0.001";
+  rateEl.value = cfg.useMidiClock ? String(lfoClockRatioIndexFromValue(cfg.clockRatio)) : String(lfoRateToSliderPos(cfg.rate));
+  rateRow.append(rateHead, rateEl);
+
+  // Ratio El is no longer a separate DOM tree input, we reuse rateEl and swap min/max/step.
+  // BUT the rest of the code expects refs.clockRatioEl. We can just point both to rateEl.
+  const ratioEl = rateEl;
+
+  // Depth Row
+  const depthRow = document.createElement("div");
+  depthRow.className = "lfo-slider-row";
+  const depthHead = document.createElement("div");
+  depthHead.className = "lfo-ctrl-header";
+  const depthKey = document.createElement("span");
+  depthKey.className = "k";
+  depthKey.textContent = "Depth";
+  const depthVal = document.createElement("span");
+  depthVal.className = "v";
+  depthHead.append(depthKey, depthVal);
+  const depthEl = document.createElement("input");
+  depthEl.type = "range";
+  depthEl.className = "lfo-range lfo-depth";
+  depthEl.min = "-1";
+  depthEl.max = "1";
+  depthEl.step = "0.01";
+  depthEl.value = String(lfoDepthFractionSigned(cfg));
+  depthRow.append(depthHead, depthEl);
+
+  sliderCol.append(rateRow, depthRow);
+
+  row2.append(ctrlCol, sliderCol);
 
   // Hidden enable mirror keeps syncLfoStripFromConfig() working unchanged.
   const enableInput = document.createElement("input");
@@ -2811,14 +2821,19 @@ function createLfoStrip(index) {
   enableInput.style.display = "none";
   enableInput.checked = cfg.enabled;
 
-  body.append(shapeRow, clockRow, rateRow, ratioRow, depthRow, targetBox, enableInput);
-  card.append(ghost, head, waveBox, body);
+  card.append(ghost, row1, row2, enableInput);
   lfoStripListEl.appendChild(card);
 
+  // Backwards compatibility mappings for the rest of the app:
+  // impactLiveEl handles the text
+  // impactFillEl handles the bar fill
+  // canvas is null because we removed it, but we add a dummy to avoid errors in updateLfoCanvases
+  const dummyCanvas = document.createElement("canvas");
+  
   const refs = {
     index,
     strip: card,
-    canvas,
+    canvas: dummyCanvas, // Removed the real canvas!
     metaEl: null,
     idEl,
     runBtn,
@@ -2830,20 +2845,51 @@ function createLfoStrip(index) {
     depthEl,
     enableInput,
     rateLabelVal: rateVal,
-    clockRatioLabelVal: ratioVal,
+    clockRatioLabelVal: rateVal, // both map to the single row value
     depthLabelVal: depthVal,
     accent,
     impactLiveEl: impactLive,
-    impactDeltaEl: impactDelta,
-    impactFillEl: impactFill
+    impactDeltaEl: document.createElement("div"), // unused
+    impactFillEl: impactFill,
+    impactCursor: impactCursor, // new
+    rateKey: rateKey,           // new, so we can swap the label
+    clockToggle: clockToggle,   // new, to toggle .active
+    vizK: vizK                  // new, to swap "Out" vs "Out (Inv)"
   };
 
   const onChange = () => {
     const c = lfoConfigs[index];
     c.target = LFO_TARGET_BY_NAME.has(targetSel.value) ? targetSel.value : "none";
     c.shape = clamp(parseInt(shapeSel.value, 10) || 0, 0, 6);
+    
+    const wasMidi = c.useMidiClock;
     c.useMidiClock = Boolean(clockCheck.checked);
-    c.clockRatio = lfoClockRatioFromIndex(ratioEl.value);
+    
+    // Swap slider behavior if clock source changed
+    if (wasMidi !== c.useMidiClock) {
+      if (c.useMidiClock) {
+         refs.rateKey.textContent = "Ratio";
+         refs.clockToggle.classList.add("active");
+         refs.rateEl.min = "0";
+         refs.rateEl.max = String(LFO_CLOCK_RATIO_OPTIONS.length - 1);
+         refs.rateEl.step = "1";
+         refs.rateEl.value = String(lfoClockRatioIndexFromValue(c.clockRatio));
+      } else {
+         refs.rateKey.textContent = "Rate";
+         refs.clockToggle.classList.remove("active");
+         refs.rateEl.min = "0";
+         refs.rateEl.max = "1";
+         refs.rateEl.step = "0.001";
+         refs.rateEl.value = String(lfoRateToSliderPos(c.rate));
+      }
+    }
+
+    if (c.useMidiClock) {
+        c.clockRatio = lfoClockRatioFromIndex(ratioEl.value);
+    } else {
+        // use rateEl
+    }
+
     const clockRate = midiClockRateHz();
     if (c.useMidiClock) {
       if (clockRate !== null) c.rate = clamp(clockRate * c.clockRatio, LFO_RATE_MIN, LFO_RATE_MAX);
@@ -2852,6 +2898,17 @@ function createLfoStrip(index) {
     }
     c.depth = clamp(Number(depthEl.value) || 0, -1, 1) * lfoCapFor(c.target);
     c.enabled = enableInput.checked;
+    
+    if (c.enabled) {
+      runBtn.textContent = "ON";
+      runBtn.classList.add("on");
+      refs.strip.classList.remove("lfo-disabled");
+    } else {
+      runBtn.textContent = "OFF";
+      runBtn.classList.remove("on");
+      refs.strip.classList.add("lfo-disabled");
+    }
+
     const depthFrac = lfoDepthFractionSigned(c);
     if (String(depthFrac) !== depthEl.value) depthEl.value = String(depthFrac);
     refreshLfoStrip(index);
@@ -2867,11 +2924,11 @@ function createLfoStrip(index) {
   shapeSel.addEventListener("change", onChange);
   clockCheck.addEventListener("change", onChange);
   rateEl.addEventListener("input", onChange);
-  ratioEl.addEventListener("input", onChange);
   depthEl.addEventListener("input", onChange);
 
   return refs;
 }
+
 
 function buildLfoStrips() {
   if (!lfoStripListEl) return;
@@ -2946,16 +3003,44 @@ function updateLfoHint() {
 }
 
 function syncLfoStripFromConfig(index) {
-  const r = lfoStripEls[index];
-  if (!r) return;
-  const c = lfoConfigs[index];
-  r.targetSel.value = c.target;
-  r.shapeSel.value = String(c.shape);
-  r.rateEl.value = String(lfoRateToSliderPos(c.rate));
-  r.depthEl.value = String(lfoDepthFractionSigned(c));
-  r.enableInput.checked = c.enabled;
-  refreshLfoStrip(index);
+  const refs = lfoRefs[index];
+  const cfg = lfoConfigs[index];
+  if (!refs) return;
+
+  refs.targetSel.value = cfg.target;
+  refs.shapeSel.value = String(cfg.shape);
+  refs.clockCheck.checked = Boolean(cfg.useMidiClock);
+  
+  if (cfg.useMidiClock) {
+    refs.rateKey.textContent = "Ratio";
+    refs.clockToggle.classList.add("active");
+    refs.rateEl.min = "0";
+    refs.rateEl.max = String(LFO_CLOCK_RATIO_OPTIONS.length - 1);
+    refs.rateEl.step = "1";
+    refs.rateEl.value = String(lfoClockRatioIndexFromValue(cfg.clockRatio));
+  } else {
+    refs.rateKey.textContent = "Rate";
+    refs.clockToggle.classList.remove("active");
+    refs.rateEl.min = "0";
+    refs.rateEl.max = "1";
+    refs.rateEl.step = "0.001";
+    refs.rateEl.value = String(lfoRateToSliderPos(cfg.rate));
+  }
+
+  refs.depthEl.value = String(lfoDepthFractionSigned(cfg));
+  refs.enableInput.checked = cfg.enabled;
+
+  if (cfg.enabled) {
+    refs.runBtn.textContent = "ON";
+    refs.runBtn.classList.add("on");
+    refs.strip.classList.remove("lfo-disabled");
+  } else {
+    refs.runBtn.textContent = "OFF";
+    refs.runBtn.classList.remove("on");
+    refs.strip.classList.add("lfo-disabled");
+  }
 }
+
 
 function rebuildLfoOverview() {
   if (!lfoOverviewEl) return;
@@ -3024,9 +3109,64 @@ function sendAllLfos() {
 }
 
 function syncLfosToEngine() {
-  window.spaluterApi.setLfoCount(lfoCount);
-  sendAllLfos();
+  if (currentScreen !== "mods") return;
+  const nowSec = Date.now() / 1000;
+
+  lfoRefs.forEach((refs) => {
+    if (!refs) return;
+    const c = lfoConfigs[refs.index];
+    if (!c.enabled || c.target === "none") {
+      refs.impactLiveEl.textContent = "0.00";
+      refs.vizK.textContent = "Out";
+      refs.impactFillEl.className = "lfo-bipolar-fill";
+      refs.impactFillEl.style.width = "0%";
+      refs.impactCursor.className = "lfo-bipolar-cursor";
+      refs.impactCursor.style.left = "50%";
+      return;
+    }
+
+    const tDef = LFO_TARGET_BY_NAME.get(c.target);
+    if (!tDef) return;
+
+    // Get the base offset without the target's current value added,
+    // so we can see the exact bipolar swing.
+    // LFO swing is -1 to 1.
+    const phase01 = lfoPhase01(c, nowSec);
+    const rawVal = lfoShapeSample(c.shape, phase01, refs.index);
+    const depthFrac = lfoDepthFractionSigned(c);
+    
+    // The exact +/- delta being sent to the engine for this parameter
+    const delta = rawVal * depthFrac * tDef.cap;
+    const prefix = delta >= 0 ? "+" : "";
+    refs.impactLiveEl.textContent = prefix + delta.toFixed(2);
+
+    // Update gauge fill and cursor
+    if (depthFrac < 0) {
+        refs.vizK.textContent = "Out (Inv)";
+    } else {
+        refs.vizK.textContent = "Out";
+    }
+
+    // rawVal is -1 to 1. If depth is negative, the effective swing flips.
+    // We visualize the effective swing.
+    const effectiveSwing = rawVal * depthFrac; // still -1 to 1
+    
+    if (effectiveSwing >= 0) {
+        refs.impactFillEl.className = "lfo-bipolar-fill pos";
+        refs.impactFillEl.style.width = (effectiveSwing * 50) + "%";
+        refs.impactCursor.className = "lfo-bipolar-cursor pos";
+        refs.impactCursor.style.left = (50 + (effectiveSwing * 50)) + "%";
+    } else {
+        refs.impactFillEl.className = "lfo-bipolar-fill neg";
+        refs.impactFillEl.style.width = Math.abs(effectiveSwing * 50) + "%";
+        refs.impactCursor.className = "lfo-bipolar-cursor neg";
+        refs.impactCursor.style.left = (50 - Math.abs(effectiveSwing * 50)) + "%";
+    }
+  });
+
+  // We are no longer using the central matrix, so we can ignore updating it
 }
+
 
 function collectLfoState() {
   return {
