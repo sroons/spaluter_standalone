@@ -52,32 +52,63 @@ body{
   font-weight:700; font-size:100px; line-height:1; color:rgba(255,255,255,.03);
   pointer-events:none; z-index:0; }
 
-/* Row 1: Header / Target */
-.lfo-card-row-1 { display: flex; align-items: center; gap: 12px; position:relative; z-index:1; }
-.lfo-run{ font-family:var(--mono); font-size:11px; min-height:44px; padding:0 16px;
+/* Row 1: Header / Target / Output Viz */
+.lfo-card-row-1 { display: flex; align-items: center; gap: 10px; position:relative; z-index:1; }
+.lfo-run{ font-family:var(--mono); font-size:11px; min-height:44px; padding:0 12px;
   background:transparent; border:1px solid var(--line-2); color:var(--mute-2); letter-spacing:.08em; cursor:pointer;}
 .lfo-run.on{ background:var(--shock); border-color:var(--shock); color:#fff; }
 .lfo-id{ font-family:var(--din); font-weight:700; font-size:15px; letter-spacing:.05em;
-  color:var(--lfo-accent,var(--acid)); min-width: 50px;}
+  color:var(--lfo-accent,var(--acid)); }
+  
 .lfo-target-sel{
-  flex:1; min-height:44px; padding:0 30px 0 10px;
+  flex:1; max-width: 140px; min-height:44px; padding:0 24px 0 10px;
   border:1px solid var(--line-2); background-color:#070708;
   background-image:
     linear-gradient(45deg, transparent 50%, var(--mute-2) 50%),
     linear-gradient(135deg, var(--mute-2) 50%, transparent 50%);
-  background-position:calc(100% - 16px) calc(50% + 1px), calc(100% - 11px) calc(50% + 1px);
+  background-position:calc(100% - 12px) calc(50% + 1px), calc(100% - 7px) calc(50% + 1px);
   background-size:5px 5px, 5px 5px;
   background-repeat:no-repeat;
   appearance:none; -webkit-appearance:none;
-  font-family:var(--din); font-weight:700; font-size:14px; letter-spacing:.03em;
+  font-family:var(--din); font-weight:700; font-size:13px; letter-spacing:.03em;
   text-transform:uppercase; color:var(--paper); cursor:pointer;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 
+/* Compact Output Viz in Row 1 */
+.lfo-viz-header { display: flex; flex-direction: column; flex: 1.2; justify-content: center; height: 44px; padding: 0 4px; }
+.lfo-viz-labels { display: flex; justify-content: space-between; margin-bottom: 5px; }
+.lfo-viz-labels .k { font-family:var(--mono); font-size:9px; color:var(--mute-2); letter-spacing:.07em; text-transform:uppercase; }
+.lfo-viz-labels .v { font-family:var(--mono); font-size:9px; color:var(--paper); letter-spacing:.05em; }
+
+.lfo-bipolar-track {
+  position: relative; height: 10px; background: rgba(0,0,0,0.5); border: 1px solid var(--line-2);
+  border-radius: 5px; overflow: hidden; box-shadow: inset 0 1px 3px rgba(0,0,0,0.8);
+}
+.lfo-bipolar-center {
+  position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: rgba(233,227,214,.3); z-index: 2;
+}
+.lfo-bipolar-fill {
+  position: absolute; top: 0; bottom: 0; background: var(--shock); opacity: 0.6; z-index: 1;
+}
+/* Positive goes right from center */
+.lfo-bipolar-fill.pos { left: 50%; width: 35%; }
+/* Negative goes left from center */
+.lfo-bipolar-fill.neg { right: 50%; width: 20%; background: var(--acid); }
+
+.lfo-bipolar-cursor {
+  position: absolute; top: -1px; bottom: -1px; width: 3px; background: #fff; z-index: 3;
+  box-shadow: 0 0 6px rgba(255,255,255,0.8); border-radius: 2px;
+}
+.lfo-bipolar-cursor.pos { left: 85%; }
+.lfo-bipolar-cursor.neg { left: 30%; }
+
+
 /* Row 2: Controls */
-.lfo-card-row-2 { display: grid; grid-template-columns: 1.2fr 2fr; gap: 16px; position:relative; z-index:1;}
+.lfo-card-row-2 { display: grid; grid-template-columns: 1fr 2fr; gap: 16px; position:relative; z-index:1;}
 .lfo-ctrl-col { display: flex; flex-direction: column; gap: 6px; }
 
-/* Shape now stacked above Sync */
+/* Shape stacked above Sync */
 .lfo-ctrl-header { display: flex; justify-content: space-between; align-items: center; min-height: 20px;}
 .lfo-ctrl-header .k { font-family:var(--mono); font-size:10px; color:var(--mute-2);
   letter-spacing:.07em; text-transform:uppercase; }
@@ -112,35 +143,6 @@ body{
 .lfo-range::-webkit-slider-thumb{ -webkit-appearance:none; appearance:none; width: 16px; height: 28px; background: var(--paper); margin-top: -9px; border-radius: 3px; border: 1px solid var(--paper-ink);}
 .lfo-range.lfo-depth::-webkit-slider-thumb{ background: var(--shock); border-color: #000; }
 
-/* Row 3: Output Viz */
-.lfo-card-row-3 { margin-top: 8px; position:relative; z-index:1; padding-top: 12px; border-top: 1px solid var(--line); }
-.lfo-viz-header { display: flex; justify-content: space-between; margin-bottom: 8px; }
-.lfo-viz-header .k { font-family:var(--mono); font-size:10px; color:var(--mute-2); letter-spacing:.07em; text-transform:uppercase; }
-.lfo-viz-header .v { font-family:var(--mono); font-size:10px; color:var(--paper); letter-spacing:.05em; }
-
-.lfo-bipolar-track {
-  position: relative; height: 16px; background: rgba(0,0,0,0.5); border: 1px solid var(--line-2);
-  border-radius: 8px; overflow: hidden; box-shadow: inset 0 1px 3px rgba(0,0,0,0.8);
-}
-.lfo-bipolar-center {
-  position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: rgba(233,227,214,.3); z-index: 2;
-}
-.lfo-bipolar-fill {
-  position: absolute; top: 0; bottom: 0; background: var(--shock); opacity: 0.6; z-index: 1;
-}
-/* Positive goes right from center */
-.lfo-bipolar-fill.pos { left: 50%; width: 35%; }
-/* Negative goes left from center */
-.lfo-bipolar-fill.neg { right: 50%; width: 20%; background: var(--acid); }
-
-.lfo-bipolar-cursor {
-  position: absolute; top: -2px; bottom: -2px; width: 4px; background: #fff; z-index: 3;
-  box-shadow: 0 0 6px rgba(255,255,255,0.8); border-radius: 2px;
-}
-.lfo-bipolar-cursor.pos { left: 85%; }
-.lfo-bipolar-cursor.neg { left: 30%; }
-
-
 /* Animation for comp */
 @keyframes lfo1 { 0% { left: 50%; width: 0%; } 50% { left: 50%; width: 35%; } 100% { left: 50%; width: 0%; } }
 @keyframes cursor1 { 0% { left: 50%; } 50% { left: 85%; } 100% { left: 50%; } }
@@ -154,7 +156,7 @@ body{
 
   <div class="modbar">
     <span class="modbar-title">Proposed LFO Design · <b>Easier Navigation & Clearer Viz</b></span>
-    <span class="modbar-meta">This layout shrinks the LFO card vertically, features large 44px touch targets, and a realistic gauge.</span>
+    <span class="modbar-meta">The gauge is now inline with the routing block, packing the card even tighter.</span>
   </div>
 
   <div class="lfo-card-grid">
@@ -163,13 +165,25 @@ body{
     <div class="lfo-card" style="--lfo-accent: var(--acid);">
       <span class="lfo-ghost">01</span>
       
-      <!-- Row 1: Target and Power -->
+      <!-- Row 1: Target and Output Viz inline -->
       <div class="lfo-card-row-1">
         <button class="lfo-run on">ON</button>
-        <span class="lfo-id">LFO·01</span>
+        <span class="lfo-id">01</span>
         <select class="lfo-target-sel">
           <option>Pulsaret Size</option>
         </select>
+        
+        <div class="lfo-viz-header">
+          <div class="lfo-viz-labels">
+            <span class="k">Out</span>
+            <span class="v">+0.70</span>
+          </div>
+          <div class="lfo-bipolar-track">
+            <div class="lfo-bipolar-center"></div>
+            <div class="lfo-bipolar-fill pos anim-fill-1"></div>
+            <div class="lfo-bipolar-cursor pos anim-cursor-1"></div>
+          </div>
+        </div>
       </div>
 
       <!-- Row 2: Controls Grid (Left: Config, Right: Sliders) -->
@@ -204,19 +218,6 @@ body{
         </div>
 
       </div>
-
-      <!-- Row 3: Output Viz -->
-      <div class="lfo-card-row-3">
-        <div class="lfo-viz-header">
-          <span class="k">Output</span>
-          <span class="v">+0.700</span>
-        </div>
-        <div class="lfo-bipolar-track">
-          <div class="lfo-bipolar-center"></div>
-          <div class="lfo-bipolar-fill pos anim-fill-1"></div>
-          <div class="lfo-bipolar-cursor pos anim-cursor-1"></div>
-        </div>
-      </div>
     </div>
 
     <!-- LFO 2: MIDI Sync Example -->
@@ -225,10 +226,22 @@ body{
       
       <div class="lfo-card-row-1">
         <button class="lfo-run on">ON</button>
-        <span class="lfo-id">LFO·02</span>
+        <span class="lfo-id">02</span>
         <select class="lfo-target-sel">
           <option>Formant 1</option>
         </select>
+        
+        <div class="lfo-viz-header">
+          <div class="lfo-viz-labels">
+            <span class="k">Out (Inv)</span>
+            <span class="v">-0.40</span>
+          </div>
+          <div class="lfo-bipolar-track">
+            <div class="lfo-bipolar-center"></div>
+            <div class="lfo-bipolar-fill neg" style="width: 20%; right: 50%; left: auto;"></div>
+            <div class="lfo-bipolar-cursor neg" style="left: 30%;"></div>
+          </div>
+        </div>
       </div>
 
       <div class="lfo-card-row-2">
@@ -260,19 +273,63 @@ body{
           </div>
         </div>
       </div>
+    </div>
 
-      <div class="lfo-card-row-3">
+    <!-- LFO 3: Off Example -->
+    <div class="lfo-card" style="--lfo-accent: var(--warn); opacity: 0.7;">
+      <span class="lfo-ghost">03</span>
+      
+      <div class="lfo-card-row-1">
+        <button class="lfo-run">OFF</button>
+        <span class="lfo-id">03</span>
+        <select class="lfo-target-sel">
+          <option>None</option>
+        </select>
+        
         <div class="lfo-viz-header">
-          <span class="k">Output (Inverted)</span>
-          <span class="v">-0.400</span>
-        </div>
-        <div class="lfo-bipolar-track">
-          <div class="lfo-bipolar-center"></div>
-          <div class="lfo-bipolar-fill neg" style="width: 20%; right: 50%; left: auto;"></div>
-          <div class="lfo-bipolar-cursor neg" style="left: 30%;"></div>
+          <div class="lfo-viz-labels">
+            <span class="k">Out</span>
+            <span class="v">0.00</span>
+          </div>
+          <div class="lfo-bipolar-track">
+            <div class="lfo-bipolar-center"></div>
+            <div class="lfo-bipolar-cursor" style="left: 50%;"></div>
+          </div>
         </div>
       </div>
+
+      <div class="lfo-card-row-2">
+        <div class="lfo-ctrl-col">
+          <div class="lfo-slider-row">
+            <div class="lfo-ctrl-header"><span class="k">SHAPE</span></div>
+            <select class="lfo-shape"><option>Square</option></select>
+          </div>
+          <div class="lfo-slider-row" style="margin-top: 8px;">
+             <div class="lfo-ctrl-header"><span class="k">CLOCK</span></div>
+             <label class="lfo-sync-toggle"><input type="checkbox"> MIDI SYNC</label>
+          </div>
+        </div>
+
+        <div class="lfo-sliders-group">
+          <div class="lfo-slider-row">
+            <div class="lfo-ctrl-header">
+              <span class="k">RATE</span>
+              <span class="v">0.50 Hz</span>
+            </div>
+            <input type="range" class="lfo-range" value="20">
+          </div>
+          <div class="lfo-slider-row">
+            <div class="lfo-ctrl-header">
+              <span class="k">DEPTH</span>
+              <span class="v">0%</span>
+            </div>
+            <input type="range" class="lfo-range lfo-depth" value="50">
+          </div>
+        </div>
+      </div>
+
     </div>
+
   </div>
 </body>
 </html>
