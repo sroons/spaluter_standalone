@@ -54,13 +54,13 @@ body{
 
 /* Row 1: Header / Target */
 .lfo-card-row-1 { display: flex; align-items: center; gap: 12px; position:relative; z-index:1; }
-.lfo-run{ font-family:var(--mono); font-size:11px; min-height:40px; padding:0 16px;
+.lfo-run{ font-family:var(--mono); font-size:11px; min-height:44px; padding:0 16px;
   background:transparent; border:1px solid var(--line-2); color:var(--mute-2); letter-spacing:.08em; cursor:pointer;}
 .lfo-run.on{ background:var(--shock); border-color:var(--shock); color:#fff; }
 .lfo-id{ font-family:var(--din); font-weight:700; font-size:15px; letter-spacing:.05em;
   color:var(--lfo-accent,var(--acid)); min-width: 50px;}
 .lfo-target-sel{
-  flex:1; min-height:40px; padding:0 30px 0 10px;
+  flex:1; min-height:44px; padding:0 30px 0 10px;
   border:1px solid var(--line-2); background-color:#070708;
   background-image:
     linear-gradient(45deg, transparent 50%, var(--mute-2) 50%),
@@ -74,35 +74,42 @@ body{
 }
 
 /* Row 2: Controls */
-.lfo-card-row-2 { display: grid; grid-template-columns: 1fr 1.6fr 1.4fr; gap: 16px; align-items: end; position:relative; z-index:1;}
+.lfo-card-row-2 { display: grid; grid-template-columns: 1.2fr 2fr; gap: 16px; position:relative; z-index:1;}
 .lfo-ctrl-col { display: flex; flex-direction: column; gap: 6px; }
 
-.lfo-ctrl-header { display: flex; justify-content: space-between; align-items: center; }
+/* Shape now stacked above Sync */
+.lfo-ctrl-header { display: flex; justify-content: space-between; align-items: center; min-height: 20px;}
 .lfo-ctrl-header .k { font-family:var(--mono); font-size:10px; color:var(--mute-2);
   letter-spacing:.07em; text-transform:uppercase; }
 .lfo-ctrl-header .v { color: var(--shock); font-family: var(--dinc); font-size: 16px; line-height: 1; letter-spacing: 0.05em; }
 
-/* Small inline toggle for MIDI Sync */
-.compact-sync-toggle {
-  display: flex; align-items: center; gap: 4px;
-  font-family: var(--din); font-size: 9px; text-transform: uppercase;
-  color: var(--paper-2); background: rgba(0,0,0,0.3); border: 1px solid var(--line-2);
-  padding: 2px 4px; border-radius: 2px; cursor: pointer; letter-spacing: 0.05em;
-}
-.compact-sync-toggle input { margin: 0; width: 10px; height: 10px; accent-color: var(--shock); }
-.compact-sync-toggle.active { color: var(--shock); border-color: rgba(255, 111, 36, 0.4); background: rgba(255, 111, 36, 0.1); }
-
 .lfo-shape {
-  min-height:40px; padding:0 10px;
+  min-height:44px; padding:0 10px;
   border:1px solid var(--line-2); background-color:#070708;
   appearance:none; -webkit-appearance:none;
   font-family:var(--din); font-weight:700; font-size:13px; letter-spacing:.03em;
   text-transform:uppercase; color:var(--paper); cursor:pointer;
 }
 
-.lfo-range{ height:40px; width: 100%; border:none; background:transparent; margin: 0; cursor:pointer;}
+/* Big touch-friendly Sync Toggle */
+.lfo-sync-toggle {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 44px;
+  font-family: var(--din); font-size: 12px; text-transform: uppercase;
+  color: var(--paper-2); background: rgba(0,0,0,0.3); border: 1px solid var(--line-2);
+  cursor: pointer; letter-spacing: 0.05em;
+}
+.lfo-sync-toggle input { margin: 0; width: 14px; height: 14px; accent-color: var(--shock); }
+.lfo-sync-toggle.active { color: var(--shock); border-color: rgba(255, 111, 36, 0.4); background: rgba(255, 111, 36, 0.1); }
+
+
+/* Sliders group */
+.lfo-sliders-group { display: flex; flex-direction: column; gap: 16px; }
+.lfo-slider-row { display: flex; flex-direction: column; gap: 6px; }
+
+.lfo-range{ height:44px; width: 100%; border:none; background:transparent; margin: 0; cursor:pointer;}
 .lfo-range::-webkit-slider-runnable-track{ height:12px; background:#070708; border:1px solid var(--line); border-radius: 6px; }
-.lfo-range::-webkit-slider-thumb{ -webkit-appearance:none; appearance:none; width: 16px; height: 24px; background: var(--paper); margin-top: -7px; border-radius: 3px; border: 1px solid var(--paper-ink);}
+.lfo-range::-webkit-slider-thumb{ -webkit-appearance:none; appearance:none; width: 16px; height: 28px; background: var(--paper); margin-top: -9px; border-radius: 3px; border: 1px solid var(--paper-ink);}
 .lfo-range.lfo-depth::-webkit-slider-thumb{ background: var(--shock); border-color: #000; }
 
 /* Row 3: Output Viz */
@@ -147,7 +154,7 @@ body{
 
   <div class="modbar">
     <span class="modbar-title">Proposed LFO Design · <b>Easier Navigation & Clearer Viz</b></span>
-    <span class="modbar-meta">This layout shrinks the LFO card vertically by ~50%, replacing the canvas waveform with a real-time output gauge.</span>
+    <span class="modbar-meta">This layout shrinks the LFO card vertically, features large 44px touch targets, and a realistic gauge.</span>
   </div>
 
   <div class="lfo-card-grid">
@@ -156,6 +163,7 @@ body{
     <div class="lfo-card" style="--lfo-accent: var(--acid);">
       <span class="lfo-ghost">01</span>
       
+      <!-- Row 1: Target and Power -->
       <div class="lfo-card-row-1">
         <button class="lfo-run on">ON</button>
         <span class="lfo-id">LFO·01</span>
@@ -164,28 +172,40 @@ body{
         </select>
       </div>
 
+      <!-- Row 2: Controls Grid (Left: Config, Right: Sliders) -->
       <div class="lfo-card-row-2">
+        
         <div class="lfo-ctrl-col">
-          <div class="lfo-ctrl-header"><span class="k">SHAPE</span></div>
-          <select class="lfo-shape"><option>Sine</option></select>
-        </div>
-        <div class="lfo-ctrl-col">
-          <div class="lfo-ctrl-header">
-            <span class="k">RATE</span>
-            <label class="compact-sync-toggle"><input type="checkbox"> SYNC</label>
-            <span class="v">1.20</span>
+          <div class="lfo-slider-row">
+            <div class="lfo-ctrl-header"><span class="k">SHAPE</span></div>
+            <select class="lfo-shape"><option>Sine</option></select>
           </div>
-          <input type="range" class="lfo-range" value="40">
-        </div>
-        <div class="lfo-ctrl-col">
-          <div class="lfo-ctrl-header">
-            <span class="k">DEPTH</span>
-            <span class="v">+70%</span>
+          <div class="lfo-slider-row" style="margin-top: 8px;">
+             <div class="lfo-ctrl-header"><span class="k">CLOCK</span></div>
+             <label class="lfo-sync-toggle"><input type="checkbox"> MIDI SYNC</label>
           </div>
-          <input type="range" class="lfo-range lfo-depth" value="85">
         </div>
+
+        <div class="lfo-sliders-group">
+          <div class="lfo-slider-row">
+            <div class="lfo-ctrl-header">
+              <span class="k">RATE</span>
+              <span class="v">1.20 Hz</span>
+            </div>
+            <input type="range" class="lfo-range" value="40">
+          </div>
+          <div class="lfo-slider-row">
+            <div class="lfo-ctrl-header">
+              <span class="k">DEPTH</span>
+              <span class="v">+70%</span>
+            </div>
+            <input type="range" class="lfo-range lfo-depth" value="85">
+          </div>
+        </div>
+
       </div>
 
+      <!-- Row 3: Output Viz -->
       <div class="lfo-card-row-3">
         <div class="lfo-viz-header">
           <span class="k">Output</span>
@@ -213,23 +233,31 @@ body{
 
       <div class="lfo-card-row-2">
         <div class="lfo-ctrl-col">
-          <div class="lfo-ctrl-header"><span class="k">SHAPE</span></div>
-          <select class="lfo-shape"><option>Saw</option></select>
-        </div>
-        <div class="lfo-ctrl-col">
-          <div class="lfo-ctrl-header">
-            <span class="k">RATIO</span>
-            <label class="compact-sync-toggle active"><input type="checkbox" checked> SYNC</label>
-            <span class="v">1/4</span>
+          <div class="lfo-slider-row">
+            <div class="lfo-ctrl-header"><span class="k">SHAPE</span></div>
+            <select class="lfo-shape"><option>Saw</option></select>
           </div>
-          <input type="range" class="lfo-range" value="60">
-        </div>
-        <div class="lfo-ctrl-col">
-          <div class="lfo-ctrl-header">
-            <span class="k">DEPTH</span>
-            <span class="v">-40%</span>
+          <div class="lfo-slider-row" style="margin-top: 8px;">
+             <div class="lfo-ctrl-header"><span class="k">CLOCK</span></div>
+             <label class="lfo-sync-toggle active"><input type="checkbox" checked> MIDI SYNC</label>
           </div>
-          <input type="range" class="lfo-range lfo-depth" value="30">
+        </div>
+
+        <div class="lfo-sliders-group">
+          <div class="lfo-slider-row">
+            <div class="lfo-ctrl-header">
+              <span class="k">RATIO</span>
+              <span class="v">1/4</span>
+            </div>
+            <input type="range" class="lfo-range" value="60">
+          </div>
+          <div class="lfo-slider-row">
+            <div class="lfo-ctrl-header">
+              <span class="k">DEPTH</span>
+              <span class="v">-40%</span>
+            </div>
+            <input type="range" class="lfo-range lfo-depth" value="30">
+          </div>
         </div>
       </div>
 
@@ -245,53 +273,6 @@ body{
         </div>
       </div>
     </div>
-
-    <!-- LFO 3: Off Example -->
-    <div class="lfo-card" style="--lfo-accent: var(--warn); opacity: 0.7;">
-      <span class="lfo-ghost">03</span>
-      
-      <div class="lfo-card-row-1">
-        <button class="lfo-run">OFF</button>
-        <span class="lfo-id">LFO·03</span>
-        <select class="lfo-target-sel">
-          <option>None</option>
-        </select>
-      </div>
-
-      <div class="lfo-card-row-2">
-        <div class="lfo-ctrl-col">
-          <div class="lfo-ctrl-header"><span class="k">SHAPE</span></div>
-          <select class="lfo-shape"><option>Square</option></select>
-        </div>
-        <div class="lfo-ctrl-col">
-          <div class="lfo-ctrl-header">
-            <span class="k">RATE</span>
-            <label class="compact-sync-toggle"><input type="checkbox"> SYNC</label>
-            <span class="v">0.50</span>
-          </div>
-          <input type="range" class="lfo-range" value="20">
-        </div>
-        <div class="lfo-ctrl-col">
-          <div class="lfo-ctrl-header">
-            <span class="k">DEPTH</span>
-            <span class="v">0%</span>
-          </div>
-          <input type="range" class="lfo-range lfo-depth" value="50">
-        </div>
-      </div>
-
-      <div class="lfo-card-row-3">
-        <div class="lfo-viz-header">
-          <span class="k">Output</span>
-          <span class="v">0.000</span>
-        </div>
-        <div class="lfo-bipolar-track">
-          <div class="lfo-bipolar-center"></div>
-          <div class="lfo-bipolar-cursor" style="left: 50%;"></div>
-        </div>
-      </div>
-    </div>
-
   </div>
 </body>
 </html>
