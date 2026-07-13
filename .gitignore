@@ -1,3 +1,12 @@
 node_modules/
 .DS_Store
 /.ssh/
+
+# electron-builder byproducts (final .deb/.dmg/.pkg/.exe installers,
+# installers/linux-arm64-unpacked/, and latest-linux-arm64.yml stay tracked)
+installers/mac/
+installers/mac-arm64/
+installers/win-unpacked/
+installers/*.blockmap
+installers/latest.yml
+installers/com.spaluter.desktop.plist
