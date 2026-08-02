@@ -190,9 +190,12 @@ s.waitForBoot {
         scopeWritePos = Phasor.ar(0, 1, 0, scopeFrames, 0);
         BufWr.ar(sig[0] * 0.9, scopeBufL, scopeWritePos, loop: 1);
         BufWr.ar(sig[1] * 0.9, scopeBufR, scopeWritePos, loop: 1);
-        scopeReadPos = (scopeWritePos - Array.series(scopeFrames, scopeFrames - 1, -1)).wrap(0, scopeFrames - 1);
-        scopeValuesL = BufRd.ar(1, scopeBufL, scopeReadPos, loop: 1, interpolation: 1);
-        scopeValuesR = BufRd.ar(1, scopeBufR, scopeReadPos, loop: 1, interpolation: 1);
+        // The scope values are only ever consumed by SendReply.kr, so the 64
+        // readers per channel run at control rate: one read per block instead
+        // of one per sample. Identical output, ~1/64 the DSP cost.
+        scopeReadPos = (A2K.kr(scopeWritePos) - Array.series(scopeFrames, scopeFrames - 1, -1)).wrap(0, scopeFrames - 1);
+        scopeValuesL = BufRd.kr(1, scopeBufL, scopeReadPos, loop: 1, interpolation: 1);
+        scopeValuesR = BufRd.kr(1, scopeBufR, scopeReadPos, loop: 1, interpolation: 1);
         scopeTrig = Impulse.kr(scopeRate.clip(1, 60)) * (scopeEnabled > 0);
         SendReply.kr(scopeTrig, "/spaluter/scope", scopeValuesL ++ scopeValuesR);
         Out.ar(out, sig * (amp + mod[0]).max(0));

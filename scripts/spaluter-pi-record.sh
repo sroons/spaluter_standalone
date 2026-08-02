@@ -59,8 +59,17 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 # Give the real-time audio graph more headroom for the duration of the capture.
-if [ "$REC_QUANTUM" != "0" ] && command -v pw-metadata >/dev/null 2>&1; then
-  pw-metadata -n settings 0 clock.force-quantum "$REC_QUANTUM" >/dev/null 2>&1 || true
+#
+# First clear any forced quantum. A prior capture that was SIGKILL'd or lost its
+# SSH session never runs the cleanup trap, so clock.force-quantum can still be
+# pinned at REC_QUANTUM (~43ms) from that run — leaving the whole device sluggish.
+# Resetting to 0 here guarantees we start from the dynamic default before raising
+# it, and (with REC_QUANTUM=0) also serves as a manual "unstick" path.
+if command -v pw-metadata >/dev/null 2>&1; then
+  pw-metadata -n settings 0 clock.force-quantum 0 >/dev/null 2>&1 || true
+  if [ "$REC_QUANTUM" != "0" ]; then
+    pw-metadata -n settings 0 clock.force-quantum "$REC_QUANTUM" >/dev/null 2>&1 || true
+  fi
 fi
 
 # Keep ffmpeg from preempting scsynth: low priority + pin to non-audio cores.

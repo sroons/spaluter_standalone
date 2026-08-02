@@ -67,8 +67,18 @@ if(thisProcess.platform.name == \linux) {
     s.options.device = "pisound";
 };
 
-thisProcess.openUDPPort(57130);
-status.value("Listening OSC on 57130");
+// Refuse to run as a second runtime. If the port is taken, a stale sclang from
+// a previous app instance still owns it and keeps receiving the app's OSC, while
+// this process would boot/reboot the shared scsynth (maxLogins = 1) out from
+// under it — wiping the SynthDefs the stale runtime loaded. That surfaces as
+// "SynthDef spaluterSC not found" and a silent synth. Exiting instead makes
+// main.js report a startup failure ("sclang exited") that the UI can show.
+if(thisProcess.openUDPPort(57130)) {
+    status.value("Listening OSC on 57130");
+} {
+    status.value("OSC error: port 57130 already in use by another Spaluter runtime");
+    AppClock.sched(0.3, { 0.exit; nil });
+};
 booted = false;
 
 s.doWhenBooted({
@@ -135,7 +145,7 @@ s.doWhenBooted({
         \formant1, 1000, \formant2, 1000, \formant3, 1000, \maskAmount, 0.5,
         \pan1, 1.0, \pan2, 1.0, \pan3, 1.0,
         \ampJitter, 0.5, \timingJitter, 0.5, \glisson, 0.5, \basePitch, 12,
-        \attackMs, 500, \releaseMs, 800, \glideMs, 500, \sampleRate, 1.0
+        \attackMs, 500, \releaseMs, 800, \glideMs, 500, \sampleRate, 0.25
     ]);
     lfoConfigs = Array.fill(maxLfo, {
         (target: \none, rate: 1.0, depth: 0.0, shape: 0, enabled: 0, phase: 0.0)
@@ -233,9 +243,19 @@ s.doWhenBooted({
         };
     };
 
-    // Validate + clamp one LFO config, store it, and respawn that LFO.
+    // Validate + clamp one LFO config, store it, and apply it to the engine.
+    //
+    // Fast path: if a live synth already exists for this LFO and only its
+    // rate/depth/shape changed (target, enabled, and phase are the same), we
+    // stream those into the running synth with `.set` instead of freeing and
+    // respawning. This keeps slider drags and bulk re-pushes from resetting the
+    // LFO phase or briefly summing two overlapping LFOs on the mod bus — the
+    // stair-stepping/warble that made every UI update audible.
+    //
+    // Respawn (spawnLfo) is reserved for changes that genuinely require a new
+    // node: retargeting, toggling enable, or an explicit phase retrigger.
     applyLfo = { |idx, name, rate, depth, shape, enabled, phase|
-        var i, tgt, cap, en, cfg;
+        var i, tgt, cap, en, cfg, ph, live, structural, oldTgt, oldEn, oldPhase;
         i = idx.asInteger;
         if((i < 0) or: { i >= maxLfo }) {
             lfoWarn.value("idx out of range: " ++ idx.asString);
@@ -254,13 +274,26 @@ s.doWhenBooted({
             };
             cap = (modDepthCap[tgt] ? 1).asFloat;
             cfg = lfoConfigs[i];
+            // Snapshot the fields that decide respawn-vs-set before overwriting.
+            oldTgt = cfg[\target];
+            oldEn = cfg[\enabled];
+            oldPhase = cfg[\phase];
+            ph = phase.asFloat.wrap(0, 1);
+
             cfg[\target] = tgt;
             cfg[\rate] = rate.asFloat.clip(0.001, 50);
             cfg[\depth] = depth.asFloat.clip(cap.neg, cap);
             cfg[\shape] = shape.asInteger.clip(0, 6);
             cfg[\enabled] = en;
-            cfg[\phase] = phase.asFloat.wrap(0, 1);
-            spawnLfo.value(i);
+            cfg[\phase] = ph;
+
+            live = lfoSynths[i];
+            structural = (oldTgt != tgt) or: { oldEn != en } or: { oldPhase != ph };
+            if(live.notNil and: { structural.not }) {
+                live.set(\rate, cfg[\rate], \depth, cfg[\depth], \shape, cfg[\shape]);
+            } {
+                spawnLfo.value(i);
+            };
         };
     };
 

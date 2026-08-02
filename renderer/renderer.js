@@ -2181,7 +2181,7 @@ const LFO_TARGETS = [
   { name: "attackMs", label: "Attack (ms)", cap: 500 },
   { name: "releaseMs", label: "Release (ms)", cap: 800 },
   { name: "glideMs", label: "Glide (ms)", cap: 500 },
-  { name: "sampleRate", label: "Sample Rate", cap: 1.0 }
+  { name: "sampleRate", label: "Sample Rate", cap: 0.25 }
 ];
 const LFO_TARGET_BY_NAME = new Map(LFO_TARGETS.map((t) => [t.name, t]));
 
