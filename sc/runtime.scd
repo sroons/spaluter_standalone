@@ -272,6 +272,7 @@ s.doWhenBooted({
         revWet: 0.0, revTime: 0.6, revDamp: 0.5, revDiff: 0.7,
         revMod: 0.3, revShimmer: 0.0, revPreDelay: 0.0, revLowCut: 20.0,
         dlyWet: 0.0, dlyFeedback: 0.35, dlyTimeMs: 320.0, dlySpread: 0.45,
+        dlyDamp: 0.35,
         dlySyncMode: 0.0, dlyClockHz: 0.0, dlyClockRatio: 1.0
     );
     reverbState = IdentityDictionary.new;

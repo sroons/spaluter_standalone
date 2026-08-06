@@ -1,0 +1,8 @@
+version: 0.8.0
+files:
+  - url: Spaluter-Desktop-0.8.0-mac-arm64.dmg
+    sha512: 1a0jTfAmkBg/gT018MHXym6lBEdK9wUwW5tPzhV9PaCJRW7sELqmd0c5ZiHCTVJHTd2bH4XS+4gPI33h29aJeQ==
+    size: 99719610
+path: Spaluter-Desktop-0.8.0-mac-arm64.dmg
+sha512: 1a0jTfAmkBg/gT018MHXym6lBEdK9wUwW5tPzhV9PaCJRW7sELqmd0c5ZiHCTVJHTd2bH4XS+4gPI33h29aJeQ==
+releaseDate: '2026-08-06T01:48:29.692Z'

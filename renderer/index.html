@@ -55,6 +55,24 @@
             <div class="peak-wrap"><canvas id="peakMeterView" width="80" height="240" aria-label="Stereo peak meter"></canvas></div>
           </div>
 
+          <!-- PERFORMANCE PARAMETERS & WAVEFORMS -->
+          <div class="panel perf-params-card edit-card" data-accent="shock">
+            <div class="ph"><span class="t">Pulsar &amp; Formants</span><span class="num">01</span></div>
+            <div class="edit-waves">
+              <div class="wavebox"><span class="lab" id="pulsaretWaveLabelPerf">PULSARET</span><canvas id="pulsaretWaveViewPerf" width="320" height="60"></canvas></div>
+              <div class="wavebox"><span class="lab r" id="windowWaveLabelPerf">WINDOW</span><canvas id="windowWaveViewPerf" width="320" height="60"></canvas></div>
+              <div class="wavebox"><span class="lab" id="dutyWaveLabelPerf">DUTY</span><canvas id="dutyWaveViewPerf" width="320" height="60"></canvas></div>
+            </div>
+            <div class="ctl-list">
+              <div class="ctl"><span class="nm">Pulsaret</span><input class="edit-slider" data-param="pulsaret" type="range" min="0" max="9" step="0.1" value="2.5" /><span class="val"></span></div>
+              <div class="ctl"><span class="nm">Window</span><input class="edit-slider" data-param="window" type="range" min="0" max="8" step="0.1" value="0.5" /><span class="val"></span></div>
+              <div class="ctl"><span class="nm">Duty</span><input class="edit-slider" data-param="duty" type="range" min="0.01" max="1" step="0.01" value="0.5" /><span class="val"></span></div>
+              <div class="ctl"><span class="nm">Formant 1</span><input class="edit-slider" data-param="formant1" type="range" min="20" max="3000" step="1" value="20" /><span class="val" data-unit="Hz"></span></div>
+              <div class="ctl"><span class="nm">Formant 2</span><input class="edit-slider" data-param="formant2" type="range" min="20" max="3000" step="1" value="200" /><span class="val" data-unit="Hz"></span></div>
+              <div class="ctl"><span class="nm">Formant 3</span><input class="edit-slider" data-param="formant3" type="range" min="20" max="3000" step="1" value="400" /><span class="val" data-unit="Hz"></span></div>
+            </div>
+          </div>
+
           <div class="panel macros-card">
             <div class="ph"><span class="t">Macros</span><span class="num">M01—05</span></div>
             <div class="macros">
@@ -196,13 +214,14 @@
             <div class="ph"><span class="t">Delay · Rhythmic 4-Tap</span><span class="num">03</span></div>
             <div class="ctl-list">
               <div class="ctl"><span class="nm">Mix</span><input class="edit-slider" data-param="dlyWet" type="range" min="0" max="1" step="0.01" value="0" /><span class="val"></span></div>
-              <div class="ctl"><span class="nm">Feedback</span><input class="edit-slider" data-param="dlyFeedback" type="range" min="0" max="0.88" step="0.01" value="0.35" /><span class="val"></span></div>
+              <div class="ctl"><span class="nm">Feedback</span><input class="edit-slider" data-param="dlyFeedback" type="range" min="0" max="0.85" step="0.01" value="0.35" /><span class="val"></span></div>
               <div class="ctl"><span class="nm">Tap Spread</span><input class="edit-slider" data-param="dlySpread" type="range" min="0" max="1" step="0.01" value="0.45" /><span class="val"></span></div>
+              <div class="ctl"><span class="nm">Damping</span><input class="edit-slider" data-param="dlyDamp" type="range" min="0" max="1" step="0.01" value="0.35" /><span class="val"></span></div>
               <div class="ctl"><span class="nm">Base Time</span><input class="edit-slider" data-param="dlyTimeMs" type="range" min="20" max="2000" step="1" value="320" /><span class="val" data-unit="ms"></span></div>
               <div class="ctl sel"><span class="nm">Sync</span><select class="edit-select" data-seg="1" data-param="dlySyncMode"><option value="0" selected>Free ms</option><option value="1">MIDI Clock</option></select></div>
               <div class="ctl sel" style="margin-top:10px;"><span class="nm">Clock Ratio</span><select class="edit-select" data-param="dlyClockRatio"><option value="0.0625">/16</option><option value="0.0666666667">/15</option><option value="0.0714285714">/14</option><option value="0.0769230769">/13</option><option value="0.0833333333">/12</option><option value="0.0909090909">/11</option><option value="0.1">/10</option><option value="0.1111111111">/9</option><option value="0.125">/8</option><option value="0.1428571429">/7</option><option value="0.1666666667">/6</option><option value="0.2">/5</option><option value="0.25">/4</option><option value="0.3333333333">/3</option><option value="0.5">/2</option><option value="1" selected>x1</option><option value="2">x2</option><option value="3">x3</option><option value="4">x4</option><option value="5">x5</option><option value="6">x6</option><option value="7">x7</option><option value="8">x8</option><option value="9">x9</option><option value="10">x10</option><option value="11">x11</option><option value="12">x12</option><option value="13">x13</option><option value="14">x14</option><option value="15">x15</option><option value="16">x16</option></select></div>
             </div>
-            <div class="reverb-note">Four static taps with cross-stereo routing and conservative feedback for stable Pi performance. In MIDI Clock mode, Base Time = beat length ÷ Clock Ratio, so /N lengthens (slows) the delay and xN shortens (speeds) it.</div>
+            <div class="reverb-note">Four interpolated taps share a single feedback loop, so the tap pattern repeats as one rhythm and darkens each pass (Damping). Feedback is soft-saturated rather than limited, and repeats ping-pong across the stereo field. In MIDI Clock mode, Base Time = beat length ÷ Clock Ratio, so /N lengthens (slows) the delay and xN shortens (speeds) it.</div>
           </div>
 
         </div>

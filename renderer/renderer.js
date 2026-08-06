@@ -81,7 +81,9 @@ const MIDI_CLOCK_TICKS_PER_QUARTER = 24;
 const MIDI_CLOCK_SMOOTHING_TICKS = 96;
 const MIDI_CLOCK_SYNC_MIN_INTERVAL_MS = 120;
 const MIDI_CLOCK_RATE_EPSILON = 0.0005;
-const DELAY_CLOCK_HZ_EPSILON = 0.0005;
+// MIDI clock ticks jitter by a fraction of a BPM; ignore changes below ~0.5 BPM
+// (0.008 Hz) so the delay time isn't nudged on every tick.
+const DELAY_CLOCK_HZ_EPSILON = 0.008;
 const RENDERER_HEARTBEAT_MS = 1000;
 const DEBUG_FPS = false;
 const DEBUG_MIDI_NOTE_REPORTS = false;
@@ -117,9 +119,9 @@ let lastMidiStateLogAt = 0;
 let lastMidiStateKey = "";
 let responsivePreviewMode = DEFAULT_RESPONSIVE_PREVIEW_MODE;
 const controlMetaByParam = new Map();
-const paramValueElByParam = new Map();
-const paramSliderByParam = new Map();
-const editLfoMarkerByParam = new Map();
+const paramValueElsByParam = new Map();
+const paramSlidersByParam = new Map();
+const editLfoMarkersByParam = new Map();
 const canvasMetricsByElement = new WeakMap();
 const allParamNames = Array.from(new Set([
   ...knobByParam.keys(),
@@ -151,7 +153,7 @@ const PARAM_PAGE_DEFINITIONS = Object.freeze([
     title: "EFFECTS",
     params: [
       "revWet", "revTime", "revDamp", "revDiff", "revShimmer", "revMod", "revPreDelay", "revLowCut",
-      "dlyWet", "dlyFeedback", "dlySpread", "dlyTimeMs", "dlySyncMode", "dlyClockRatio"
+      "dlyWet", "dlyFeedback", "dlySpread", "dlyDamp", "dlyTimeMs", "dlySyncMode", "dlyClockRatio"
     ]
   },
   {
@@ -259,6 +261,7 @@ const PREFERRED_MIDI_CC_BY_PARAM = Object.freeze({
   dlyWet: 57,
   dlyFeedback: 58,
   dlySpread: 59,
+  dlyDamp: 63,
   dlyTimeMs: 60,
   dlySyncMode: 61,
   dlyClockRatio: 62
@@ -1191,7 +1194,9 @@ function setOutputScopeSamples(samples, label = "Live output") {
   outputScopeSamples = { left, right };
   updateStereoPeakState(peaks.leftPeak, peaks.rightPeak);
   if (peakMeterLabelEl) {
-    peakMeterLabelEl.textContent = `L ${linearToDb(peaks.leftPeak).toFixed(1)} dB • R ${linearToDb(peaks.rightPeak).toFixed(1)} dB`;
+    const lDb = peaks.leftPeak <= 0.0001 ? "-80.0" : linearToDb(peaks.leftPeak).toFixed(1).padStart(5, " ");
+    const rDb = peaks.rightPeak <= 0.0001 ? "-80.0" : linearToDb(peaks.rightPeak).toFixed(1).padStart(5, " ");
+    peakMeterLabelEl.textContent = `L ${lDb} dB • R ${rDb} dB`;
   }
   if (outputScopeLabelEl) outputScopeLabelEl.textContent = label;
   // Only paint the scope/peak canvases when Perform is on screen. The scope
@@ -1216,7 +1221,7 @@ function clearOutputScope(label = "Waiting for synth...") {
   stereoPeakHoldAgeL = 0;
   stereoPeakHoldAgeR = 0;
   outputScopeSamples = { left: scopeRenderBuffers[0], right: scopeRenderBuffers[1] };
-  if (peakMeterLabelEl) peakMeterLabelEl.textContent = "L -inf dB • R -inf dB";
+  if (peakMeterLabelEl) peakMeterLabelEl.textContent = "L -80.0 dB • R -80.0 dB";
   if (outputScopeLabelEl) outputScopeLabelEl.textContent = label;
   drawOutputScope(outputScopeCanvas, outputScopeSamples.left, outputScopeSamples.right);
   drawOutputAnalysisScopes();
@@ -1244,39 +1249,45 @@ function computeWaveformValues(nowSec) {
 }
 
 function drawPulsaretView(v) {
-  if (!pulsaretWaveCanvas) return;
-  if (pulsaretWaveLabelEl) {
-    pulsaretWaveLabelEl.textContent = `PULSARET · ${interpolatedWaveLabel(v.pulsaret, PULSARET_WAVE_NAMES)}`;
-  }
-  drawWaveform(
-    pulsaretWaveCanvas,
-    (t) => interpolatedWaveSample(v.pulsaret, 9, pulsaretWaveSample, t),
-    -1,
-    1,
-    { color: "#ff6f24", lineWidth: 1.9 }
-  );
+  const labelText = `PULSARET · ${interpolatedWaveLabel(v.pulsaret, PULSARET_WAVE_NAMES)}`;
+  document.querySelectorAll("#pulsaretWaveLabel, #pulsaretWaveLabelPerf").forEach((el) => {
+    el.textContent = labelText;
+  });
+  document.querySelectorAll("#pulsaretWaveView, #pulsaretWaveViewPerf").forEach((canvas) => {
+    drawWaveform(
+      canvas,
+      (t) => interpolatedWaveSample(v.pulsaret, 9, pulsaretWaveSample, t),
+      -1,
+      1,
+      { color: "#ff6f24", lineWidth: 1.9 }
+    );
+  });
 }
 
 function drawWindowView(v) {
-  if (!windowWaveCanvas) return;
-  if (windowWaveLabelEl) {
-    windowWaveLabelEl.textContent = `WINDOW · ${interpolatedWaveLabel(v.windowType, WINDOW_WAVE_NAMES)}`;
-  }
-  drawWaveform(
-    windowWaveCanvas,
-    (t) => interpolatedWaveSample(v.windowType, 8, windowWaveSample, t),
-    0,
-    1,
-    { color: "#1f8bff", lineWidth: 1.9 }
-  );
+  const labelText = `WINDOW · ${interpolatedWaveLabel(v.windowType, WINDOW_WAVE_NAMES)}`;
+  document.querySelectorAll("#windowWaveLabel, #windowWaveLabelPerf").forEach((el) => {
+    el.textContent = labelText;
+  });
+  document.querySelectorAll("#windowWaveView, #windowWaveViewPerf").forEach((canvas) => {
+    drawWaveform(
+      canvas,
+      (t) => interpolatedWaveSample(v.windowType, 8, windowWaveSample, t),
+      0,
+      1,
+      { color: "#1f8bff", lineWidth: 1.9 }
+    );
+  });
 }
 
 function drawDutyView(v) {
-  if (!dutyWaveCanvas) return;
-  if (dutyWaveLabelEl) {
-    dutyWaveLabelEl.textContent = `DUTY · ${v.duty.toFixed(2)} • ${v.dutyMode}`;
-  }
-  drawDutyScopeWithOverlay(dutyWaveCanvas, v.duty, v.windowType);
+  const labelText = `DUTY · ${v.duty.toFixed(2)} • ${v.dutyMode}`;
+  document.querySelectorAll("#dutyWaveLabel, #dutyWaveLabelPerf").forEach((el) => {
+    el.textContent = labelText;
+  });
+  document.querySelectorAll("#dutyWaveView, #dutyWaveViewPerf").forEach((canvas) => {
+    drawDutyScopeWithOverlay(canvas, v.duty, v.windowType);
+  });
 }
 
 function drawFormantViews(v) {
@@ -1491,33 +1502,38 @@ function findParamLabel(param) {
 }
 
 function updateRealtimeParamValue(param, value) {
-  const valueEl = paramValueElByParam.get(param);
+  const valueEls = paramValueElsByParam.get(param);
   const numericValue = Number(value);
-  if (valueEl) {
-    const unit = valueEl.dataset ? valueEl.dataset.unit : "";
-    valueEl.textContent = formatParamValue(param, numericValue) + (unit || "");
+  if (valueEls) {
+    valueEls.forEach((valueEl) => {
+      const unit = valueEl.dataset ? valueEl.dataset.unit : "";
+      valueEl.textContent = formatParamValue(param, numericValue) + (unit || "");
+    });
   }
 
-  const sliderEl = paramSliderByParam.get(param);
-  if (!sliderEl) return;
+  const sliderEls = paramSlidersByParam.get(param);
+  if (!sliderEls) return;
 
   const meta = getControlMeta(param);
   if (!meta) return;
-  if (meta.type === "discrete") {
-    const discreteIndex = meta.values.indexOf(numericValue);
-    if (discreteIndex >= 0 && sliderEl.classList.contains("param-value-slider")) {
-      sliderEl.value = String(discreteIndex);
+
+  sliderEls.forEach((sliderEl) => {
+    if (meta.type === "discrete") {
+      const discreteIndex = meta.values.indexOf(numericValue);
+      if (discreteIndex >= 0 && sliderEl.classList.contains("param-value-slider")) {
+        sliderEl.value = String(discreteIndex);
+      }
+      return;
     }
-    return;
-  }
 
-  if (sliderEl.classList.contains("edit-slider")) {
+    if (sliderEl.classList.contains("edit-slider")) {
+      sliderEl.value = String(numericValue);
+      refreshSliderFill(sliderEl);
+      return;
+    }
+
     sliderEl.value = String(numericValue);
-    refreshSliderFill(sliderEl);
-    return;
-  }
-
-  sliderEl.value = String(numericValue);
+  });
 }
 
 function sliderValueToParamValue(param, sliderRawValue) {
@@ -1614,13 +1630,15 @@ function syncDelayClockParam(force = false) {
 // Base Time is ignored by the engine in MIDI Clock mode (the delay follows the
 // incoming tempo × Clock Ratio), so disable its slider to make that clear.
 function updateDelayBaseTimeEnabled(syncModeValue) {
-  const slider = paramSliderByParam.get("dlyTimeMs");
-  if (!slider) return;
+  const sliders = paramSlidersByParam.get("dlyTimeMs");
+  if (!sliders) return;
   const mode = Number.isFinite(syncModeValue) ? syncModeValue : currentParamValue("dlySyncMode", 0);
   const clockMode = mode > 0.5;
-  slider.disabled = clockMode;
-  const ctl = slider.closest(".ctl");
-  if (ctl) ctl.classList.toggle("ctl-disabled", clockMode);
+  sliders.forEach((slider) => {
+    slider.disabled = clockMode;
+    const ctl = slider.closest(".ctl");
+    if (ctl) ctl.classList.toggle("ctl-disabled", clockMode);
+  });
 }
 
 function syncMidiClockLockedLfos(nowMs = performance.now(), force = false) {
@@ -2359,21 +2377,26 @@ function formatParamDelta(param, value) {
 }
 
 function updateEditLfoMarkers(nowSec = performance.now() / 1000) {
-  editLfoMarkerByParam.forEach((marker, param) => {
-    const slider = paramSliderByParam.get(param);
+  editLfoMarkersByParam.forEach((markers, param) => {
+    const sliders = paramSlidersByParam.get(param);
     const meta = getControlMeta(param);
-    if (!marker || !slider || !meta || meta.type !== "continuous") {
-      if (marker) marker.classList.remove("on");
-      if (slider) slider.classList.remove("lfo-targeted");
+    if (!markers || !sliders || !meta || meta.type !== "continuous") {
+      if (markers) markers.forEach((marker) => marker.classList.remove("on"));
+      if (sliders) sliders.forEach((slider) => slider.classList.remove("lfo-targeted"));
       return;
     }
-    const base = currentParamValue(param, Number(slider.value));
+    const slider = sliders.values().next().value;
+    const base = currentParamValue(param, Number(slider ? slider.value : 0));
     const live = clamp(base + lfoModOffset(param, nowSec), meta.min, meta.max);
     const frac = meta.max > meta.min ? clamp((live - meta.min) / (meta.max - meta.min), 0, 1) : 0.5;
-    marker.style.left = `${(frac * 100).toFixed(2)}%`;
     const active = hasRunningLfoTarget(param);
-    marker.classList.toggle("on", active);
-    slider.classList.toggle("lfo-targeted", active);
+    markers.forEach((marker) => {
+      marker.style.left = `${(frac * 100).toFixed(2)}%`;
+      marker.classList.toggle("on", active);
+    });
+    sliders.forEach((s) => {
+      s.classList.toggle("lfo-targeted", active);
+    });
   });
 }
 
@@ -2432,7 +2455,7 @@ function redrawModulatedParamViews(nowSec = performance.now() / 1000) {
 let paramModActive = false;
 
 function paramModNeedsAnim() {
-  return currentMainScreen === "edit"
+  return (currentMainScreen === "edit" || currentMainScreen === "perform")
     && (anyActiveLfoTargetsSynthView() || anyActiveLfoTargets(LFO_EDIT_MARKER_TARGETS));
 }
 
@@ -4075,7 +4098,7 @@ function buildSegmentedSelect(select, accent) {
 }
 
 function initEditCards() {
-  document.querySelectorAll(".edit-card").forEach((card) => {
+  document.querySelectorAll(".edit-card, .perf-params-card").forEach((card) => {
     const accent = card.dataset.accent || "shock";
     card.querySelectorAll(".ctl").forEach((ctl) => {
       const slider = ctl.querySelector("input.edit-slider[data-param]");
@@ -4095,10 +4118,18 @@ function initEditCards() {
           lfoMarker.className = "lfo-live-marker";
           sliderWrap.appendChild(lfoMarker);
         }
-        editLfoMarkerByParam.set(param, lfoMarker);
+        if (!editLfoMarkersByParam.has(param)) editLfoMarkersByParam.set(param, new Set());
+        editLfoMarkersByParam.get(param).add(lfoMarker);
+
         const valEl = ctl.querySelector(".val");
-        if (valEl) paramValueElByParam.set(param, valEl);
-        paramSliderByParam.set(param, slider);
+        if (valEl) {
+          if (!paramValueElsByParam.has(param)) paramValueElsByParam.set(param, new Set());
+          paramValueElsByParam.get(param).add(valEl);
+        }
+
+        if (!paramSlidersByParam.has(param)) paramSlidersByParam.set(param, new Set());
+        paramSlidersByParam.get(param).add(slider);
+
         slider.addEventListener("input", () => refreshSliderFill(slider));
         updateRealtimeParamValue(param, currentParamValue(param, Number(slider.value)));
         refreshSliderFill(slider);
