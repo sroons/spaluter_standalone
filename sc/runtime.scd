@@ -233,9 +233,9 @@ s.doWhenBooted({
         };
     };
 
-    // Validate + clamp one LFO config, store it, and respawn that LFO.
+    // Validate + clamp one LFO config, store it, and update/respawn that LFO.
     applyLfo = { |idx, name, rate, depth, shape, enabled, phase|
-        var i, tgt, cap, en, cfg;
+        var i, tgt, cap, en, cfg, synth, newRate, newDepth, newShape, newPhase;
         i = idx.asInteger;
         if((i < 0) or: { i >= maxLfo }) {
             lfoWarn.value("idx out of range: " ++ idx.asString);
@@ -254,13 +254,32 @@ s.doWhenBooted({
             };
             cap = (modDepthCap[tgt] ? 1).asFloat;
             cfg = lfoConfigs[i];
-            cfg[\target] = tgt;
-            cfg[\rate] = rate.asFloat.clip(0.001, 50);
-            cfg[\depth] = depth.asFloat.clip(cap.neg, cap);
-            cfg[\shape] = shape.asInteger.clip(0, 6);
-            cfg[\enabled] = en;
-            cfg[\phase] = phase.asFloat.wrap(0, 1);
-            spawnLfo.value(i);
+            newRate = rate.asFloat.clip(0.001, 50);
+            newDepth = depth.asFloat.clip(cap.neg, cap);
+            newShape = shape.asInteger.clip(0, 6);
+            newPhase = phase.asFloat.wrap(0, 1);
+
+            synth = lfoSynths[i];
+
+            if(synth.notNil
+                and: { en == 1 }
+                and: { cfg[\enabled] == 1 }
+                and: { cfg[\target] == tgt }
+                and: { (cfg[\phase] - newPhase).abs < 0.0001 }) {
+                // Update running LFO in place without synth respawn or phase jump
+                cfg[\rate] = newRate;
+                cfg[\depth] = newDepth;
+                cfg[\shape] = newShape;
+                synth.set(\rate, newRate, \depth, newDepth, \shape, newShape);
+            } {
+                cfg[\target] = tgt;
+                cfg[\rate] = newRate;
+                cfg[\depth] = newDepth;
+                cfg[\shape] = newShape;
+                cfg[\enabled] = en;
+                cfg[\phase] = newPhase;
+                spawnLfo.value(i);
+            };
         };
     };
 
@@ -491,12 +510,18 @@ s.doWhenBooted({
                     \gateMode, 1, \pulsaret, 2.5, \window, 0.5, \duty, 0.5,
                     \formantCount, 3, \formant1, 20, \formant2, 200, \formant3, 400,
                     \pan1, 0, \pan2, 0.5, \pan3, -0.5,
-                    \drive, 1.0, \maskMode, 0, \maskAmount, 0.5,
-                    \ampJitter, 0.0, \timingJitter, 0.0, \glisson, 0.0
+                    \drive, 1.0, \maskMode, 0, \maskAmount, 0.5, \burstOn, 4, \burstOff, 4, \perFormantMask, 0,
+                    \ampJitter, 0.0, \timingJitter, 0.0, \glisson, 0.0,
+                    // Close the gate so the ASR sees a real 0->1 edge on the
+                    // next Note On. Reset reuses the existing node, so without
+                    // this a note held across a reset leaves the gate latched.
+                    \gate, 0, \trigIn, 0
                 );
             };
             resetReverbParams.value;
             currentGateMode = 1;
+            midiSoundingNote = nil;
+            midiVoiceActive = false;
             status.value("Patch reset");
         }.defer;
     };

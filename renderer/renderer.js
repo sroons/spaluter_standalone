@@ -535,29 +535,82 @@ function interpolatedWaveSample(value, maxIndex, sampleByIndex, t) {
   return (sampleByIndex(lo, t) * (1 - mix)) + (sampleByIndex(hi, t) * mix);
 }
 
+function applyLfoQuantization(val, scaleIndex) {
+  if (!scaleIndex || scaleIndex <= 0 || scaleIndex >= LFO_QUANT_SCALE_OPTIONS.length) {
+    return val;
+  }
+  const opt = LFO_QUANT_SCALE_OPTIONS[scaleIndex];
+  if (!opt) return val;
+
+  if (opt.steps) {
+    const steps = Math.max(2, opt.steps);
+    const u = clamp((val + 1) * 0.5, 0, 1);
+    const q = Math.round(u * (steps - 1)) / (steps - 1);
+    return (q * 2) - 1;
+  }
+
+  if (Array.isArray(opt.semitones) && opt.semitones.length > 0) {
+    const totalSt = val * 12;
+    const oct = Math.floor(totalSt / 12);
+    let rem = totalSt - (oct * 12);
+    if (rem < 0) rem += 12;
+
+    let bestPitch = opt.semitones[0];
+    let minDiff = Math.abs(rem - bestPitch);
+    for (let i = 1; i < opt.semitones.length; i += 1) {
+      const diff = Math.abs(rem - opt.semitones[i]);
+      if (diff < minDiff) {
+        minDiff = diff;
+        bestPitch = opt.semitones[i];
+      }
+    }
+    const wrapDiff = Math.abs(rem - (12 + opt.semitones[0]));
+    let snappedSt = 0;
+    if (wrapDiff < minDiff) {
+      snappedSt = ((oct + 1) * 12) + opt.semitones[0];
+    } else {
+      snappedSt = (oct * 12) + bestPitch;
+    }
+
+    return snappedSt / 12;
+  }
+
+  return val;
+}
+
 // Bipolar [-1, 1] LFO shape sampler matched 1:1 to the SC `\spaluterLfo`
 // Select.kr enum (sine, triangle, saw up, saw down, square, S&H, smooth random).
 // For the two random shapes the preview is seeded by the LFO index so it is
 // stable frame-to-frame; it communicates character, not phase-locked samples.
-function lfoShapeSample(shape, phase01, seed = 0) {
-  const p = phase01 - Math.floor(phase01);
+function lfoShapeSample(shape, phase01, seed = 0, loopLen = 0, quantScale = 0) {
+  let p = phase01 - Math.floor(phase01);
+  if (loopLen > 0) {
+    p = (Math.floor(p * loopLen) % loopLen) / loopLen;
+  }
+  let sample = 0;
   switch (shape | 0) {
     case 0:
-      return Math.sin(TWO_PI * p);
+      sample = Math.sin(TWO_PI * p);
+      break;
     case 1: {
       const q = (p + 0.25) - Math.floor(p + 0.25);
-      return 1 - (4 * Math.abs(q - 0.5));
+      sample = 1 - (4 * Math.abs(q - 0.5));
+      break;
     }
     case 2:
-      return (2 * p) - 1;
+      sample = (2 * p) - 1;
+      break;
     case 3:
-      return 1 - (2 * p);
+      sample = 1 - (2 * p);
+      break;
     case 4:
-      return p < 0.5 ? 1 : -1;
+      sample = p < 0.5 ? 1 : -1;
+      break;
     case 5: {
       const steps = 8;
       const step = Math.floor(p * steps);
-      return (hashUnit((seed * 131.7) + step + 1) * 2) - 1;
+      sample = (hashUnit((seed * 131.7) + step + 1) * 2) - 1;
+      break;
     }
     case 6: {
       const steps = 8;
@@ -567,11 +620,18 @@ function lfoShapeSample(shape, phase01, seed = 0) {
       const a = (hashUnit((seed * 131.7) + i0 + 1) * 2) - 1;
       const b = (hashUnit((seed * 131.7) + i0 + 2) * 2) - 1;
       const smooth = (1 - Math.cos(frac * Math.PI)) * 0.5;
-      return a + ((b - a) * smooth);
+      sample = a + ((b - a) * smooth);
+      break;
     }
     default:
-      return 0;
+      sample = 0;
   }
+
+  if (quantScale > 0) {
+    sample = applyLfoQuantization(sample, quantScale);
+  }
+
+  return sample;
 }
 
 function interpolatedWaveLabel(value, names) {
@@ -933,7 +993,7 @@ function maskGateState(maskMode, perFormantMask, maskAmount, burstOn, burstOff, 
   }
 
   const total = Math.max(1, burstOn + burstOff);
-  const offset = perFormantMask ? 0 : (laneIndex * (total / 3));
+  const offset = perFormantMask ? (laneIndex * (total / 3)) : 0;
   const burstIndex = ((step + offset) % total + total) % total;
   return burstIndex < burstOn;
 }
@@ -2167,6 +2227,50 @@ function lfoSliderPosToRate(pos) {
 }
 const LFO_CONFIG_VERSION = 3;
 const LFO_SHAPE_NAMES = ["Sine", "Triangle", "Saw Up", "Saw Down", "Square", "S&H", "Smooth Rnd"];
+
+const LFO_LOOP_LENGTH_OPTIONS = Object.freeze([
+  { label: "no loop", value: 0 },
+  { label: "1", value: 1 },
+  { label: "2", value: 2 },
+  { label: "4", value: 4 },
+  { label: "5", value: 5 },
+  { label: "6", value: 6 },
+  { label: "7", value: 7 },
+  { label: "8", value: 8 },
+  { label: "9", value: 9 },
+  { label: "10", value: 10 },
+  { label: "11", value: 11 },
+  { label: "12", value: 12 },
+  { label: "13", value: 13 },
+  { label: "14", value: 14 },
+  { label: "15", value: 15 },
+  { label: "16", value: 16 },
+  { label: "24", value: 24 },
+  { label: "32", value: 32 }
+]);
+
+const LFO_QUANT_SCALE_OPTIONS = Object.freeze([
+  { name: "Off", label: "Off", semitones: null },
+  { name: "Chromatic", label: "Chromatic", semitones: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] },
+  { name: "Major", label: "Major", semitones: [0, 2, 4, 5, 7, 9, 11] },
+  { name: "Natural Minor", label: "Natural Minor", semitones: [0, 2, 3, 5, 7, 8, 10] },
+  { name: "Harmonic Minor", label: "Harmonic Minor", semitones: [0, 2, 3, 5, 7, 8, 11] },
+  { name: "Melodic Minor", label: "Melodic Minor", semitones: [0, 2, 3, 5, 7, 9, 11] },
+  { name: "Dorian", label: "Dorian", semitones: [0, 2, 3, 5, 7, 9, 10] },
+  { name: "Phrygian", label: "Phrygian", semitones: [0, 1, 3, 5, 7, 8, 10] },
+  { name: "Lydian", label: "Lydian", semitones: [0, 2, 4, 6, 7, 9, 11] },
+  { name: "Mixolydian", label: "Mixolydian", semitones: [0, 2, 4, 5, 7, 9, 10] },
+  { name: "Locrian", label: "Locrian", semitones: [0, 1, 3, 5, 6, 8, 10] },
+  { name: "Major Pentatonic", label: "Major Pentatonic", semitones: [0, 2, 4, 7, 9] },
+  { name: "Minor Pentatonic", label: "Minor Pentatonic", semitones: [0, 3, 5, 7, 10] },
+  { name: "Blues", label: "Blues", semitones: [0, 3, 5, 6, 7, 10] },
+  { name: "Whole Tone", label: "Whole Tone", semitones: [0, 2, 4, 6, 8, 10] },
+  { name: "Diminished", label: "Diminished", semitones: [0, 2, 3, 5, 6, 8, 9, 11] },
+  { name: "24-TET", label: "24-TET", semitones: [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5, 8, 8.5, 9, 9.5, 10, 10.5, 11, 11.5] },
+  { name: "Step 4", label: "Step 4", steps: 4 },
+  { name: "Step 8", label: "Step 8", steps: 8 },
+  { name: "Step 16", label: "Step 16", steps: 16 }
+]);
 const LFO_CLOCK_RATIO_OPTIONS = (() => {
   const options = [];
   for (let d = 16; d >= 2; d -= 1) {
@@ -2212,7 +2316,9 @@ function defaultLfoConfig() {
     enabled: false,
     phase: 0,
     useMidiClock: false,
-    clockRatio: 1
+    clockRatio: 1,
+    loopLen: 0,
+    quantScale: 0
   };
 }
 
@@ -2228,10 +2334,63 @@ const lfoOverviewEl = document.getElementById("lfoOverview");
 const lfoStripListEl = document.getElementById("lfoStripList");
 const lfoImpactMatrixEl = document.getElementById("lfoImpactMatrix");
 const lfoCountHintEl = document.getElementById("lfoCountHint");
+const globalQuantSel = document.getElementById("globalQuantSel");
 const lfoStripEls = [];
 const lfoImpactMatrixRows = [];
 const lfoThumbCacheByCanvas = new WeakMap();
 let lfoImpactMatrixLastUpdate = 0;
+
+function syncGlobalQuantSelState() {
+  if (!globalQuantSel) return;
+  const firstScale = lfoConfigs[0]?.quantScale || 0;
+  const allSame = lfoConfigs.every((c) => (c.quantScale || 0) === firstScale);
+  if (allSame) {
+    globalQuantSel.value = String(firstScale);
+  } else {
+    globalQuantSel.value = "mixed";
+  }
+}
+
+function initGlobalQuantMenu() {
+  if (!globalQuantSel) return;
+  globalQuantSel.innerHTML = "";
+
+  const mixedOpt = document.createElement("option");
+  mixedOpt.value = "mixed";
+  mixedOpt.textContent = "Quantize All...";
+  globalQuantSel.appendChild(mixedOpt);
+
+  LFO_QUANT_SCALE_OPTIONS.forEach((optItem, optIdx) => {
+    const option = document.createElement("option");
+    option.value = String(optIdx);
+    option.textContent = optItem.label || optItem.name;
+    globalQuantSel.appendChild(option);
+  });
+
+  globalQuantSel.addEventListener("change", () => {
+    const val = globalQuantSel.value;
+    if (val === "mixed" || val === "") return;
+    const scaleIndex = parseInt(val, 10) || 0;
+
+    for (let i = 0; i < LFO_MAX; i += 1) {
+      lfoConfigs[i].quantScale = scaleIndex;
+      if (lfoStripEls[i] && lfoStripEls[i].quantSel) {
+        lfoStripEls[i].quantSel.value = String(scaleIndex);
+      }
+    }
+
+    sendAllLfos();
+    updateLfoHint();
+    rebuildLfoOverview();
+    refreshLfoImpactMatrix(undefined, true);
+    updateEditLfoMarkers();
+    if (isModulationScreenActive()) scheduleLfoCursor();
+    scheduleParamModAnim();
+    if (currentMainScreen === "edit") scheduleWaveformViewsRedraw();
+  });
+
+  syncGlobalQuantSelState();
+}
 
 function lfoCapFor(targetName) {
   const t = LFO_TARGET_BY_NAME.get(targetName);
@@ -2313,7 +2472,7 @@ function lfoModOffset(param, nowSec) {
     const c = lfoConfigs[i];
     if (!c.enabled || c.target !== param || c.depth === 0) continue;
     const phase01 = lfoRuntimePhase01(i, c, nowSec);
-    sum += c.depth * lfoShapeSample(c.shape, phase01, i);
+    sum += c.depth * lfoShapeSample(c.shape, phase01, i, c.loopLen || 0, c.quantScale || 0);
   }
   return sum;
 }
@@ -2334,7 +2493,7 @@ function hasRunningLfoTarget(param) {
 function lfoInstantContribution(cfg, index, nowSec) {
   if (!lfoIsActive(cfg)) return 0;
   const phase01 = lfoRuntimePhase01(index, cfg, nowSec);
-  return cfg.depth * lfoShapeSample(cfg.shape, phase01, index);
+  return cfg.depth * lfoShapeSample(cfg.shape, phase01, index, cfg.loopLen || 0, cfg.quantScale || 0);
 }
 
 function retriggerLfosForMidiNote(nowSec = performance.now() / 1000) {
@@ -2523,7 +2682,7 @@ function renderLfoThumbBase(canvas, cfg, seed) {
   const accent = lfoCardAccent(seed || 0);
   drawWaveform(
     canvas,
-    (t) => sign * amp * lfoShapeSample(cfg.shape, t + cfg.phase, seed),
+    (t) => sign * amp * lfoShapeSample(cfg.shape, t + cfg.phase, seed, cfg.loopLen || 0, cfg.quantScale || 0),
     -1,
     1,
     { color: accent, lineWidth: 1.9, glow: false, sampleCount: 96 }
@@ -2595,13 +2754,15 @@ function applyCenteredMeterFill(fillEl, normalized) {
 
 function refreshLfoStripImpact(index, nowSec = performance.now() / 1000) {
   const refs = lfoStripEls[index];
-  if (!refs?.impactLiveEl || !refs?.impactDeltaEl || !refs?.impactFillEl) return;
+  if (!refs?.impactLiveEl || !refs?.impactFillEl) return;
   const cfg = lfoConfigs[index];
   const target = cfg.target;
   const cap = lfoCapFor(target);
   if (!lfoIsActive(cfg) || cap <= 0) {
     refs.impactLiveEl.textContent = "0.00";
-    refs.impactDeltaEl.textContent = "ΔLFO 0 · Σ 0";
+    if (refs.impactDeltaEl && refs.impactDeltaEl.parentNode) {
+      refs.impactDeltaEl.textContent = "ΔLFO 0 · Σ 0";
+    }
     applyCenteredMeterFill(refs.impactFillEl, 0);
     return;
   }
@@ -2610,7 +2771,9 @@ function refreshLfoStripImpact(index, nowSec = performance.now() / 1000) {
   const live = clampToParamMeta(target, base + total);
   const own = lfoInstantContribution(cfg, index, nowSec);
   refs.impactLiveEl.textContent = `${formatParamValue(target, base)} → ${formatParamValue(target, live)}`;
-  refs.impactDeltaEl.textContent = `ΔLFO ${own >= 0 ? "+" : ""}${formatParamDelta(target, own)} · Σ ${total >= 0 ? "+" : ""}${formatParamDelta(target, total)}`;
+  if (refs.impactDeltaEl && refs.impactDeltaEl.parentNode) {
+    refs.impactDeltaEl.textContent = `ΔLFO ${own >= 0 ? "+" : ""}${formatParamDelta(target, own)} · Σ ${total >= 0 ? "+" : ""}${formatParamDelta(target, total)}`;
+  }
   applyCenteredMeterFill(refs.impactFillEl, own / cap);
 }
 
@@ -2739,12 +2902,16 @@ function createLfoStrip(index) {
   const row2 = document.createElement("div");
   row2.className = "lfo-card-row-2";
 
-  // Col 1 (Shape, Clock)
+  // Col 1 (Shape, Clock, Loop Length, Quantize)
   const ctrlCol = document.createElement("div");
   ctrlCol.className = "lfo-ctrl-col";
 
-  const shapeRow = document.createElement("div");
-  shapeRow.className = "lfo-slider-row";
+  const ctrlGrid = document.createElement("div");
+  ctrlGrid.className = "lfo-ctrl-grid";
+
+  // Cell 1: Shape
+  const cellShape = document.createElement("div");
+  cellShape.className = "lfo-ctrl-cell";
   const shapeHead = document.createElement("div");
   shapeHead.className = "lfo-ctrl-header";
   const shapeKey = document.createElement("span");
@@ -2760,11 +2927,11 @@ function createLfoStrip(index) {
     shapeSel.appendChild(option);
   });
   shapeSel.value = String(cfg.shape);
-  shapeRow.append(shapeHead, shapeSel);
+  cellShape.append(shapeHead, shapeSel);
 
-  const clockRow = document.createElement("div");
-  clockRow.className = "lfo-slider-row";
-  clockRow.style.marginTop = "8px";
+  // Cell 2: Clock
+  const cellClock = document.createElement("div");
+  cellClock.className = "lfo-ctrl-cell";
   const clockHead = document.createElement("div");
   clockHead.className = "lfo-ctrl-header";
   const clockKey = document.createElement("span");
@@ -2778,11 +2945,52 @@ function createLfoStrip(index) {
   clockCheck.type = "checkbox";
   clockCheck.className = "lfo-clock-check";
   clockCheck.checked = Boolean(cfg.useMidiClock);
-  const clockText = document.createTextNode(" MIDI SYNC");
+  const clockText = document.createTextNode(" SYNC");
   clockToggle.append(clockCheck, clockText);
-  clockRow.append(clockHead, clockToggle);
+  cellClock.append(clockHead, clockToggle);
 
-  ctrlCol.append(shapeRow, clockRow);
+  // Cell 3: Loop Length
+  const cellLoop = document.createElement("div");
+  cellLoop.className = "lfo-ctrl-cell";
+  const loopHead = document.createElement("div");
+  loopHead.className = "lfo-ctrl-header";
+  const loopKey = document.createElement("span");
+  loopKey.className = "k";
+  loopKey.textContent = "Loop";
+  loopHead.appendChild(loopKey);
+  const loopSel = document.createElement("select");
+  loopSel.className = "lfo-loop-sel";
+  LFO_LOOP_LENGTH_OPTIONS.forEach((optItem) => {
+    const option = document.createElement("option");
+    option.value = String(optItem.value);
+    option.textContent = optItem.label;
+    loopSel.appendChild(option);
+  });
+  loopSel.value = String(cfg.loopLen || 0);
+  cellLoop.append(loopHead, loopSel);
+
+  // Cell 4: Quantize
+  const cellQuant = document.createElement("div");
+  cellQuant.className = "lfo-ctrl-cell";
+  const quantHead = document.createElement("div");
+  quantHead.className = "lfo-ctrl-header";
+  const quantKey = document.createElement("span");
+  quantKey.className = "k";
+  quantKey.textContent = "Quant";
+  quantHead.appendChild(quantKey);
+  const quantSel = document.createElement("select");
+  quantSel.className = "lfo-quant-sel";
+  LFO_QUANT_SCALE_OPTIONS.forEach((optItem, optIdx) => {
+    const option = document.createElement("option");
+    option.value = String(optIdx);
+    option.textContent = optItem.label;
+    quantSel.appendChild(option);
+  });
+  quantSel.value = String(cfg.quantScale || 0);
+  cellQuant.append(quantHead, quantSel);
+
+  ctrlGrid.append(cellShape, cellClock, cellLoop, cellQuant);
+  ctrlCol.append(ctrlGrid);
 
   // Col 2 (Rate/Ratio, Depth)
   const sliderCol = document.createElement("div");
@@ -2847,21 +3055,17 @@ function createLfoStrip(index) {
   card.append(ghost, row1, row2, enableInput);
   lfoStripListEl.appendChild(card);
 
-  // Backwards compatibility mappings for the rest of the app:
-  // impactLiveEl handles the text
-  // impactFillEl handles the bar fill
-  // canvas is null because we removed it, but we add a dummy to avoid errors in updateLfoCanvases
-  const dummyCanvas = document.createElement("canvas");
-  
   const refs = {
     index,
     strip: card,
-    canvas: dummyCanvas, // Removed the real canvas!
+    canvas: null,
     metaEl: null,
     idEl,
     runBtn,
     targetSel,
     shapeSel,
+    loopSel,
+    quantSel,
     clockCheck,
     rateEl,
     clockRatioEl: ratioEl,
@@ -2872,7 +3076,7 @@ function createLfoStrip(index) {
     depthLabelVal: depthVal,
     accent,
     impactLiveEl: impactLive,
-    impactDeltaEl: document.createElement("div"), // unused
+    impactDeltaEl: null,
     impactFillEl: impactFill,
     impactCursor: impactCursor, // new
     rateKey: rateKey,           // new, so we can swap the label
@@ -2884,6 +3088,9 @@ function createLfoStrip(index) {
     const c = lfoConfigs[index];
     c.target = LFO_TARGET_BY_NAME.has(targetSel.value) ? targetSel.value : "none";
     c.shape = clamp(parseInt(shapeSel.value, 10) || 0, 0, 6);
+    c.loopLen = parseInt(loopSel.value, 10) || 0;
+    c.quantScale = parseInt(quantSel.value, 10) || 0;
+    syncGlobalQuantSelState();
     
     const wasMidi = c.useMidiClock;
     c.useMidiClock = Boolean(clockCheck.checked);
@@ -2945,6 +3152,8 @@ function createLfoStrip(index) {
   });
   targetSel.addEventListener("change", onChange);
   shapeSel.addEventListener("change", onChange);
+  loopSel.addEventListener("change", onChange);
+  quantSel.addEventListener("change", onChange);
   clockCheck.addEventListener("change", onChange);
   rateEl.addEventListener("input", onChange);
   depthEl.addEventListener("input", onChange);
@@ -3045,6 +3254,9 @@ function syncLfoStripFromConfig(index) {
 
   refs.targetSel.value = cfg.target;
   refs.shapeSel.value = String(cfg.shape);
+  if (refs.loopSel) refs.loopSel.value = String(cfg.loopLen || 0);
+  if (refs.quantSel) refs.quantSel.value = String(cfg.quantScale || 0);
+  syncGlobalQuantSelState();
   refs.clockCheck.checked = Boolean(cfg.useMidiClock);
   
   if (cfg.useMidiClock) {
@@ -3115,7 +3327,9 @@ function lfoToIpc(index) {
     depth: c.depth,
     shape: c.shape,
     enabled: c.enabled,
-    phase: c.phase
+    phase: c.phase,
+    loopLen: c.loopLen || 0,
+    quantScale: c.quantScale || 0
   };
 }
 
@@ -3170,7 +3384,7 @@ function syncLfosToEngine() {
     // so we can see the exact bipolar swing.
     // LFO swing is -1 to 1.
     const phase01 = lfoPhase01(c, nowSec);
-    const rawVal = lfoShapeSample(c.shape, phase01, refs.index);
+    const rawVal = lfoShapeSample(c.shape, phase01, refs.index, c.loopLen || 0, c.quantScale || 0);
     const depthFrac = lfoDepthFractionSigned(c);
     
     // The exact +/- delta being sent to the engine for this parameter
@@ -3218,7 +3432,9 @@ function collectLfoState() {
       enabled: c.enabled,
       phase: c.phase,
       useMidiClock: Boolean(c.useMidiClock),
-      clockRatio: lfoClockRatioValue(c)
+      clockRatio: lfoClockRatioValue(c),
+      loopLen: c.loopLen || 0,
+      quantScale: c.quantScale || 0
     }))
   };
 }
@@ -3238,6 +3454,8 @@ function applyLfoState(state) {
       c.phase = (((Number(src.phase) || 0) % 1) + 1) % 1;
       c.useMidiClock = Boolean(src.useMidiClock);
       c.clockRatio = lfoClockRatioValue(src);
+      c.loopLen = typeof src.loopLen === "number" ? src.loopLen : 0;
+      c.quantScale = typeof src.quantScale === "number" ? src.quantScale : 0;
     } else {
       Object.assign(c, defaultLfoConfig());
     }
@@ -3280,7 +3498,9 @@ function lfoCursorTick(timestamp) {
       refreshLfoStripImpact(i, now);
       if (!lfoIsActive(c)) continue;
       const cursorT = lfoRuntimePhase01(i, c, now);
-      drawLfoThumb(r.canvas, c, i, cursorT);
+      if (r.canvas && r.canvas.parentNode) {
+        drawLfoThumb(r.canvas, c, i, cursorT);
+      }
     }
     refreshLfoImpactMatrix(now);
   }
@@ -3315,6 +3535,7 @@ function handleMainScreenEntered(targetScreen) {
 
 function initModulationUi() {
   buildLfoStrips();
+  initGlobalQuantMenu();
   ensureLfoImpactMatrixRows();
   lfoStripEls.forEach((r) => refreshLfoStrip(r.index));
   refreshLfoImpactMatrix(undefined, true);

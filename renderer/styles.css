@@ -134,7 +134,7 @@ header{
 .peak-wrap{ position:relative; flex:1; min-height:0; min-width:0; background:#070708; overflow:hidden; }
 .peak-wrap canvas{ position:absolute; inset:0; width:100%; height:100%; display:block; }
 .perf-params-card{ min-width:0; overflow:hidden; display:flex; flex-direction:column; }
-.perf-params-card .ctl-list{ overflow-y:hidden; }
+.perf-params-card .ctl-list{ overflow-y:auto; gap:3px; }
 .scope-meta{ font-family:var(--mono); font-size:8px; color:var(--mute-2);
   letter-spacing:.05em; text-transform:uppercase; white-space:nowrap; overflow:hidden;
   text-overflow:ellipsis; font-variant-numeric:tabular-nums; flex:1 1 0px; min-width:0; }
@@ -226,6 +226,9 @@ input.edit-slider{ height:30px; border:none; background:transparent; }
 .modbar-title{ font-family:var(--din); font-weight:700; font-size:15px; text-transform:uppercase;
   letter-spacing:.04em; color:var(--paper); }
 .modbar-title b{ color:var(--shock); }
+.modbar-quant-global{ display:flex; align-items:center; gap:6px; font-family:var(--din); font-weight:700; font-size:12px; text-transform:uppercase; color:var(--paper-2); }
+.modbar-quant-global label{ letter-spacing:.04em; color:var(--mute-2); font-size:11px; font-family:var(--mono); }
+.modbar-quant-global select{ font-family:var(--mono); font-size:11px; background:var(--ink-3); color:var(--paper); border:1px solid var(--line-2); padding:3px 6px; border-radius:2px; cursor:pointer; }
 .modbar-meta{ font-family:var(--mono); font-size:11px; color:var(--mute-2); letter-spacing:.04em; }
 .lfo-impact-matrix{ display: none !important;
   flex:0 0 auto; display:flex; flex-direction:column; gap:4px;
@@ -529,30 +532,34 @@ pre#log{ margin:0; padding:8px; height:200px; overflow:auto; background:#070708;
 .lfo-bipolar-cursor.pos { left: 50%; }
 .lfo-bipolar-cursor.neg { left: 50%; }
 
-.lfo-card-row-2 { display: grid; grid-template-columns: 1fr 2.1fr; gap: 16px; position:relative; z-index:1; margin-top: 12px;}
-.lfo-ctrl-col { display: flex; flex-direction: column; gap: 4px; }
-
-.lfo-ctrl-header { display: flex; justify-content: space-between; align-items: center; min-height: 20px;}
-.lfo-ctrl-header .k { font-family:var(--mono); font-size:10px; color:var(--mute-2);
+.lfo-card-row-2 { display: grid; grid-template-columns: 1.1fr 1fr; gap: 16px; position:relative; z-index:1; margin-top: 10px;}
+.lfo-ctrl-col { display: flex; flex-direction: column; }
+.lfo-ctrl-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; }
+.lfo-ctrl-cell { display: flex; flex-direction: column; gap: 2px; }
+.lfo-ctrl-header { display: flex; justify-content: space-between; align-items: center; min-height: 16px;}
+.lfo-ctrl-header .k { font-family:var(--mono); font-size:9.5px; color:var(--mute-2);
   letter-spacing:.07em; text-transform:uppercase; }
-.lfo-ctrl-header .v { color: var(--shock); font-family: var(--dinc); font-size: 16px; line-height: 1; letter-spacing: 0.05em; }
+.lfo-ctrl-header .v { color: var(--shock); font-family: var(--dinc); font-size: 15px; line-height: 1; letter-spacing: 0.05em; }
 
-.lfo-shape {
-  min-height:44px; padding:0 10px;
+.lfo-shape, .lfo-loop-sel, .lfo-quant-sel {
+  min-height:32px; padding:0 6px;
   border:1px solid var(--line-2); background-color:#070708;
   appearance:none; -webkit-appearance:none;
-  font-family:var(--din); font-weight:700; font-size:13px; letter-spacing:.03em;
+  font-family:var(--din); font-weight:700; font-size:11px; letter-spacing:.03em;
   text-transform:uppercase; color:var(--paper); cursor:pointer;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  width: 100%;
 }
 
 .lfo-sync-toggle {
-  display: flex; align-items: center; justify-content: center; gap: 8px;
-  min-height: 44px;
-  font-family: var(--din); font-size: 12px; text-transform: uppercase;
+  display: flex; align-items: center; justify-content: center; gap: 4px;
+  min-height: 32px;
+  font-family: var(--din); font-size: 10.5px; text-transform: uppercase;
   color: var(--paper-2); background: rgba(0,0,0,0.3); border: 1px solid var(--line-2);
-  cursor: pointer; letter-spacing: 0.05em;
+  cursor: pointer; letter-spacing: 0.03em;
+  white-space: nowrap; overflow: hidden;
 }
-.lfo-sync-toggle input { margin: 0; width: 14px; height: 14px; accent-color: var(--shock); }
+.lfo-sync-toggle input { margin: 0; width: 13px; height: 13px; accent-color: var(--shock); }
 .lfo-sync-toggle.active { color: var(--shock); border-color: rgba(255, 111, 36, 0.4); background: rgba(255, 111, 36, 0.1); }
 
 .lfo-sliders-group { display: flex; flex-direction: column; gap: 16px; }

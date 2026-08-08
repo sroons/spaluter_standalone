@@ -67,6 +67,10 @@
               <div class="ctl"><span class="nm">Pulsaret</span><input class="edit-slider" data-param="pulsaret" type="range" min="0" max="9" step="0.1" value="2.5" /><span class="val"></span></div>
               <div class="ctl"><span class="nm">Window</span><input class="edit-slider" data-param="window" type="range" min="0" max="8" step="0.1" value="0.5" /><span class="val"></span></div>
               <div class="ctl"><span class="nm">Duty</span><input class="edit-slider" data-param="duty" type="range" min="0.01" max="1" step="0.01" value="0.5" /><span class="val"></span></div>
+              <div class="ctl"><span class="nm">Attack</span><input class="edit-slider" data-param="attackMs" type="range" min="0.1" max="2000" step="0.1" value="10" /><span class="val" data-unit="ms"></span></div>
+              <div class="ctl"><span class="nm">Release</span><input class="edit-slider" data-param="releaseMs" type="range" min="1" max="3200" step="1" value="200" /><span class="val" data-unit="ms"></span></div>
+              <div class="ctl"><span class="nm">Amplitude</span><input class="edit-slider" data-param="amp" type="range" min="0" max="1" step="0.01" value="0.25" /><span class="val"></span></div>
+              <div class="ctl"><span class="nm">Gain</span><input class="edit-slider" data-param="drive" type="range" min="0.1" max="4" step="0.01" value="1.0" /><span class="val"></span></div>
               <div class="ctl"><span class="nm">Formant 1</span><input class="edit-slider" data-param="formant1" type="range" min="20" max="3000" step="1" value="20" /><span class="val" data-unit="Hz"></span></div>
               <div class="ctl"><span class="nm">Formant 2</span><input class="edit-slider" data-param="formant2" type="range" min="20" max="3000" step="1" value="200" /><span class="val" data-unit="Hz"></span></div>
               <div class="ctl"><span class="nm">Formant 3</span><input class="edit-slider" data-param="formant3" type="range" min="20" max="3000" step="1" value="400" /><span class="val" data-unit="Hz"></span></div>
@@ -104,11 +108,6 @@
           <!-- CORE ENGINE -->
           <div class="edit-card" data-accent="shock">
             <div class="ph"><span class="t">Core Engine</span><span class="num">01</span></div>
-            <div class="edit-waves">
-              <div class="wavebox"><span class="lab" id="pulsaretWaveLabel">PULSARET</span><canvas id="pulsaretWaveView" width="320" height="60"></canvas></div>
-              <div class="wavebox"><span class="lab r" id="windowWaveLabel">WINDOW</span><canvas id="windowWaveView" width="320" height="60"></canvas></div>
-              <div class="wavebox"><span class="lab" id="dutyWaveLabel">DUTY</span><canvas id="dutyWaveView" width="320" height="60"></canvas></div>
-            </div>
             <div class="ctl-list">
               <div class="ctl"><span class="nm">Amplitude</span><input class="edit-slider" data-param="amp" type="range" min="0" max="1" step="0.01" value="0.25" /><span class="val"></span></div>
               <div class="ctl"><span class="nm">Drive Gain</span><input class="edit-slider" data-param="drive" type="range" min="0.1" max="4" step="0.01" value="1.0" /><span class="val"></span></div>
@@ -177,6 +176,12 @@
       <section class="main-screen" data-screen="mods" aria-label="Modulation screen">
         <div class="modbar">
           <span class="modbar-title">Internal LFO Bus · <b id="lfoActiveCount">0</b> Active / 16</span>
+          <div class="modbar-quant-global">
+            <label for="globalQuantSel">Quantize All:</label>
+            <select id="globalQuantSel" class="lfo-quant-sel" aria-label="Global Quantization Scale">
+              <!-- Populated by JS -->
+            </select>
+          </div>
           <span class="modbar-meta" id="lfoCountHint">Tap controls to edit Shape, Depth, and Target</span>
         </div>
         <div class="lfo-impact-matrix" id="lfoImpactMatrix" aria-label="LFO impact matrix"></div>

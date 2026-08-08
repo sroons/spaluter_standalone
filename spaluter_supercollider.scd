@@ -22,7 +22,7 @@ s.waitForBoot {
     ];
 
     SynthDef(\spaluterSC, {
-        |out=0, amp=0.2, gate=1, trigIn=0,
+        |out=0, amp=0.2, gate=0, trigIn=0,
         gateMode=1, basePitch=32.7032, voiceCount=1, chordType=0,
         pulsaret=2.5, window=0.5, duty=0.5, dutyMode=0,
         formantCount=3, formant1=20, formant2=200, formant3=400, formantTrack=0,
@@ -75,12 +75,16 @@ s.waitForBoot {
             pulseFreq = (freq * jitMul).clip(0.1, 14000);
             trig = Impulse.ar(pulseFreq);
 
-            // MIDI-like note envelope (modes 0 and 2): a true gated ASR.
-            // Gate up (Note On) plays the attack to the sustain level and
-            // holds; gate down (Note Off) plays the release to silence.
-            // doneAction stays 0 so the persistent voice survives between
-            // notes. (Mode 1/Free Run uses the per-grain percussive env.)
-            envASR = EnvGen.kr(Env.asr(atk, 1, rel, -4), Select.kr(mode, [gate, gate, (trigIn > 0)]));
+            // MIDI-like note envelope (modes 0 and 2): a gated ASR built from
+            // LagUD rather than EnvGen. Gate up (Note On) ramps to the sustain
+            // level over `atk` and holds; gate down (Note Off) ramps to silence
+            // over `rel`. LagUD re-reads atk/rel every control block, so slider
+            // moves and LFO modulation of attackMs/releaseMs (mod[16]/mod[17])
+            // affect the note that is already sounding. EnvGen was used here
+            // previously but latches its segment times at segment start, which
+            // froze Attack/Release for the duration of each note and made them
+            // dead as LFO targets. (Mode 1/Free Run uses the per-grain env.)
+            envASR = LagUD.kr(Select.kr(mode, [gate, gate, (trigIn > 0)]), atk, rel);
             envPulse = EnvGen.ar(Env.perc(atk, rel, 1, curve: -4), trig);
             env = SelectX.ar(mode, [K2A.ar(envASR), envPulse, K2A.ar(envASR)]);
 
@@ -106,7 +110,7 @@ s.waitForBoot {
 
                 phase = (Sweep.ar(trig) * pulseFreq).wrap(0, 1);
                 dutyStart = (1 - dutyF) * 0.5;
-                inDuty = (phase >= dutyStart) * (phase < (dutyStart + dutyF));
+                inDuty = Lag.ar((phase >= dutyStart) * (phase < (dutyStart + dutyF)), 0.0005);
                 tp = ((phase - dutyStart) / dutyF.max(0.001)).clip(0, 1);
 
                 ratioF = fEff / freq.max(0.1);
@@ -120,7 +124,8 @@ s.waitForBoot {
                     (x * 3).sin,                            // sine x3
                     {
                         var sx = (wphase - 0.5) * (8 * pi);
-                        Select.ar(sx.abs < 0.0001, [sx.sin / sx, DC.ar(1.0)]); // sinc
+                        var safeSx = Select.ar(sx.abs < 0.0001, [sx, DC.ar(1.0)]);
+                        Select.ar(sx.abs < 0.0001, [sx.sin / safeSx, DC.ar(1.0)]); // sinc
                     }.value,
                     (1 - (4 * (wphase - 0.5).abs)).clip(-1, 1),           // triangle
                     (wphase * 2 - 1),                                      // saw
@@ -160,8 +165,8 @@ s.waitForBoot {
                 ];
                 win = SelectX.ar((window + mod[3]).clip(0, 8), winWaves);
 
-                randShared = Hasher.ar(pulseCount + (vi * 101));
-                randForm = Hasher.ar(pulseCount + (vi * 101) + (fi * 37));
+                randShared = Hasher.ar(pulseCount + (vi * 101)).range(0, 1);
+                randForm = Hasher.ar(pulseCount + (vi * 101) + (fi * 37)).range(0, 1);
                 rsel = Select.ar(perFormantMask > 0.5, [randShared, randForm]);
                 maskStoch = (rsel > (maskAmount + mod[8]).clip(0, 1));
 
@@ -183,7 +188,10 @@ s.waitForBoot {
         });
 
         sig = voices / vc.max(1);
-        sig = tanh(sig * (drive + mod[1]).clip(0.1, 4.0));
+        {
+            var drv = (drive + mod[1]).clip(0.1, 4.0);
+            sig = SelectX.ar((drv - 1.0).clip(0, 3.0), [sig * drv.min(1.0), tanh(sig * drv)]);
+        }.value;
         scopeFrames = 64;
         scopeBufL = LocalBuf(scopeFrames, 1);
         scopeBufR = LocalBuf(scopeFrames, 1);
@@ -380,8 +388,8 @@ s.waitForBoot {
 
         // Make-up: the four taps are discrete arrivals (loudest is 0.34), so an
         // unscaled wet path drops the level noticeably as Mix approaches 100%.
-        // 1.45x restores parity with the dry path; softclip is the safety net.
-        dlyWetSig = HPF.ar(LeakDC.ar([dlyTapL, dlyTapR]) * 1.45, 70).softclip;
+        // 1.0x restores parity with the dry path without clipping.
+        dlyWetSig = HPF.ar(LeakDC.ar([dlyTapL, dlyTapR]), 70).softclip;
 
         // Equal-power crossfade: dry is untouched at dlyWet == 0 and the sum
         // never exceeds unity (the old blend could reach ~1.65x and clip).
@@ -531,8 +539,8 @@ s.waitForBoot {
 
         // Make-up: the four taps are discrete arrivals (loudest is 0.34), so an
         // unscaled wet path drops the level noticeably as Mix approaches 100%.
-        // 1.45x restores parity with the dry path; softclip is the safety net.
-        dlyWetSig = HPF.ar(LeakDC.ar([dlyTapL, dlyTapR]) * 1.45, 70).softclip;
+        // 1.0x restores parity with the dry path without clipping.
+        dlyWetSig = HPF.ar(LeakDC.ar([dlyTapL, dlyTapR]), 70).softclip;
 
         // Equal-power crossfade: dry is untouched at dlyWet == 0 and the sum
         // never exceeds unity (the old blend could reach ~1.65x and clip).
@@ -551,6 +559,12 @@ s.waitForBoot {
             \out, out,
             \modBus, modBus,
             \amp, 0.25,
+            // Start closed. The ASR must see a real 0->1 edge on the first Note
+            // On, otherwise the envelope is already open and the first note
+            // sounds instantly at full level with no attack (and MIDI-like mode
+            // drones before any key is pressed).
+            \gate, 0,
+            \trigIn, 0,
             \gateMode, 1,
             \voiceCount, 1,
             \chordType, 0,
