@@ -19,6 +19,7 @@ Boots local scsynth, loads patch file, and exposes OSC control:
     var modParams, modParamIndex, modDepthCap, setupModulation, spawnLfo, releaseLfo, setLfoCount, applyLfo, rebuildLfos, retriggerLfos, lfoWarn, lfoWarnLast, lfoWarnCount;
     var reverbDefaults, reverbState, reverbParamSet, reverbSynthDef, reverbDefForState, applyReverbState, spawnReverb, setReverbParam, resetReverbParams, updateReverbBypass;
     var setupMidi, midiNoteOn, midiNoteOff, midiNoteToBasePitch, midiSoundingNote, midiVoiceActive, currentGateMode, midiInitialized, midiChannel;
+    var cpuReportPeriod;
 
 patchPath = ~spaluterPatchPath;
 if(patchPath.isNil) {
@@ -60,9 +61,15 @@ s.options.numWireBufs = 4096;
 // scope LocalBufs). 32 MB is ample headroom for the FX delay buffers.
 s.options.memSize = 32768;
 s.options.bindAddress = "127.0.0.1";
-// Pin scsynth to the pisound ALSA device on Linux/Patchbox so it bypasses
-// the `plug` conversion layer in /etc/asound.conf. Only applied on Linux
-// — setting an unknown device name on macOS/Windows would prevent boot.
+// Linux: the Debian scsynth is JACK-only and the app runs it under pw-jack,
+// so this does NOT select hardware (that is WirePlumber's default sink, the
+// pisound). With the JACK backend the device string is the JACK *client
+// name*, which is why scsynth shows up as a node called "pisound" in pw-top
+// and why its pipewire-jack threads are named pw-pisound. Kept as-is so
+// nothing that matches on that name changes. Period size (PipeWire quantum)
+// and thread priorities are PipeWire's decision; see
+// build/linux/payload/50-spaluter.conf. Linux-only because an unknown device
+// name on macOS/Windows would prevent the server from booting.
 if(thisProcess.platform.name == \linux) {
     s.options.device = "pisound";
 };
@@ -661,6 +668,23 @@ s.doWhenBooted({
             0.exit;
         }.defer(0.1);
     }, "/spaluter/quit");
+
+    // Engine load telemetry. The server's alive thread (started by boot) keeps
+    // avgCPU/peakCPU/numUGens/numSynths current from scsynth's /status.reply;
+    // relay them to the app once a second so the UI can show real DSP load
+    // instead of Electron's own CPU. One small message per second: no hot path.
+    cpuReportPeriod = 1.0;
+    SystemClock.sched(cpuReportPeriod, {
+        if(s.serverRunning) {
+            appAddr.sendMsg("/spaluter/cpu",
+                (s.avgCPU ? 0).asFloat,
+                (s.peakCPU ? 0).asFloat,
+                (s.numUGens ? 0).asInteger,
+                (s.numSynths ? 0).asInteger
+            );
+        };
+        cpuReportPeriod
+    });
 
     setupMidi.value;
     status.value("Runtime ready");

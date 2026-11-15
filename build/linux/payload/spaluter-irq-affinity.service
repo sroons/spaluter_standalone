@@ -1,0 +1,13 @@
+[Unit]
+Description=Spaluter: pin pisound SPI and USB interrupts off CPU0
+ConditionPathExists=/proc/irq
+After=sysinit.target
+Before=spaluter-kiosk.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/spaluter-irq-affinity
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

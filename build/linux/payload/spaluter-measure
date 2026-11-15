@@ -1,0 +1,212 @@
+#!/bin/bash
+# Spaluter Desktop: per-session measurement on the Raspberry Pi.
+#
+# Run it over ssh while playing the instrument:
+#   spaluter-measure              # 120 s, one sample every 5 s
+#   spaluter-measure 300 10       # 300 s, one sample every 10 s
+#
+# Every sample records, from /proc deltas (no pidstat needed):
+#   - CPU% per process group: Electron (all processes), sclang, scsynth,
+#     pipewire, wireplumber, Xorg; plus per-core busy%
+#   - which core each scsynth thread is on, and its scheduling class/priority
+#   - PipeWire quantum/rate and the ERR (xrun) column per audio node
+#   - interrupt counts per CPU for the pisound SPI and USB (xHCI) lines
+#   - memory (PSS) of the Electron processes, sclang and scsynth
+#   - SoC temperature and throttle flags when vcgencmd is available
+# and copies any [CPU] lines the app wrote to start.log during the window
+# (scsynth avg/peak CPU from its own /status, plus Electron CPU by process).
+# Output: ~/.local/state/spaluter/measure-YYYYmmdd-HHMMSS.log, summary at end.
+set -u
+
+DURATION="${1:-120}"
+INTERVAL="${2:-5}"
+STATE_DIR="${HOME}/.local/state/spaluter"
+START_LOG="${STATE_DIR}/start.log"
+mkdir -p "$STATE_DIR"
+OUT="${STATE_DIR}/measure-$(date +%Y%m%d-%H%M%S).log"
+CLK_TCK="$(getconf CLK_TCK 2>/dev/null || echo 100)"
+NCPU="$(nproc 2>/dev/null || echo 1)"
+
+say() { echo "$*" | tee -a "$OUT"; }
+
+# --- process groups ---------------------------------------------------------
+group_pids() {
+  case "$1" in
+    electron) pgrep -f "/opt/Spaluter Desktop/spaluter-desktop" 2>/dev/null ;;
+    sclang) pgrep -x sclang 2>/dev/null ;;
+    scsynth) pgrep -x scsynth 2>/dev/null ;;
+    pipewire) pgrep -x pipewire 2>/dev/null ;;
+    wireplumber) pgrep -x wireplumber 2>/dev/null ;;
+    xorg) pgrep -x Xorg 2>/dev/null ;;
+  esac
+}
+GROUPS_LIST="electron sclang scsynth pipewire wireplumber xorg"
+
+# Sum of utime+stime jiffies over a group's processes.
+group_jiffies() {
+  local total=0 pid j
+  for pid in $(group_pids "$1"); do
+    j="$(awk '{ print $14 + $15 }' /proc/"$pid"/stat 2>/dev/null)"
+    total=$(( total + ${j:-0} ))
+  done
+  echo "$total"
+}
+
+group_pss_mb() {
+  local total=0 pid kb
+  for pid in $(group_pids "$1"); do
+    kb="$(awk '/^Pss:/ { print $2 }' /proc/"$pid"/smaps_rollup 2>/dev/null)"
+    total=$(( total + ${kb:-0} ))
+  done
+  echo $(( total / 1024 ))
+}
+
+# --- whole-system counters --------------------------------------------------
+cpu_lines() { grep -E '^cpu[0-9]+ ' /proc/stat; }
+
+irq_counts() {
+  awk -v ncpu="$NCPU" '
+    $1 ~ /^[0-9]+:$/ && ($NF == "fe204000.spi" || $NF == "xhci_hcd") {
+      out = $NF ":";
+      for (i = 2; i <= ncpu + 1; i++) out = out " " $i;
+      print out
+    }' /proc/interrupts
+}
+
+# pw-top's first batch iteration carries no timing data (state "C", zeros), so
+# ask for two and keep only the rows after the last header line.
+pw_table() {
+  timeout 4 pw-top -b -n 2 2>/dev/null | awk '
+    $1 == "S" && $2 == "ID" { rows = ""; next }
+    { rows = rows $0 "\n" }
+    END { printf "%s", rows }'
+}
+
+pw_snapshot() {
+  pw_table | awk '
+    $1 == "R" || $1 == "I" || $1 == "S" {
+      name = $NF; if ($(NF-1) == "+") name = "+" $NF;
+      printf "%s id=%s quant=%s rate=%s err=%s", $1, $2, $3, $4, $9; print " " name
+    }'
+}
+
+pw_err_total() {
+  pw_table | awk '$1 == "R" { s += $9 } END { print s + 0 }'
+}
+
+# cpu= is the core the thread last ran on (stale for idle threads); aff= is the
+# affinity mask, which is what spaluter-pin-scsynth actually sets.
+scsynth_threads() {
+  local pid task tid aff
+  for pid in $(group_pids scsynth); do
+    for task in /proc/"$pid"/task/*; do
+      tid="${task##*/}"
+      aff="$(awk '/^Cpus_allowed_list:/ { print $2 }' "$task/status" 2>/dev/null)"
+      ps -L -o tid=,psr=,cls=,rtprio=,comm= -p "$pid" 2>/dev/null | awk -v t="$tid" -v a="$aff" '$1 == t { printf "    tid=%s cpu=%s aff=%s %s/%s %s\n", $1, $2, a, $3, $4, $5 }'
+    done
+  done
+}
+
+# Display power state. The UI's CPU cost depends on it almost entirely (Chromium
+# stops compositing when the panel is off), so every sample records it.
+screen_state() {
+  local f st
+  for f in /sys/class/drm/card*-*/dpms; do
+    [ -r "$f" ] || continue
+    st="$(cat "$f" 2>/dev/null)"
+    if [ "$(cat "${f%dpms}status" 2>/dev/null)" = "connected" ]; then
+      echo "$st"; return
+    fi
+  done
+  if [ -n "${DISPLAY:-:0}" ]; then
+    DISPLAY="${DISPLAY:-:0}" xset q 2>/dev/null | awk '/Monitor is/ { print $3; exit }'
+  fi
+}
+
+electron_affinity() {
+  local pid
+  for pid in $(group_pids electron); do
+    awk -v p="$pid" '/^Cpus_allowed_list:/ { print "    pid=" p " cpus=" $2 }' /proc/"$pid"/status 2>/dev/null
+  done | sort -u
+}
+
+temp_line() {
+  if command -v vcgencmd >/dev/null 2>&1; then
+    echo "    $(vcgencmd measure_temp 2>/dev/null) $(vcgencmd get_throttled 2>/dev/null) $(vcgencmd measure_clock arm 2>/dev/null)"
+  fi
+}
+
+# --- run ---------------------------------------------------------------------
+say "# spaluter-measure $(date -Iseconds) duration=${DURATION}s interval=${INTERVAL}s host=$(hostname) kernel=$(uname -r)"
+say "# quantum: $(pw-metadata -n settings 0 2>/dev/null | awk -F"'" '/clock.quantum|clock.force-quantum|clock.rate/ { printf "%s=%s ", $2, $4 }')"
+say "# governor: $(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null) ncpu=${NCPU} screen=$(screen_state) booted=$(uptime -s 2>/dev/null)"
+say "# electron affinity:"; electron_affinity | tee -a "$OUT"
+say "# irq affinity: spi=$(for i in $(awk '$1 ~ /^[0-9]+:$/ && $NF == "fe204000.spi" { sub(":", "", $1); print $1 }' /proc/interrupts); do cat /proc/irq/"$i"/smp_affinity_list; done | tr '\n' ' ') xhci=$(for i in $(awk '$1 ~ /^[0-9]+:$/ && $NF == "xhci_hcd" { sub(":", "", $1); print $1 }' /proc/interrupts); do cat /proc/irq/"$i"/smp_affinity_list; done | tr '\n' ' ')"
+say "# pipewire nodes at start:"; pw_snapshot | sed 's/^/    /' | tee -a "$OUT"
+
+START_LOG_LINES=0
+[ -f "$START_LOG" ] && START_LOG_LINES="$(wc -l < "$START_LOG")"
+ERR_START="$(pw_err_total)"
+
+declare -A prev_j
+for g in $GROUPS_LIST; do prev_j[$g]="$(group_jiffies "$g")"; done
+prev_cpu="$(cpu_lines)"
+prev_irq="$(irq_counts)"
+prev_t="$(date +%s.%N)"
+
+declare -A sum_pct max_pct
+for g in $GROUPS_LIST; do sum_pct[$g]=0; max_pct[$g]=0; done
+samples=0
+end=$(( $(date +%s) + DURATION ))
+
+while [ "$(date +%s)" -lt "$end" ]; do
+  sleep "$INTERVAL"
+  now_t="$(date +%s.%N)"
+  elapsed="$(awk -v a="$now_t" -v b="$prev_t" 'BEGIN { print a - b }')"
+  prev_t="$now_t"
+  samples=$(( samples + 1 ))
+
+  line="[$(date +%H:%M:%S)]"
+  for g in $GROUPS_LIST; do
+    cur="$(group_jiffies "$g")"
+    pct="$(awk -v c="$cur" -v p="${prev_j[$g]}" -v e="$elapsed" -v hz="$CLK_TCK" 'BEGIN { if (e <= 0) e = 1; printf "%.1f", (c - p) * 100 / hz / e }')"
+    prev_j[$g]="$cur"
+    line="$line $g=${pct}%"
+    sum_pct[$g]="$(awk -v a="${sum_pct[$g]}" -v b="$pct" 'BEGIN { print a + b }')"
+    max_pct[$g]="$(awk -v a="${max_pct[$g]}" -v b="$pct" 'BEGIN { print (b > a) ? b : a }')"
+  done
+
+  cur_cpu="$(cpu_lines)"
+  cores="$(paste <(echo "$prev_cpu") <(echo "$cur_cpu") | awk '{
+      pb = $5 + $6; pt = 0; for (i = 2; i <= 11; i++) pt += $i;
+      cb = $16 + $17; ct = 0; for (i = 13; i <= 22; i++) ct += $i;
+      d = ct - pt; if (d <= 0) d = 1;
+      printf "%s=%.0f%% ", $1, 100 - (cb - pb) * 100 / d }')"
+  prev_cpu="$cur_cpu"
+
+  cur_irq="$(irq_counts)"
+  irqd="$(paste <(echo "$prev_irq") <(echo "$cur_irq") | awk -v ncpu="$NCPU" '{
+      half = NF / 2; out = $1;
+      for (i = 2; i <= half; i++) out = out " " ($(i + half) - $i);
+      printf "%s | ", out }')"
+  prev_irq="$cur_irq"
+
+  say "$line | cores: ${cores}| screen=$(screen_state) | irq/sample: ${irqd}pw_err_total=$(pw_err_total)"
+  scsynth_threads | tee -a "$OUT"
+  temp_line | tee -a "$OUT"
+done
+
+# --- summary -------------------------------------------------------------------
+say "# ---- summary over ${samples} samples ----"
+for g in $GROUPS_LIST; do
+  avg="$(awk -v s="${sum_pct[$g]}" -v n="$samples" 'BEGIN { if (n < 1) n = 1; printf "%.1f", s / n }')"
+  say "# ${g}: avg=${avg}% max=${max_pct[$g]}%  pss=$(group_pss_mb "$g")MB"
+done
+say "# pipewire ERR delta over window: $(( $(pw_err_total) - ERR_START )) (total now $(pw_err_total))"
+say "# pipewire nodes at end:"; pw_snapshot | sed 's/^/    /' | tee -a "$OUT"
+if [ -f "$START_LOG" ]; then
+  say "# [CPU] lines from start.log during window:"
+  tail -n +"$(( START_LOG_LINES + 1 ))" "$START_LOG" | grep -aF '[CPU]' | tee -a "$OUT"
+  say "# scsynth peak CPU reported by app during window: $(tail -n +"$(( START_LOG_LINES + 1 ))" "$START_LOG" | grep -aF '[CPU]' | sed -n 's/.*peak=\([0-9.]*\)%.*/\1/p' | sort -n | tail -1)%"
+fi
+say "# written: $OUT"

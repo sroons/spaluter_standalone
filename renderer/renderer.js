@@ -2,6 +2,7 @@ const statusEl = document.getElementById("status");
 const statusTextEl = document.getElementById("statusText") || statusEl;
 const cpuUsageEl = document.getElementById("cpuUsage");
 const cpuValEl = document.getElementById("cpuVal");
+const cpuKeyEl = document.getElementById("cpuKey");
 const logEl = document.getElementById("log");
 const logDrawerEl = document.getElementById("logDrawer");
 const toggleLogBtn = document.getElementById("toggleLog");
@@ -83,6 +84,7 @@ const MIDI_CLOCK_SYNC_MIN_INTERVAL_MS = 120;
 const MIDI_CLOCK_RATE_EPSILON = 0.0005;
 const DELAY_CLOCK_HZ_EPSILON = 0.0005;
 const RENDERER_HEARTBEAT_MS = 1000;
+const DSP_CPU_STALE_MS = 3500;
 const DEBUG_FPS = false;
 const DEBUG_MIDI_NOTE_REPORTS = false;
 let sampleDefaultDir = DEFAULT_SAMPLE_DIR;
@@ -372,15 +374,44 @@ function classifyStatus(text) {
   return "ok";
 }
 
-function setCpuUsage(percent) {
+// The header chip shows the engine's own load (scsynth /status avgCPU, with
+// peakCPU in the label) rather than Electron's: that is the number that
+// predicts dropouts. UI-side CPU still arrives via onCpuUsage; it is kept on
+// the chip's tooltip and in the main process's [CPU] session log lines.
+let lastUiCpuPercent = 0;
+let dspCpuStaleTimer = null;
+
+function refreshCpuChipTooltip() {
   if (!cpuUsageEl) return;
+  cpuUsageEl.title = `Engine CPU: scsynth average, peak in label · UI ${lastUiCpuPercent.toFixed(1)}%`;
+}
+
+function setCpuUsage(percent) {
   const numeric = Number(percent);
-  const safeValue = Number.isFinite(numeric) ? Math.max(0, numeric) : 0;
-  if (cpuValEl) {
-    cpuValEl.textContent = `${safeValue.toFixed(1)}%`;
-  } else {
-    cpuUsageEl.textContent = `CPU: ${safeValue.toFixed(1)}%`;
+  lastUiCpuPercent = Number.isFinite(numeric) ? Math.max(0, numeric) : 0;
+  refreshCpuChipTooltip();
+}
+
+function setDspCpu(info) {
+  if (!cpuUsageEl) return;
+  if (dspCpuStaleTimer) {
+    clearTimeout(dspCpuStaleTimer);
+    dspCpuStaleTimer = null;
   }
+  const avg = Number(info?.avg);
+  const peak = Number(info?.peak);
+  if (!info || !Number.isFinite(avg)) {
+    if (cpuValEl) cpuValEl.textContent = "--";
+    if (cpuKeyEl) cpuKeyEl.textContent = "DSP";
+    cpuUsageEl.classList.remove("cpu-warn", "cpu-hot");
+    return;
+  }
+  const safePeak = Number.isFinite(peak) ? Math.max(0, peak) : 0;
+  if (cpuValEl) cpuValEl.textContent = `${Math.max(0, avg).toFixed(1)}%`;
+  if (cpuKeyEl) cpuKeyEl.textContent = Number.isFinite(peak) ? `DSP PK ${Math.round(safePeak)}` : "DSP";
+  cpuUsageEl.classList.toggle("cpu-hot", safePeak >= 80);
+  cpuUsageEl.classList.toggle("cpu-warn", safePeak >= 60 && safePeak < 80);
+  dspCpuStaleTimer = window.setTimeout(() => setDspCpu(null), DSP_CPU_STALE_MS);
 }
 
 function renderSynthToggle() {
@@ -3546,6 +3577,10 @@ window.spaluterApi.onCpuUsage((percent) => {
   setCpuUsage(percent);
 });
 
+window.spaluterApi.onDspCpu((info) => {
+  setDspCpu(info);
+});
+
 window.spaluterApi.onLog((text) => {
   appendLog(text);
   if (/^\[ERR\]|ERROR:|FAILURE IN SERVER/i.test(String(text || ""))) {
@@ -3559,6 +3594,7 @@ window.spaluterApi.onScope((samples) => {
 
 renderSynthToggle();
 setCpuUsage(0);
+setDspCpu(null);
 initModulationUi();
 initScreenNav();
 setScreen("perform", { force: true });
@@ -3591,6 +3627,10 @@ if (DEBUG_FPS) {
 }
 window.addEventListener("beforeunload", () => {
   stopParamModAnim();
+  if (dspCpuStaleTimer) {
+    clearTimeout(dspCpuStaleTimer);
+    dspCpuStaleTimer = null;
+  }
   if (midiRebindTimer) {
     clearTimeout(midiRebindTimer);
     midiRebindTimer = null;

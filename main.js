@@ -1,4 +1,5 @@
 const { app, BrowserWindow, ipcMain } = require("electron");
+const os = require("os");
 const path = require("path");
 const fsSync = require("fs");
 const fs = require("fs/promises");
@@ -34,6 +35,8 @@ const RENDERER_HEARTBEAT_TIMEOUT_MS = 8000;
 const RENDERER_HEARTBEAT_CHECK_MS = 2000;
 const APP_CPU_SAMPLE_INTERVAL_MS = 3000;
 const MIDI_DIAG = /^(1|true|yes)$/i.test(process.env.SPALUTER_DIAG || "");
+const DSP_CPU_STALE_MS = 3000;
+const CPU_SESSION_LOG_MS = Math.max(5000, Number(process.env.SPALUTER_CPU_LOG_MS) || 15000);
 
 let mainWindow = null;
 let mainWindowReady = false;
@@ -57,6 +60,11 @@ let lastRendererHeartbeatAt = 0;
 let appCpuUsageInterval = null;
 let scopeRecvWindow = 0;
 let lastRendererFps = 0;
+let lastDspCpu = null;
+let lastUiCpu = null;
+let cpuSessionLogInterval = null;
+let synthRunningForMetrics = false;
+let scopeRecvSession = 0;
 let paramAnimActive = false;
 let paramAnimInterval = null;
 let paramAnimTickMs = 33;
@@ -343,8 +351,11 @@ function createOscClient() {
           const samples = getScopeSamplesForRenderer(msg.args);
           if (samples.length > 0 && mainWindow) {
             scopeRecvWindow += 1;
+            scopeRecvSession += 1;
             mainWindow.webContents.send("sc-scope", samples);
           }
+        } else if (msg.address === "/spaluter/cpu") {
+          handleDspCpuMessage(msg.args);
         } else {
           sendLog(`[OSC] ${msg.address} ${JSON.stringify(msg.args || [])}`);
         }
@@ -378,6 +389,11 @@ function createOscClient() {
 
 function sendStatus(text) {
   lastStatus = String(text ?? "");
+  if (/synth started/i.test(lastStatus)) {
+    synthRunningForMetrics = true;
+  } else if (/(synth stopped|sclang exited|quitting runtime|stopping synth runtime)/i.test(lastStatus)) {
+    synthRunningForMetrics = false;
+  }
   pushLog(`[STATUS] ${lastStatus}`);
   statusSubscribers.forEach((listener) => {
     try {
@@ -724,24 +740,122 @@ function startRendererHeartbeatWatchdog() {
 }
 
 function clearAppCpuUsageBroadcast() {
+  clearCpuSessionLog();
   if (!appCpuUsageInterval) return;
   clearInterval(appCpuUsageInterval);
   appCpuUsageInterval = null;
 }
 
+// UI-side CPU: every Electron process (main, GPU, renderer, utility, zygotes)
+// summed, so the figure is the cost of the whole UI stack rather than the main
+// process alone. percentCPUUsage is "since the last getAppMetrics() call", so
+// this is the only caller; the session logger reads lastUiCpu.
+//
+// Electron reports percentCPUUsage as a share of ALL CPUs the process may run
+// on (one busy core on a 4-CPU machine reads 25%; under `taskset -c 0-2` on
+// the Pi it reads 33%). scsynth's /status number and `spaluter-measure` both
+// use "percent of one core", so scale by the CPU count libuv sees for this
+// process (affinity-aware on Linux) to put the two on the same axis.
+function uiCpuScale() {
+  try {
+    const n = typeof os.availableParallelism === "function" ? os.availableParallelism() : os.cpus().length;
+    return Number.isFinite(n) && n > 0 ? n : 1;
+  } catch {
+    return 1;
+  }
+}
+
+function sampleAppCpuUsage() {
+  let total = 0;
+  const byType = {};
+  let metrics = [];
+  try {
+    metrics = app.getAppMetrics() || [];
+  } catch {
+    metrics = [];
+  }
+  const scale = uiCpuScale();
+  for (let i = 0; i < metrics.length; i += 1) {
+    const m = metrics[i];
+    const pct = Number(m?.cpu?.percentCPUUsage) * scale;
+    if (!Number.isFinite(pct) || pct < 0) continue;
+    const type = String(m.type || "other").toLowerCase();
+    let key = "other";
+    if (type === "browser") key = "main";
+    else if (type === "gpu") key = "gpu";
+    else if (type === "tab") key = "renderer";
+    byType[key] = (byType[key] || 0) + pct;
+    total += pct;
+  }
+  lastUiCpu = { total, byType, at: Date.now() };
+  return lastUiCpu;
+}
+
 function publishAppCpuUsage() {
-  const usage = process.getCPUUsage();
-  const percent = Number(usage?.percentCPUUsage);
-  const safePercent = Number.isFinite(percent) ? Math.max(0, percent) : 0;
-  sendRendererEvent("app-cpu-usage", safePercent);
+  const ui = sampleAppCpuUsage();
+  sendRendererEvent("app-cpu-usage", ui.total);
+}
+
+// Engine load from scsynth's own /status reply, relayed by runtime.scd as
+// /spaluter/cpu [avgCPU, peakCPU, numUGens, numSynths] once a second. This is
+// the number that predicts dropouts; the header chip shows it.
+function handleDspCpuMessage(rawArgs) {
+  if (!Array.isArray(rawArgs) || rawArgs.length < 2) return;
+  const num = (v) => {
+    const raw = (v && typeof v === "object" && Object.prototype.hasOwnProperty.call(v, "value")) ? v.value : v;
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : 0;
+  };
+  lastDspCpu = {
+    avg: Math.max(0, num(rawArgs[0])),
+    peak: Math.max(0, num(rawArgs[1])),
+    ugens: Math.round(num(rawArgs[2])),
+    synths: Math.round(num(rawArgs[3])),
+    at: Date.now()
+  };
+  sendRendererEvent("sc-cpu", lastDspCpu);
+}
+
+// One compact line per CPU_SESSION_LOG_MS while the synth is running, to the
+// log drawer and to stdout (start.log on the Pi), so a play session can be
+// measured after the fact without extra tooling: engine load, UI load by
+// process type, and scope frames received.
+function logCpuSession() {
+  if (!synthRunningForMetrics) {
+    scopeRecvSession = 0;
+    return;
+  }
+  const dsp = (lastDspCpu && (Date.now() - lastDspCpu.at) <= DSP_CPU_STALE_MS) ? lastDspCpu : null;
+  const ui = lastUiCpu || { total: 0, byType: {} };
+  const f1 = (n) => Number(n || 0).toFixed(1);
+  const scopePerSec = (scopeRecvSession * 1000) / CPU_SESSION_LOG_MS;
+  scopeRecvSession = 0;
+  const dspPart = dsp
+    ? `dsp avg=${f1(dsp.avg)}% peak=${f1(dsp.peak)}% ugens=${dsp.ugens} synths=${dsp.synths}`
+    : "dsp n/a";
+  const uiPart = `ui total=${f1(ui.total)}% main=${f1(ui.byType.main)}% gpu=${f1(ui.byType.gpu)}% renderer=${f1(ui.byType.renderer)}% other=${f1(ui.byType.other)}%`;
+  const line = `[CPU] ${dspPart} | ${uiPart} | scope=${scopePerSec.toFixed(0)}/s`;
+  console.log(line);
+  sendLog(line);
+}
+
+function clearCpuSessionLog() {
+  if (!cpuSessionLogInterval) return;
+  clearInterval(cpuSessionLogInterval);
+  cpuSessionLogInterval = null;
 }
 
 function startAppCpuUsageBroadcast() {
   clearAppCpuUsageBroadcast();
+  clearCpuSessionLog();
   appCpuUsageInterval = setInterval(() => {
     if (quittingApp || restartingApp) return;
     publishAppCpuUsage();
   }, APP_CPU_SAMPLE_INTERVAL_MS);
+  cpuSessionLogInterval = setInterval(() => {
+    if (quittingApp || restartingApp) return;
+    logCpuSession();
+  }, CPU_SESSION_LOG_MS);
 }
 
 function restartApplication(reason) {

@@ -34,6 +34,8 @@ contextBridge.exposeInMainWorld("spaluterApi", {
   onParamAnimTick: (fn) => ipcRenderer.on("param-anim-tick", () => fn()),
   onStatus: (fn) => ipcRenderer.on("sc-status", (_e, msg) => fn(msg)),
   onCpuUsage: (fn) => ipcRenderer.on("app-cpu-usage", (_e, percent) => fn(percent)),
+  // Engine load: scsynth /status avg/peak CPU + UGen/synth counts, 1 Hz.
+  onDspCpu: (fn) => ipcRenderer.on("sc-cpu", (_e, info) => fn(info)),
   onLog: (fn) => ipcRenderer.on("sc-log", (_e, msg) => fn(msg)),
   onScope: (fn) => ipcRenderer.on("sc-scope", (_e, samples) => fn(samples))
 });

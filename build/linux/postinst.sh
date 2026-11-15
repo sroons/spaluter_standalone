@@ -4,7 +4,20 @@ set -euo pipefail
 LAUNCHER_PATH="/usr/local/bin/spaluter-desktop"
 STARTUP_SCRIPT_PATH="/usr/local/bin/spaluter-linux-startup"
 SETUP_SCRIPT_PATH="/usr/local/bin/spaluter-rpi-setup"
+PIN_SCRIPT_PATH="/usr/local/bin/spaluter-pin-scsynth"
+MEASURE_SCRIPT_PATH="/usr/local/bin/spaluter-measure"
+IRQ_SCRIPT_PATH="/usr/local/bin/spaluter-irq-affinity"
+IRQ_UNIT_PATH="/etc/systemd/system/spaluter-irq-affinity.service"
+PIPEWIRE_DROPIN_PATH="/etc/pipewire/pipewire.conf.d/50-spaluter.conf"
+WIREPLUMBER_RULE_PATH="/etc/wireplumber/main.lua.d/51-spaluter-disable-onboard-audio.lua"
 APP_BINARY=""
+PAYLOAD_DIR=""
+
+ARCH="$(dpkg --print-architecture 2>/dev/null || uname -m)"
+IS_PI_ARCH=0
+if [[ "$ARCH" =~ ^(arm64|armhf|aarch64|armv7l)$ ]]; then
+  IS_PI_ARCH=1
+fi
 
 for candidate in \
   "/opt/Spaluter Desktop/spaluter-desktop" \
@@ -25,6 +38,17 @@ if [ -n "$APP_BINARY" ]; then
 set -euo pipefail
 APP_BINARY='$APP_BINARY'
 STARTUP_SCRIPT='$STARTUP_SCRIPT_PATH'
+PIN_SCRIPT='$PIN_SCRIPT_PATH'
+
+# Core plan on a 4-core Raspberry Pi: Electron (every process) and sclang on
+# CPUs 0-2, scsynth on CPU 3. The app is started under taskset so its children
+# inherit the UI mask; spaluter-pin-scsynth then moves scsynth's threads to
+# the DSP core as they appear. Override with SPALUTER_UI_CPUS / SPALUTER_DSP_CPUS,
+# or set either to "none" to leave placement to the kernel. Nothing here
+# changes scheduling priorities: scsynth's audio thread already runs
+# SCHED_FIFO under pipewire-jack.
+UI_CPUS="\${SPALUTER_UI_CPUS:-0-2}"
+DSP_CPUS="\${SPALUTER_DSP_CPUS:-3}"
 
 if [ -x "\$STARTUP_SCRIPT" ]; then
   if ! "\$STARTUP_SCRIPT"; then
@@ -32,12 +56,22 @@ if [ -x "\$STARTUP_SCRIPT" ]; then
   fi
 fi
 
+launch=()
+if [ "\$(nproc 2>/dev/null || echo 1)" -ge 4 ] && command -v taskset >/dev/null 2>&1; then
+  if [ "\$UI_CPUS" != "none" ]; then
+    launch=(taskset -c "\$UI_CPUS")
+  fi
+  if [ "\$DSP_CPUS" != "none" ] && [ -x "\$PIN_SCRIPT" ]; then
+    "\$PIN_SCRIPT" "\$\$" "\$DSP_CPUS" &
+  fi
+fi
+
 if command -v pw-jack >/dev/null 2>&1; then
-  exec pw-jack "\$APP_BINARY" "\$@"
+  exec "\${launch[@]}" pw-jack "\$APP_BINARY" "\$@"
 fi
 
 echo "pw-jack not found in PATH; launching Spaluter Desktop without PipeWire JACK wrapper." >&2
-exec "\$APP_BINARY" "\$@"
+exec "\${launch[@]}" "\$APP_BINARY" "\$@"
 EOF
   chmod 755 "$LAUNCHER_PATH"
 
@@ -157,8 +191,49 @@ echo "Launch command: pw-jack \"/opt/Spaluter Desktop/spaluter-desktop\""
 EOF
 chmod 755 "$SETUP_SCRIPT_PATH"
 
-ARCH="$(dpkg --print-architecture 2>/dev/null || uname -m)"
-if command -v apt-get >/dev/null 2>&1 && [[ "$ARCH" =~ ^(arm64|armhf|aarch64|armv7l)$ ]]; then
+# Runtime payload shipped in resources/linux-payload (see build/linux/payload
+# in the source tree): the scsynth core-pin watcher and the measurement script
+# on every Linux install; the PipeWire quantum drop-in, the WirePlumber rule
+# that disables the Pi's unused onboard audio cards, and the IRQ-affinity unit
+# on Raspberry Pi (ARM) installs only. None of these steps may fail the install.
+for candidate in \
+  "/opt/Spaluter Desktop/resources/linux-payload" \
+  "/opt/spaluter-desktop/resources/linux-payload"; do
+  if [ -d "$candidate" ]; then
+    PAYLOAD_DIR="$candidate"
+    break
+  fi
+done
+
+if [ -n "$PAYLOAD_DIR" ]; then
+  install -m 755 "$PAYLOAD_DIR/spaluter-pin-scsynth" "$PIN_SCRIPT_PATH" 2>/dev/null \
+    || echo "Warning: could not install ${PIN_SCRIPT_PATH}." >&2
+  install -m 755 "$PAYLOAD_DIR/spaluter-measure" "$MEASURE_SCRIPT_PATH" 2>/dev/null \
+    || echo "Warning: could not install ${MEASURE_SCRIPT_PATH}." >&2
+
+  if [ "$IS_PI_ARCH" -eq 1 ]; then
+    if install -D -m 644 "$PAYLOAD_DIR/50-spaluter.conf" "$PIPEWIRE_DROPIN_PATH" 2>/dev/null; then
+      echo "Installed ${PIPEWIRE_DROPIN_PATH} (PipeWire graph quantum). Takes effect after 'systemctl --user restart pipewire wireplumber' or a reboot."
+    else
+      echo "Warning: could not install ${PIPEWIRE_DROPIN_PATH}." >&2
+    fi
+    install -D -m 644 "$PAYLOAD_DIR/51-spaluter-disable-onboard-audio.lua" "$WIREPLUMBER_RULE_PATH" 2>/dev/null \
+      || echo "Warning: could not install ${WIREPLUMBER_RULE_PATH}." >&2
+    install -m 755 "$PAYLOAD_DIR/spaluter-irq-affinity" "$IRQ_SCRIPT_PATH" 2>/dev/null \
+      || echo "Warning: could not install ${IRQ_SCRIPT_PATH}." >&2
+    if install -m 644 "$PAYLOAD_DIR/spaluter-irq-affinity.service" "$IRQ_UNIT_PATH" 2>/dev/null \
+      && command -v systemctl >/dev/null 2>&1; then
+      systemctl daemon-reload >/dev/null 2>&1 || true
+      if ! systemctl enable --now spaluter-irq-affinity.service >/dev/null 2>&1; then
+        echo "Warning: could not enable spaluter-irq-affinity.service (no systemd or no /proc/irq?)." >&2
+      fi
+    fi
+  fi
+else
+  echo "Warning: linux-payload directory not found; skipping runtime tuning files." >&2
+fi
+
+if command -v apt-get >/dev/null 2>&1 && [ "$IS_PI_ARCH" -eq 1 ]; then
   SETUP_LOG_PATH="/var/log/spaluter-rpi-setup.log"
   if nohup "$SETUP_SCRIPT_PATH" --auto >"$SETUP_LOG_PATH" 2>&1 & then
     echo "Started Raspberry Pi dependency bootstrap in background (${SETUP_LOG_PATH})."

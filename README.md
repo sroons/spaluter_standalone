@@ -227,7 +227,8 @@ Installer behavior:
 - macOS build script outputs both Intel (`x64`) and Apple Silicon (`arm64`) installers.
 - macOS (`.pkg` postinstall): creates `/usr/local/bin/spaluter-desktop` symlink to the app binary.
 - Windows (`NSIS`): adds install directory to machine `PATH`.
-- Raspberry Pi / Linux ARM64 (`.deb` postinst): creates `/usr/local/bin/spaluter-desktop` launcher that prefers `pw-jack`.
+- Raspberry Pi / Linux ARM64 (`.deb` postinst): creates `/usr/local/bin/spaluter-desktop` launcher that prefers `pw-jack` and, on a 4-core machine, starts the app under `taskset -c 0-2` with `spaluter-pin-scsynth` moving scsynth to CPU 3 (override with `SPALUTER_UI_CPUS` / `SPALUTER_DSP_CPUS`, or `none`).
+- Raspberry Pi / Linux ARM64 (`.deb` postinst): installs the runtime payload from `build/linux/payload` (PipeWire quantum drop-in, WirePlumber onboard-card rule, `spaluter-irq-affinity.service`, `spaluter-measure`); see "Audio runtime tuning" below.
 - Raspberry Pi / Linux ARM64 (`.deb` postinst): installs `/usr/local/bin/spaluter-linux-startup`, invoked on each launch to start audio services and probe MIDI/audio/SuperCollider prerequisites.
 - Raspberry Pi / Linux ARM64 (`.deb` postinst): installs `/usr/local/bin/spaluter-rpi-setup` and starts it automatically in the background at install-time.
 - All platforms: package app/runtime files and warn if `sclang` is not installed.
@@ -273,6 +274,21 @@ For low jitter on Patchbox OS, the following are recommended (and applied automa
 - `vm.swappiness = 10` in `/etc/sysctl.d/60-spaluter-audio.conf`.
 - `triggerhappy.service` and `triggerhappy.socket` disabled.
 - udev rule at `/etc/udev/rules.d/65-intech-grid.rules` creating `/dev/intech-grid` for stable USB device identity.
+
+#### Audio runtime tuning (installed by the `.deb`, source in `build/linux/payload/`)
+
+scsynth on the Pi is the Debian JACK-only build running as a pipewire-jack client, so period size, device and thread priority are PipeWire's decisions, not scsynth's. Its audio thread (`data-loop.0`) already runs `SCHED_FIFO 83`; nothing here changes priorities. What the postinst installs on ARM:
+
+- `/etc/pipewire/pipewire.conf.d/50-spaluter.conf`: graph quantum 512 at 48 kHz (10.7 ms per period, about 21 ms output latency; the stock 1024 was 21.3 ms per period, about 43 ms). Takes effect after `systemctl --user restart pipewire wireplumber` or a reboot; check with `pw-metadata -n settings 0 | grep quantum`. 256 was measured on the stock PREEMPT kernel and produced 2 xruns per minute with the UI idle, so it is not the default; retry it with `spaluter-measure` after the synth graph is lighter or on a PREEMPT_RT kernel.
+- `/etc/wireplumber/main.lua.d/51-spaluter-disable-onboard-audio.lua`: the bcm2835 headphone jack and both HDMI cards never get PipeWire nodes, so the pisound is the only ALSA card in the graph.
+- `/usr/local/bin/spaluter-desktop` launcher: Electron (all processes) and sclang on CPUs 0-2, scsynth on CPU 3 via `/usr/local/bin/spaluter-pin-scsynth`, which re-checks every 2 s for threads created later by pipewire-jack.
+- `spaluter-irq-affinity.service`: pisound SPI interrupt (`fe204000.spi`) to CPU 2 at boot, by name. It also tries to move USB (`xhci_hcd`, the Grid) to CPU 1, but on the Pi 4 that interrupt is a PCIe MSI whose controller refuses affinity changes, so USB stays on CPU 0 (logged, harmless). CPU 3 stays with scsynth.
+
+Per-session measurement:
+
+- The header **DSP** chip shows scsynth's own average CPU from its `/status` reply (peak in the label, amber above 60%, orange above 80%). The old chip read the Electron main process, which sits near 0% while scsynth is at 45%. Whole-UI CPU (every Electron process) is on the chip's tooltip.
+- While the synth runs, the app writes one `[CPU]` line every 15 s (`SPALUTER_CPU_LOG_MS` to change) to the log drawer and to `~/.local/state/spaluter/start.log`: scsynth avg/peak CPU, UGen and synth counts, Electron CPU split by main/gpu/renderer/other, and scope frames per second received.
+- `spaluter-measure [seconds] [interval]` (default 120 s, 5 s) samples per-process CPU, per-core busy %, scsynth thread placement and scheduling class, PipeWire quantum and ERR (xrun) deltas, interrupt counts per CPU, PSS memory and SoC temperature, then appends the window's `[CPU]` lines and prints a summary. Output lands in `~/.local/state/spaluter/measure-*.log`. Run it over ssh during a real play session; that is the baseline every later performance change is judged against.
 
 ## Troubleshooting
 

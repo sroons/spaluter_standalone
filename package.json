@@ -77,6 +77,15 @@
       "maintainer": "Spaluter Desktop <noreply@spaluter.local>",
       "target": [
         "deb"
+      ],
+      "extraResources": [
+        {
+          "from": "build/linux/payload",
+          "to": "linux-payload",
+          "filter": [
+            "**/*"
+          ]
+        }
       ]
     },
     "deb": {

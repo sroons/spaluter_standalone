@@ -1,0 +1,37 @@
+#!/bin/bash
+# Spaluter Desktop: keep every scsynth thread on its own core while the app
+# runs. Started in the background by /usr/local/bin/spaluter-desktop, which
+# launches Electron (and therefore sclang and scsynth) under `taskset` on the
+# UI cores; this moves scsynth, and any thread it or pipewire-jack creates
+# later, onto the DSP core instead. Same user, so no privileges needed. It
+# never changes scheduling policy or priority: scsynth's audio thread
+# (data-loop.0) already runs SCHED_FIFO 83 under pipewire-jack.
+#
+# Usage: spaluter-pin-scsynth <app-pid> [cpu-list]   (default cpu-list: 3)
+set -u
+
+APP_PID="${1:?usage: spaluter-pin-scsynth <app-pid> [cpu-list]}"
+DSP_CPUS="${2:-3}"
+INTERVAL="${SPALUTER_PIN_INTERVAL:-2}"
+
+command -v taskset >/dev/null 2>&1 || exit 0
+
+log() { echo "[spaluter-pin-scsynth] $*" >&2; }
+
+while kill -0 "$APP_PID" 2>/dev/null; do
+  for pid in $(pgrep -x scsynth 2>/dev/null); do
+    for task in /proc/"$pid"/task/*; do
+      tid="${task##*/}"
+      current="$(awk '/^Cpus_allowed_list:/ { print $2 }' "$task/status" 2>/dev/null)"
+      [ -z "$current" ] && continue
+      [ "$current" = "$DSP_CPUS" ] && continue
+      if taskset -cp "$DSP_CPUS" "$tid" >/dev/null 2>&1; then
+        log "scsynth pid=${pid} tid=${tid} ($(tr -d '\n' < "$task/comm" 2>/dev/null)) -> CPU ${DSP_CPUS}"
+      else
+        log "could not pin scsynth tid=${tid}"
+      fi
+    done
+  done
+  sleep "$INTERVAL"
+done
+exit 0

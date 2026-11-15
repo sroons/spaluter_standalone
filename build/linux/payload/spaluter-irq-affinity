@@ -1,0 +1,44 @@
+#!/bin/bash
+# Spaluter Desktop: move the two interrupt sources the instrument depends on
+# off CPU0, where every unpinned interrupt on the Pi 4 lands and where the
+# Electron main thread usually runs.
+#
+#   fe204000.spi  pisound control/MIDI path   -> CPU 2
+#   xhci_hcd      USB (Intech Grid MIDI)      -> CPU 1 (attempted)
+#
+# CPU 3 is left for scsynth's audio thread (see spaluter-pin-scsynth) and
+# CPU 0 keeps the kernel's default interrupt load. Interrupts are looked up
+# by name in /proc/interrupts, so renumbering across kernels is harmless.
+#
+# Measured on a Pi 4 (BCM2711, kernel 6.12): the SPI line moves; the xHCI
+# line does not. USB on the Pi 4 is a PCIe device whose MSI is delivered
+# through the brcmstb PCIe controller, and that interrupt-chip does not
+# support affinity changes (the write returns EIO), so USB MIDI interrupts
+# stay on CPU 0. The attempt is kept because it is harmless and works on
+# other boards. Run as root by spaluter-irq-affinity.service; safe to re-run.
+set -u
+
+SPI_CPU="${SPALUTER_IRQ_SPI_CPU:-2}"
+USB_CPU="${SPALUTER_IRQ_USB_CPU:-1}"
+
+if [ "$(nproc 2>/dev/null || echo 1)" -lt 4 ]; then
+  echo "spaluter-irq-affinity: fewer than 4 CPUs, leaving IRQ affinity alone"
+  exit 0
+fi
+
+pin_irq() {
+  local name="$1" cpu="$2" irq found=0
+  for irq in $(awk -v n="$name" '$1 ~ /^[0-9]+:$/ && $NF == n { sub(":", "", $1); print $1 }' /proc/interrupts); do
+    found=1
+    if echo "$cpu" > "/proc/irq/${irq}/smp_affinity_list" 2>/dev/null; then
+      echo "spaluter-irq-affinity: IRQ ${irq} (${name}) -> CPU ${cpu}"
+    else
+      echo "spaluter-irq-affinity: IRQ ${irq} (${name}) does not accept an affinity change on this interrupt controller; left as is" >&2
+    fi
+  done
+  [ "$found" -eq 1 ] || echo "spaluter-irq-affinity: no interrupt named ${name}; skipped"
+}
+
+pin_irq "fe204000.spi" "$SPI_CPU"
+pin_irq "xhci_hcd" "$USB_CPU"
+exit 0
