@@ -9,6 +9,7 @@ MEASURE_SCRIPT_PATH="/usr/local/bin/spaluter-measure"
 IRQ_SCRIPT_PATH="/usr/local/bin/spaluter-irq-affinity"
 IRQ_UNIT_PATH="/etc/systemd/system/spaluter-irq-affinity.service"
 PIPEWIRE_DROPIN_PATH="/etc/pipewire/pipewire.conf.d/50-spaluter.conf"
+USER_LIMITS_DROPIN_PATH="/etc/systemd/system/user@.service.d/50-spaluter.conf"
 WIREPLUMBER_RULE_PATH="/etc/wireplumber/main.lua.d/51-spaluter-disable-onboard-audio.lua"
 APP_BINARY=""
 PAYLOAD_DIR=""
@@ -193,9 +194,11 @@ chmod 755 "$SETUP_SCRIPT_PATH"
 
 # Runtime payload shipped in resources/linux-payload (see build/linux/payload
 # in the source tree): the scsynth core-pin watcher and the measurement script
-# on every Linux install; the PipeWire quantum drop-in, the WirePlumber rule
-# that disables the Pi's unused onboard audio cards, and the IRQ-affinity unit
-# on Raspberry Pi (ARM) installs only. None of these steps may fail the install.
+# on every Linux install; the PipeWire drop-in (quantum, data loop on CPU 3),
+# the user@.service limits drop-in that lets PipeWire schedule that loop as
+# SCHED_FIFO, the WirePlumber rule that disables the Pi's unused onboard audio
+# cards, and the IRQ-affinity unit on Raspberry Pi (ARM) installs only. None of
+# these steps may fail the install.
 for candidate in \
   "/opt/Spaluter Desktop/resources/linux-payload" \
   "/opt/spaluter-desktop/resources/linux-payload"; do
@@ -213,9 +216,25 @@ if [ -n "$PAYLOAD_DIR" ]; then
 
   if [ "$IS_PI_ARCH" -eq 1 ]; then
     if install -D -m 644 "$PAYLOAD_DIR/50-spaluter.conf" "$PIPEWIRE_DROPIN_PATH" 2>/dev/null; then
-      echo "Installed ${PIPEWIRE_DROPIN_PATH} (PipeWire graph quantum). Takes effect after 'systemctl --user restart pipewire wireplumber' or a reboot."
+      echo "Installed ${PIPEWIRE_DROPIN_PATH} (PipeWire graph quantum, data loop on CPU 3). Takes effect after 'systemctl --user restart pipewire wireplumber' or a reboot."
     else
       echo "Warning: could not install ${PIPEWIRE_DROPIN_PATH}." >&2
+    fi
+    if install -D -m 644 "$PAYLOAD_DIR/spaluter-user-limits.conf" "$USER_LIMITS_DROPIN_PATH" 2>/dev/null; then
+      if command -v systemctl >/dev/null 2>&1; then
+        systemctl daemon-reload >/dev/null 2>&1 || true
+      fi
+      # A user manager that is already running keeps its old limits until the
+      # next login; raise them in place so the next PipeWire restart sees them.
+      if command -v prlimit >/dev/null 2>&1; then
+        for manager_pid in $(pgrep -f 'systemd --user$' 2>/dev/null || true); do
+          prlimit --pid "$manager_pid" --rtprio=95:95 --nice=31:31 2>/dev/null \
+            || echo "Warning: could not raise the limits of user manager ${manager_pid}." >&2
+        done
+      fi
+      echo "Installed ${USER_LIMITS_DROPIN_PATH} (rtprio/nice limits so PipeWire's data loop runs SCHED_FIFO)."
+    else
+      echo "Warning: could not install ${USER_LIMITS_DROPIN_PATH}." >&2
     fi
     install -D -m 644 "$PAYLOAD_DIR/51-spaluter-disable-onboard-audio.lua" "$WIREPLUMBER_RULE_PATH" 2>/dev/null \
       || echo "Warning: could not install ${WIREPLUMBER_RULE_PATH}." >&2
