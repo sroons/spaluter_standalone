@@ -10,6 +10,7 @@ IRQ_SCRIPT_PATH="/usr/local/bin/spaluter-irq-affinity"
 IRQ_UNIT_PATH="/etc/systemd/system/spaluter-irq-affinity.service"
 PIPEWIRE_DROPIN_PATH="/etc/pipewire/pipewire.conf.d/50-spaluter.conf"
 USER_LIMITS_DROPIN_PATH="/etc/systemd/system/user@.service.d/50-spaluter.conf"
+SECURITY_LIMITS_PATH="/etc/security/limits.d/50-spaluter.conf"
 WIREPLUMBER_RULE_PATH="/etc/wireplumber/main.lua.d/51-spaluter-disable-onboard-audio.lua"
 APP_BINARY=""
 PAYLOAD_DIR=""
@@ -235,6 +236,13 @@ if [ -n "$PAYLOAD_DIR" ]; then
       echo "Installed ${USER_LIMITS_DROPIN_PATH} (rtprio/nice limits so PipeWire's data loop runs SCHED_FIFO)."
     else
       echo "Warning: could not install ${USER_LIMITS_DROPIN_PATH}." >&2
+    fi
+    # pam_limits (via /usr/lib/pam.d/systemd-user) resets RLIMIT_NICE to 0 for the user
+    # manager at every boot, overriding the drop-in above; grant it the PAM way too.
+    if install -D -m 644 "$PAYLOAD_DIR/spaluter-security-limits.conf" "$SECURITY_LIMITS_PATH" 2>/dev/null; then
+      echo "Installed ${SECURITY_LIMITS_PATH} (nice -11 for the audio group; needed at boot for PipeWire's SCHED_FIFO path)."
+    else
+      echo "Warning: could not install ${SECURITY_LIMITS_PATH}." >&2
     fi
     install -D -m 644 "$PAYLOAD_DIR/51-spaluter-disable-onboard-audio.lua" "$WIREPLUMBER_RULE_PATH" 2>/dev/null \
       || echo "Warning: could not install ${WIREPLUMBER_RULE_PATH}." >&2
