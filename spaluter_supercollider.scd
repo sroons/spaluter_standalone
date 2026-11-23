@@ -36,6 +36,8 @@ s.waitForBoot {
 
         var atk, rel, glid, vc, fc, mode, ctype, bPitch;
         var fHzArr, panArr, voices, sig, mod;
+        var ampSm, driveSm, dutySm, pulsaretSm, windowSm, maskAmountSm, glissonSm, sampleRateSm;
+        var edgeSec = 0.0005, makeup = 2.0;
         var scopeFrames, scopeBufL, scopeBufR, scopeWritePos, scopeReadPos, scopeValuesL, scopeValuesR, scopeTrig;
 
         // Internal LFO modulation: read a 20-channel control bus. Each LFO
@@ -49,6 +51,21 @@ s.waitForBoot {
         // each grain/note retrigger so the modulation is audible per pulse.
         mod = In.kr(modBus, 20);
 
+        // Control smoothing. Every continuous control used to land as a
+        // block-boundary step on each UI drag, MIDI CC, macro sweep or preset
+        // recall (measured as one hard sample jump per message); each now
+        // settles over ~20 ms. Switches (gate, modes, counts) stay instant,
+        // pitch keeps its own glide below, and the LFO bus is already lagged
+        // inside \spaluterLfo.
+        ampSm = Lag.ar(K2A.ar(amp), 0.02);
+        driveSm = Lag.kr(drive, 0.02);
+        dutySm = Lag.kr(duty, 0.02);
+        pulsaretSm = Lag.kr(pulsaret, 0.02);
+        windowSm = Lag.kr(window, 0.02);
+        maskAmountSm = Lag.kr(maskAmount, 0.02);
+        glissonSm = Lag.kr(glisson, 0.02);
+        sampleRateSm = Lag.kr(sampleRate, 0.02);
+
         atk = (attackMs + mod[16]).max(0.1) * 0.001;
         rel = (releaseMs + mod[17]).max(1.0) * 0.001;
         glid = (glideMs + mod[18]).max(0.0) * 0.001;
@@ -58,14 +75,14 @@ s.waitForBoot {
         ctype = chordType.clip(0, 13);
         bPitch = basePitch.max(0.1) * mod[15].midiratio;
 
-        fHzArr = [formant1 + mod[5], formant2 + mod[6], formant3 + mod[7]].collect({ |x| x.clip(20, 8000) });
-        panArr = [pan1 + mod[9], pan2 + mod[10], pan3 + mod[11]].collect({ |x| x.clip(-1, 1) });
+        fHzArr = [Lag.kr(formant1, 0.02) + mod[5], Lag.kr(formant2, 0.02) + mod[6], Lag.kr(formant3, 0.02) + mod[7]].collect({ |x| x.clip(20, 8000) });
+        panArr = [Lag.kr(pan1, 0.02) + mod[9], Lag.kr(pan2, 0.02) + mod[10], Lag.kr(pan3, 0.02) + mod[11]].collect({ |x| x.clip(-1, 1) });
 
         voices = Mix.fill(4, { |vi|
             var vActive, ratio, targetFreq, freq, jitMul, pulseFreq, trig;
             var envASR, envPulse, env, ampJ, pulseCount, formants, vSig;
 
-            vActive = (vc > vi).lag(0.01);
+            vActive = Lag.ar(K2A.ar(vc > vi), 0.01);
             ratio = Select.kr(ctype, ratioByVoice[vi]);
             targetFreq = bPitch * ratio;
             freq = Lag.kr(targetFreq, glid).max(0.1);
@@ -80,38 +97,74 @@ s.waitForBoot {
             // holds; gate down (Note Off) plays the release to silence.
             // doneAction stays 0 so the persistent voice survives between
             // notes. (Mode 1/Free Run uses the per-grain percussive env.)
-            envASR = EnvGen.kr(Env.asr(atk, 1, rel, -4), Select.kr(mode, [gate, gate, (trigIn > 0)]));
+            // Audio-rate so a 10 ms attack is a ramp, not eight control-block
+            // steps (the stepped version popped on every note-on).
+            envASR = EnvGen.ar(Env.asr(atk, 1, rel, -4), Select.kr(mode, [gate, gate, (trigIn > 0)]));
             envPulse = EnvGen.ar(Env.perc(atk, rel, 1, curve: -4), trig);
-            env = SelectX.ar(mode, [K2A.ar(envASR), envPulse, K2A.ar(envASR)]);
+            env = SelectX.ar(mode, [envASR, envPulse, envASR]);
 
             // Per-pulse amplitude jitter (only attenuates, like original)
             ampJ = 1 - TRand.ar(0, (ampJitter + mod[12]).clip(0, 1), trig);
             pulseCount = PulseCount.ar(trig);
 
             formants = Mix.fill(3, { |fi|
-                var fOn, fBase, fTracked, fEff, dutyF, dutyStart, phase, inDuty, tp;
-                var ratioF, sweepMul, wphase, x, pulsaretWaves, winWaves;
+                var fOn, fBase, fTracked, fEff, dutyF, dutyStart, phase, edgeFrac, edgeEnv, tp;
+                var ratioF, glissonAmt, sweepMul, inRegion, regionTrig, wrate, wphase, x, pulsaretWaves, winWaves;
                 var synthWave, sampleWave, src, win, randShared, randForm, rsel;
                 var maskStoch, total, burstOffset, idx, maskBurst, maskRaw, maskSm, grain;
 
-                fOn = (fc > fi);
+                // Formant on/off and the tracking/duty-mode switches fade over
+                // 10 ms instead of stepping mid-grain.
+                fOn = Lag.ar(K2A.ar(fc > fi), 0.01);
                 fBase = fHzArr[fi];
                 fTracked = fBase * (freq / bPitch);
-                fEff = Select.kr(formantTrack > 0.5, [fBase, fTracked]).clip(20, 12000);
+                fEff = Select.kr(formantTrack > 0.5, [fBase, fTracked]).clip(20, 12000).lag(0.01);
 
                 dutyF = Select.kr(dutyMode > 0.5, [
-                    (duty + mod[4]).clip(0.01, 1),
+                    (dutySm + mod[4]).clip(0.01, 1),
                     (freq / fEff).clip(0.01, 1)
-                ]);
+                ]).lag(0.01);
 
-                phase = (Sweep.ar(trig) * pulseFreq).wrap(0, 1);
+                // Pulse phase is integrated (Phasor) rather than computed as
+                // elapsed time x current rate. The old form jumped whenever
+                // pulseFreq changed mid-grain: every legato note, every note
+                // inside the previous note's release, every chord change and
+                // every timing-jitter step was a click. A rate change now only
+                // bends the slope; the phase itself is continuous.
+                phase = Phasor.ar(trig, pulseFreq * SampleDur.ir, 0, 1, 0);
                 dutyStart = (1 - dutyF) * 0.5;
-                inDuty = (phase >= dutyStart) * (phase < (dutyStart + dutyF));
                 tp = ((phase - dutyStart) / dutyF.max(0.001)).clip(0, 1);
 
+                // Grain edge: a smooth fade over the first and last ~0.5 ms of
+                // the duty region. tp is pinned to 0 before the
+                // region and to 1 after it, so this is exactly zero outside the
+                // grain and replaces the old boolean inDuty gate, which cut
+                // windows that do not reach zero (rectangular, exp decay,
+                // reverse exp, and every crossfade between shapes) with a hard
+                // step at both ends of every grain. Grains shorter than 1 ms
+                // get a full bell shape. Built as a clipped ramp pushed through
+                // a smoothstep rather than two cosines: this runs in all twelve
+                // formant streams at audio rate, and on the Pi the cosine
+                // version cost about 5 points of scsynth CPU.
+                edgeFrac = (edgeSec * pulseFreq / dutyF.max(0.001)).clip(0.001, 0.5);
+                edgeEnv = (tp * (1 - tp) / (edgeFrac * (1 - edgeFrac))).min(1);
+                edgeEnv = edgeEnv * edgeEnv * (3 - (2 * edgeEnv));
+
                 ratioF = fEff / freq.max(0.1);
-                sweepMul = 2.pow((glisson + mod[14]).clip(-2, 2) * (tp - 0.5));
-                wphase = (tp * ratioF * sweepMul).wrap(0, 1);
+                glissonAmt = (glissonSm + mod[14]).clip(-2, 2);
+                sweepMul = 2.pow(glissonAmt * (tp - 0.5));
+                // Pulsaret phase, likewise integrated. The closed form was
+                // tp * ratioF * sweepMul, which jumped with every change of
+                // ratioF (pitch or formant) while a grain was sounding. Its
+                // time derivative is integrated instead, reset to zero where
+                // the duty region begins (and at the pulse trigger, which is
+                // the same instant when duty is 1). For constant parameters
+                // this is identical to the old form, including the glisson
+                // sweep; under changing parameters it stays continuous.
+                inRegion = (phase >= dutyStart) * (phase < (dutyStart + dutyF));
+                regionTrig = ((inRegion - Delay1.ar(inRegion)) > 0) + trig;
+                wrate = (pulseFreq / dutyF.max(0.001)) * ratioF * sweepMul * (1 + (tp * glissonAmt * 2.log));
+                wphase = Phasor.ar(regionTrig, wrate * SampleDur.ir, 0, 1, 0);
                 x = (wphase * 2pi);
 
                 pulsaretWaves = [
@@ -127,13 +180,16 @@ s.waitForBoot {
                     Select.ar(wphase < 0.5, [DC.ar(1), DC.ar(-1)]),        // square
                     ((x * 3).sin * ((wphase * 3).neg.exp)),                // formant-ish
                     ((((wphase - 0.5) * 20).squared.neg.exp) * 2 - 1),     // pulse
-                    (Hasher.ar(wphase * 1234.567) * 2 - 1)                 // noise
+                    // Hasher is already bipolar (-1..1); the old "* 2 - 1" made
+                    // this -3..1: 3x the gain of every other shape with a -1 DC
+                    // offset, which thumped on selection and drove tanh one-sided.
+                    Hasher.ar(wphase * 1234.567)                           // noise
                 ];
 
-                synthWave = SelectX.ar((pulsaret + mod[2]).clip(0, 9), pulsaretWaves);
+                synthWave = SelectX.ar((pulsaretSm + mod[2]).clip(0, 9), pulsaretWaves);
                 sampleWave = BufRd.ar(
                     1, bufnum,
-                    (wphase * BufFrames.kr(bufnum) * (sampleRate + mod[19]).max(0.01)).wrap(0, BufFrames.kr(bufnum).max(2) - 1),
+                    (wphase * BufFrames.kr(bufnum) * (sampleRateSm + mod[19]).max(0.01)).wrap(0, BufFrames.kr(bufnum).max(2) - 1),
                     loop: 1, interpolation: 2
                 );
                 src = Select.ar(useSample > 0.5, [synthWave, sampleWave]);
@@ -158,12 +214,15 @@ s.waitForBoot {
                     (((1 - tp) * 4).neg.exp),                                      // reverse exp
                     (1 - (2 * (tp - 0.5).abs)).clip(0, 1)                         // triangle
                 ];
-                win = SelectX.ar((window + mod[3]).clip(0, 8), winWaves);
+                win = SelectX.ar((windowSm + mod[3]).clip(0, 8), winWaves);
 
                 randShared = Hasher.ar(pulseCount + (vi * 101));
                 randForm = Hasher.ar(pulseCount + (vi * 101) + (fi * 37));
                 rsel = Select.ar(perFormantMask > 0.5, [randShared, randForm]);
-                maskStoch = (rsel > (maskAmount + mod[8]).clip(0, 1));
+                // Hasher is -1..1; map it to 0..1 before comparing with the 0..1
+                // mask amount. Before this, amount 0 still dropped about half
+                // the grains and amount 1 dropped them all.
+                maskStoch = (((rsel * 0.5) + 0.5) > (maskAmountSm + mod[8]).clip(0, 1));
 
                 total = (burstOn + burstOff).max(1);
                 burstOffset = Select.kr(perFormantMask > 0.5, [0, fi * (total / 3)]);
@@ -173,17 +232,19 @@ s.waitForBoot {
                 maskRaw = Select.ar(maskMode.clip(0, 2), [DC.ar(1), maskStoch, maskBurst]);
                 maskSm = Lag.ar(maskRaw, 0.003);
 
-                grain = src * win * inDuty * maskSm * fOn;
+                grain = src * win * edgeEnv * maskSm * fOn;
                 Pan2.ar(grain, panArr[fi], 1.0)
             });
 
-            vSig = LeakDC.ar(formants / fc.max(1));
+            // Normalisation divisors follow the count changes over 10 ms so a
+            // voice or formant count change is a fade, not a level step.
+            vSig = LeakDC.ar(formants / Lag.kr(fc, 0.01).max(1));
             vSig = vSig * env * ampJ * vActive;
             vSig
         });
 
-        sig = voices / vc.max(1);
-        sig = tanh(sig * (drive + mod[1]).clip(0.1, 4.0));
+        sig = voices / Lag.kr(vc, 0.01).max(1);
+        sig = tanh(sig * (driveSm + mod[1]).clip(0.1, 4.0));
         scopeFrames = 64;
         scopeBufL = LocalBuf(scopeFrames, 1);
         scopeBufR = LocalBuf(scopeFrames, 1);
@@ -198,7 +259,11 @@ s.waitForBoot {
         scopeValuesR = BufRd.kr(1, scopeBufR, scopeReadPos, loop: 1, interpolation: 1);
         scopeTrig = Impulse.kr(scopeRate.clip(1, 60)) * (scopeEnabled > 0);
         SendReply.kr(scopeTrig, "/spaluter/scope", scopeValuesL ++ scopeValuesR);
-        Out.ar(out, sig * (amp + mod[0]).max(0));
+        // +6 dB make-up after the drive stage: with the defaults the output
+        // peaked at -16 dBFS, so users turned up downstream gain instead. The
+        // scope above still reads the pre-make-up signal, and the final
+        // Limiter in \spaluterReverb catches the top of the amp range.
+        Out.ar(out, sig * makeup * (ampSm + mod[0]).max(0));
     }).add;
 
     // Zeroes the 16-channel modulation bus each control block so the LFO
@@ -351,6 +416,10 @@ s.waitForBoot {
         dlyWetSig = Limiter.ar(dlyWetSig, 0.97, 0.005);
 
         sig = (sig * (1 - (dlyMix * 0.35))) + (dlyWetSig * dlyMix);
+        // Final bus: block any DC the drive stage or FX leave behind and catch
+        // peaks with a 2 ms look-ahead brickwall, so the hotter master level
+        // never clips the DAC. This is the last node before the hardware.
+        sig = Limiter.ar(LeakDC.ar(sig), 0.95, 0.002);
         ReplaceOut.ar(out, sig);
     }).add;
 
@@ -459,6 +528,10 @@ s.waitForBoot {
         dlyWetSig = Limiter.ar(dlyWetSig, 0.97, 0.005);
 
         sig = (sig * (1 - (dlyMix * 0.35))) + (dlyWetSig * dlyMix);
+        // Final bus: block any DC the drive stage or FX leave behind and catch
+        // peaks with a 2 ms look-ahead brickwall, so the hotter master level
+        // never clips the DAC. This is the last node before the hardware.
+        sig = Limiter.ar(LeakDC.ar(sig), 0.95, 0.002);
         ReplaceOut.ar(out, sig);
     }).add;
 

@@ -13,7 +13,7 @@ Boots local scsynth, loads patch file, and exposes OSC control:
 */
 
 (
-    var patchPath, appPort, appAddr, status, startSynth, stopSynth, resetSynth, waitForPatch, waitForSynthDef, silentBuf, booted, loadSample, forwardScope;
+    var patchPath, appPort, appAddr, status, startSynth, stopSynth, fadeAndFree, resetSynth, waitForPatch, waitForSynthDef, silentBuf, booted, loadSample, forwardScope;
     var patchWaitRetries, synthDefWaitRetries, scopeRate, scopeEnabled, applyScopeConfig;
     var modBus, lfoGroup, modClearSynth, lfoSynths, lfoConfigs, lfoCount, maxLfo;
     var modParams, modParamIndex, modDepthCap, setupModulation, spawnLfo, releaseLfo, setLfoCount, applyLfo, rebuildLfos, retriggerLfos, lfoWarn, lfoWarnLast, lfoWarnCount;
@@ -475,8 +475,7 @@ s.doWhenBooted({
         waitForPatch.value({
             waitForSynthDef.value({
                 {
-                    if(~spaluter.notNil) { ~spaluter.free; };
-                    if(~spaluterReverb.notNil) { ~spaluterReverb.free; ~spaluterReverb = nil; reverbSynthDef = nil; };
+                    fadeAndFree.value;
                     setupModulation.value;
                     ~spaluter = ~spaluterStart.(0, modBus.index, lfoGroup, \addAfter);
                     // Fresh synth starts in gateMode 1 (Free Run), gate 0; reset
@@ -504,17 +503,27 @@ s.doWhenBooted({
         }, patchWaitRetries);
     };
 
+    // Stop and restart used to free the synth outright, which cut the output
+    // to zero inside one sample (a click on every Stop, measured in a live
+    // capture). The synth's amp control is lagged, so set it to zero first and
+    // free both nodes 80 ms later; the references are captured here so a Start
+    // in the meantime builds its own fresh nodes untouched.
+    fadeAndFree = {
+        var oldSynth = ~spaluter, oldReverb = ~spaluterReverb;
+        ~spaluter = nil;
+        ~spaluterReverb = nil;
+        reverbSynthDef = nil;
+        if(oldSynth.notNil) { oldSynth.set(\amp, 0) };
+        AppClock.sched(0.08, {
+            if(oldSynth.notNil) { oldSynth.free };
+            if(oldReverb.notNil) { oldReverb.free };
+            nil
+        });
+    };
+
     stopSynth = {
         {
-            if(~spaluterReverb.notNil) {
-                ~spaluterReverb.free;
-                ~spaluterReverb = nil;
-                reverbSynthDef = nil;
-            };
-            if(~spaluter.notNil) {
-                ~spaluter.free;
-                ~spaluter = nil;
-            };
+            fadeAndFree.value;
             midiSoundingNote = nil;
             midiVoiceActive = false;
             forwardScope.value(Array.fill(128, 0.0));
