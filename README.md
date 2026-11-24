@@ -292,6 +292,60 @@ Per-session measurement:
 - While the synth runs, the app writes one `[CPU]` line every 15 s (`SPALUTER_CPU_LOG_MS` to change) to the log drawer and to `~/.local/state/spaluter/start.log`: scsynth avg/peak CPU, UGen and synth counts, Electron CPU split by main/gpu/renderer/other, and scope frames per second received.
 - `spaluter-measure [seconds] [interval]` (default 120 s, 5 s) samples per-process CPU, per-core busy %, scsynth thread placement and scheduling class, PipeWire quantum and ERR (xrun) deltas, interrupt counts per CPU, PSS memory and SoC temperature, then appends the window's `[CPU]` lines and prints a summary. Output lands in `~/.local/state/spaluter/measure-*.log`. Run it over ssh during a real play session; that is the baseline every later performance change is judged against.
 
+## Performance work (branch `performance-rewrite`)
+
+The instrument runs on a Raspberry Pi 4 (Model B, 2 GB) with a pisound HAT, a 1024x600 USB touchscreen and Patchbox OS on a stock `PREEMPT` kernel (not `PREEMPT_RT`). Everything below was measured on that device during real play with the screen on, using the tools in the measurement section, and is written up at length in `performance-rewrite-analysis.md` (plan and runtime findings) and `audio-quality-analysis.md` (DSP findings and click measurements). The headline numbers:
+
+| | Before (2026-11-14) | After step 2 (2026-11-24) |
+| --- | --- | --- |
+| scsynth CPU, defaults (1 voice, 3 formants), UI idle | 38-45% of a core, the same at any voice or formant count | 10% average, 13.5% peak |
+| UGens in the voice | 2,956 in one synth, all always computed | 17 synths; unused streams and clocks are paused |
+| Output latency (PipeWire quantum) | about 43 ms (quantum 1024) | about 21 ms (quantum 512) |
+| xruns in 5 minutes of heavy play | 8 | 0 |
+| Clicks in a 3 s saw render with pulsaret 50 Hz | 329 | 0 |
+| Saw energy above 16 kHz (aliasing) | -11 dB rel. total | -39 dB |
+| 1000 Hz formant actually peaks at | 2000 Hz | 1000 Hz |
+
+### Step 1: measure first, then tune the runtime (no app code)
+
+The first finding was that the product had no instrument for the number that mattered: the header CPU chip read the Electron main process (0.4%) while scsynth sat at 45%. Step 1 added the **DSP** chip (scsynth's own `/status` average and peak, relayed as `/spaluter/cpu`), the `[CPU]` log line every 15 s, and the `spaluter-measure` script, then applied the runtime changes that cost nothing in code: PipeWire quantum 512 (256 measured and rejected twice: 2 xruns per minute idle, later 8 in 5 min of play against 0 at 512), a WirePlumber rule that keeps the onboard headphone and HDMI cards out of the graph, Electron and sclang on CPUs 0-2 with scsynth alone on CPU 3, and the pisound SPI interrupt on CPU 2. Rejected on the device: letting Chromium pace itself with vsync (Electron fell to 78% but Xorg rose from 4% to 55% and xruns went from 8 to 27), so the `--disable-gpu-vsync` / `--disable-frame-rate-limit` flags stay. Also deliberately not done: `chrt` on scsynth (its audio thread already runs `SCHED_FIFO 83` as a pipewire-jack client), `isolcpus`, and a direct-ALSA scsynth (the Debian build is JACK-only).
+
+### Step 1b: PipeWire's own loop next to scsynth
+
+With scsynth pinned, the remaining xruns came from PipeWire's driver thread, the one that services the pisound and wakes scsynth every period, running `SCHED_RR 20` on whichever core was free. It now runs `SCHED_FIFO 88` on CPU 3 above scsynth's 83. Getting there needed three pieces, because PipeWire's module-rt only takes the plain `SCHED_FIFO` path when it can also set nice -11, and otherwise falls back to RTKit or gives up: the `thread.affinity` line in the PipeWire drop-in, a `user@.service` drop-in raising the user manager's rtprio and nice limits, and a `/etc/security/limits.d` file, because `pam_limits` in the vendor `systemd-user` PAM stack resets the nice limit to 0 at every boot and silently undid the drop-in (found as 1,670 xruns in 4 hours after a reboot). All of it is installed by the `.deb` postinst and described file by file under "Audio runtime tuning" above. The check after any reboot or PipeWire restart is that `data-loop.0` reads `FF 88` on CPU 3.
+
+### Step 2a: clicks that happen with zero xruns
+
+A click detector on offline renders (third difference of the signal against its running level) and a sink-monitor capture on the Pi (`pw-record --target <sink> -P '{ stream.capture.sink = true }'`, which records exactly what PipeWire hands the pisound) separated DSP clicks from everything else. Fixed in `spaluter_supercollider.scd`: grain edges fade over 0.5 ms with a smoothstep instead of a boolean duty gate; every continuous control has a 20 ms lag; two `Hasher` range bugs (it outputs -1..1, the code assumed 0..1, which silently dropped half the grains in stochastic mask mode); +6 dB make-up with `LeakDC` and a 2 ms look-ahead `Limiter` on the final bus. The second round found the main click source: pulse phase and pulsaret phase were closed-form products of elapsed time and rate, so they jumped on every mid-grain pitch, chord, formant or duty change, and `Impulse` drifted against them whenever the pulse rate moved (jitter, glide, pitch LFO), truncating a grain at every pulse. Both phases are now integrated with `Phasor.ar`, the note envelope runs at audio rate, and Stop fades `amp` for 80 ms before freeing (a live capture showed it cutting to zero in one sample). 12 of 14 Grid notes clicked with the defaults before; 0 after.
+
+**The crackle that was not digital.** A dense "old vinyl" crackle survived all of this. Its sink-monitor capture was clean, and it reproduced with the instrument stopped: a pure 880 Hz tone from `pw-play` crackled only while busy loops ran on CPUs 0-2 at the full 1.8 GHz clock, went away at 600 MHz, and followed the load within a second at steady temperature. The Pi was being fed from a power strip's USB-A port through an A-to-C cable while also powering the touchscreen and the Grid, and logged under-voltage at every boot. A dedicated 5.1 V 3 A supply fixed it. Judge any future click report on a sink-monitor capture before touching the DSP.
+
+### Step 2: the synth graph
+
+The old voice was one synth of 2,956 UGens: `Mix.fill` always built 12 grain streams, each `SelectX` over 10 pulsaret and 9 window generators ran all 19, and voice and formant counts multiplied finished signals by zero instead of removing work, so 1 voice / 1 formant cost exactly what 4 / 3 did. The new graph is a Group of 17 nodes:
+
+- **4 clock synths**, one per voice: pulse `Phasor`, trigger, audio-rate ASR / percussive envelope with a lagged crossfade between gate modes, per-grain `TRand` amplitude and onset-jitter values and a pulse counter, published on a shared audio bus; the voice frequency on a control bus.
+- **12 stream synths**, one per voice x formant: pulsaret and window read from wavetable buffers with a per-sample crossfade between neighbouring shapes, sample playback, the deterministic and stochastic masks, pan, summed on a stereo mix bus.
+- **1 mixer** (`\spaluterSC`): `LeakDC`, normalisation by the lagged counts, drive, scope reply, make-up, output. It also `Pause`s every clock and stream the current voice and formant counts do not use, so CPU follows the counts.
+
+The pulsaret shapes are 10 wavetables in 8 band-limited mip levels (2048 + 1 frames each, built once per session with `Signal.fft`, harmonics tapered with a raised cosine over the top third of each band so saw and square edges do not ring); the level is chosen from the pulsaret rate and latched per grain. Windows are 9 tables. Nothing in `sc/runtime.scd` changed: a Group answers `set`, `free` and `\addAfter` the way the single synth did, and the server ignores control names a node does not have.
+
+Three DSP bugs from `audio-quality-analysis.md` were fixed in the same rewrite, and they change the sound: formant frequency no longer divides by duty, so formants sit an octave lower than before at duty 0.5 and a 1000 Hz formant peaks at 1000 Hz (presets sound different, on purpose); timing jitter now moves each grain's onset instead of multiplying in an aliasing noise source; the remaining instant switches (gate mode, sample on/off, mask mode, formant tracking, duty mode) are lagged. The shipped defaults measure about 6 dB quieter because the 20 Hz formant now completes half as many cycles per grain; the pure-formant case is level-identical.
+
+One server behaviour cost most of a day: a control-rate value added to an audio-rate `BufRd` index is ramped across the 64-sample block by scsynth, so a control-rate table offset swept the read head through thousands of frames of the neighbouring tables on every pulsaret or window change (a 1.3 ms noise burst). The shape selector is converted to audio rate first and floored per sample. Measured on the Mac at equal load, the old graph costs 12.6-13.7% at every count setting; the new one 4.3% at 1 voice / 3 formants, 2.3% at 1 / 1, 4.9% at 2 / 2 and 11.9% at 4 / 3. On the Pi at the defaults: 10.1% average, 13.5% peak, 0 xruns, a 20 s capture with no click events, no clicks by ear. Four-voice play on the Pi is the next number to record; the Mac ratio predicts about 28%.
+
+### How to measure
+
+- Watch the **DSP** chip in the header during play (scsynth average, peak in the label; amber above 60%, orange above 80%).
+- Read the `[CPU]` lines in `~/.local/state/spaluter/start.log`: scsynth average and peak, UGen and synth counts, Electron CPU by process, scope frames per second.
+- Run `spaluter-measure 300` over ssh during a real five-minute session with the screen on. It records per-process and per-core CPU, scsynth thread placement, PipeWire quantum and xrun deltas, interrupts, memory and temperature into `~/.local/state/spaluter/measure-*.log`. That run is the baseline every later change is judged against.
+- For clicks, capture the digital output first: `pw-record --target alsa_output.platform-soc_sound.stereo-fallback -P '{ stream.capture.sink = true }' out.wav`. If the capture is clean and you still hear it, the problem is downstream of the stream (power, cable, analog stage).
+- After any reboot or PipeWire restart: `ps -L -o cls,rtprio,psr,comm -p $(pgrep -x pipewire) | grep data` must read `FF 88 3`, and `vcgencmd get_throttled` must read `0x0`.
+
+### What remains
+
+In the order the analysis recommends: measure four-voice play on the Pi and retry quantum 256 or 384 now that the DSP is lighter; drop sclang from the control plane (134 MB of RAM and a class-library compile on every launch, for an OSC router, LFOs and reverb spawning that Node can send to scsynth directly, with the wavetables computed in JS and the SynthDefs precompiled at build time); the renderer hot paths and the Xorg-free display stack (Electron is 65-70% of a core with the scope live, Xorg sits in the frame path); and only then decide whether a native engine or UI buys anything the Pi still cannot do. Sub-sample grain onsets and oversampling are the two things a native engine would add that SuperCollider cannot.
+
 ## Troubleshooting
 
 - If the app opens but synth never starts:
