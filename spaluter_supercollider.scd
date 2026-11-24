@@ -361,15 +361,37 @@ s.waitForBoot {
     // channel (targetIdx) of the modulation bus. Shape selects waveform; all
     // shapes derive from a shared 0..1 phasor so `phase` is uniform. Retarget
     // is done by free + respawn in runtime.scd (targetIdx fixed per instance).
-    SynthDef(\spaluterLfo, { |modBus=0, targetIdx=0, rate=1, depth=0, shape=0, phase=0, enabled=1, lag=0.02|
-        var ph, sine, tri, sawU, sawD, sqr, sh, rnd, osc, sig;
-        ph = (LFSaw.kr(rate, 0).range(0, 1) + phase).wrap(0, 1);
+    // Beat position for clock-locked LFOs. The renderer counts MIDI clock ticks
+    // and reports the position (ticks / 24, in beats since Start) every
+    // sixteenth and on Start; between reports the position advances at the
+    // reported tempo. Each report latches the offset between the counted and
+    // the integrated position and glides it in over 80 ms, so estimate jitter
+    // never steps an LFO's phase; a Start report snaps the position instead.
+    SynthDef(\spaluterClockMaster, { |clockBus=0, hz=2, pos=0, t_resync=0, t_reset=0|
+        var sweep, err, lagT;
+        sweep = Sweep.kr(t_reset, Lag.kr(hz.max(0), 0.05));
+        err = Latch.kr(pos - sweep, t_resync + t_reset);
+        lagT = 0.08 * (1 - t_reset);
+        ReplaceOut.kr(clockBus, sweep + Lag.kr(err, lagT));
+    }).add;
+
+    // useClock 1: the phase comes from the beat-position bus times ratio (cycles
+    // per beat: /4 is one cycle every four beats, x2 two per beat), so the LFO
+    // sits on the same beat every bar instead of merely running at tempo.
+    // useClock 0: free-running at rate. S&H steps on the cycle boundary in both
+    // modes, so clocked steps land on the grid.
+    SynthDef(\spaluterLfo, { |modBus=0, targetIdx=0, rate=1, depth=0, shape=0, phase=0, enabled=1, lag=0.02, clockBus=0, useClock=0, ratio=1|
+        var freePh, clockPh, ph, wrapTrig, sine, tri, sawU, sawD, sqr, sh, rnd, osc, sig;
+        freePh = LFSaw.kr(rate, 0).range(0, 1);
+        clockPh = (In.kr(clockBus, 1) * ratio).wrap(0, 1);
+        ph = (Select.kr(useClock.clip(0, 1), [freePh, clockPh]) + phase).wrap(0, 1);
+        wrapTrig = (ph - Delay1.kr(ph)) < -0.5;
         sine = (2pi * ph).sin;
         tri  = 1 - (4 * (ph - 0.5).abs);
         sawU = (2 * ph) - 1;
         sawD = 1 - (2 * ph);
         sqr  = ((ph < 0.5) * 2) - 1;
-        sh   = LFNoise0.kr(rate);
+        sh   = TRand.kr(-1, 1, wrapTrig);
         rnd  = LFNoise2.kr(rate);
         osc  = Select.kr(shape.clip(0, 6), [sine, tri, sawU, sawD, sqr, sh, rnd]);
         sig  = Lag.kr(osc * depth * enabled, lag);

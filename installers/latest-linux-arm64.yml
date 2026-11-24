@@ -1,8 +1,8 @@
 version: 0.8.0
 files:
   - url: Spaluter-Desktop-0.8.0-linux-arm64.deb
-    sha512: 0NHuacUoX0Erc5r6DulXiLXUiwj1l3NcT3AxF6vhn1DnLhvAtB4i0HaOPN3H8PFY/y/y7iptPxnautZ2Mo5qDw==
-    size: 71367330
+    sha512: fedMl38GHp89tYB4M4+s+ox6DxfS7eBfULFGNG3c5skWYY1jnfz22s4Xx8BOlyM2hE7NBzljrcxkoj8oIddnIw==
+    size: 71378084
 path: Spaluter-Desktop-0.8.0-linux-arm64.deb
-sha512: 0NHuacUoX0Erc5r6DulXiLXUiwj1l3NcT3AxF6vhn1DnLhvAtB4i0HaOPN3H8PFY/y/y7iptPxnautZ2Mo5qDw==
-releaseDate: '2026-11-24T18:29:41.399Z'
+sha512: fedMl38GHp89tYB4M4+s+ox6DxfS7eBfULFGNG3c5skWYY1jnfz22s4Xx8BOlyM2hE7NBzljrcxkoj8oIddnIw==
+releaseDate: '2026-11-24T18:54:57.735Z'

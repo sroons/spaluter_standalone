@@ -16,6 +16,7 @@ Boots local scsynth, loads patch file, and exposes OSC control:
     var patchPath, appPort, appAddr, status, startSynth, stopSynth, fadeAndFree, resetSynth, waitForPatch, waitForSynthDef, silentBuf, booted, loadSample, forwardScope;
     var patchWaitRetries, synthDefWaitRetries, scopeRate, scopeEnabled, applyScopeConfig;
     var modBus, lfoGroup, modClearSynth, lfoSynths, lfoConfigs, lfoCount, maxLfo;
+    var clockBus, clockMasterSynth, clockHz, clockPos, applyClockSync;
     var modParams, modParamIndex, modDepthCap, setupModulation, spawnLfo, releaseLfo, setLfoCount, applyLfo, rebuildLfos, retriggerLfos, lfoWarn, lfoWarnLast, lfoWarnCount;
     var reverbDefaults, reverbState, reverbParamSet, reverbSynthDef, reverbDefForState, applyReverbState, spawnReverb, setReverbParam, resetReverbParams, updateReverbBypass;
     var setupMidi, midiNoteOn, midiNoteOff, midiNoteToBasePitch, midiSoundingNote, midiVoiceActive, currentGateMode, midiInitialized, midiChannel;
@@ -155,8 +156,12 @@ s.doWhenBooted({
         \attackMs, 500, \releaseMs, 800, \glideMs, 500, \sampleRate, 0.25
     ]);
     lfoConfigs = Array.fill(maxLfo, {
-        (target: \none, rate: 1.0, depth: 0.0, shape: 0, enabled: 0, phase: 0.0)
+        (target: \none, rate: 1.0, depth: 0.0, shape: 0, enabled: 0, phase: 0.0, useClock: 0, ratio: 1.0)
     });
+    // MIDI clock state mirrored from the renderer's /spaluter/clock reports, so
+    // a respawned clock master starts from the last known tempo and position.
+    clockHz = 2.0;
+    clockPos = 0.0;
     lfoSynths = Array.fill(maxLfo, { nil });
     lfoCount = 0;
     lfoWarnLast = 0;
@@ -187,10 +192,30 @@ s.doWhenBooted({
     // main synth is created \addAfter this group so it reads summed mod values.
     setupModulation = {
         if(modBus.isNil) { modBus = Bus.control(s, 20); };
+        if(clockBus.isNil) { clockBus = Bus.control(s, 1); };
         if(lfoGroup.isNil) {
             lfoGroup = Group.new(s);
             modClearSynth = Synth(\modClear, [\modBus, modBus.index], lfoGroup, \addToHead);
+            // Beat position for clock-locked LFOs; runs ahead of every LFO in the group.
+            clockMasterSynth = Synth(\spaluterClockMaster, [
+                \clockBus, clockBus.index, \hz, clockHz, \pos, clockPos, \t_resync, 1
+            ], lfoGroup, \addToTail);
             rebuildLfos.value;
+        };
+    };
+
+    // /spaluter/clock [beatPos, hz, reset]: the renderer's counted position.
+    // hz <= 0 means "tempo not estimated yet", keep the last one.
+    applyClockSync = { |pos, hz, reset|
+        var p = pos.asFloat, h = hz.asFloat, r = reset.asInteger.clip(0, 1);
+        clockPos = p;
+        if(h > 0) { clockHz = h.clip(0.05, 50) };
+        if(clockMasterSynth.notNil) {
+            if(r > 0) {
+                clockMasterSynth.set(\pos, p, \hz, clockHz, \t_reset, 1, \t_resync, 1);
+            } {
+                clockMasterSynth.set(\pos, p, \hz, clockHz, \t_resync, 1);
+            };
         };
     };
 
@@ -222,7 +247,10 @@ s.doWhenBooted({
                 \depth, cfg[\depth],
                 \shape, cfg[\shape],
                 \phase, cfg[\phase],
-                \enabled, 1
+                \enabled, 1,
+                \clockBus, clockBus.index,
+                \useClock, cfg[\useClock],
+                \ratio, cfg[\ratio]
             ], lfoGroup, \addToTail);
         };
     };
@@ -261,7 +289,7 @@ s.doWhenBooted({
     //
     // Respawn (spawnLfo) is reserved for changes that genuinely require a new
     // node: retargeting, toggling enable, or an explicit phase retrigger.
-    applyLfo = { |idx, name, rate, depth, shape, enabled, phase|
+    applyLfo = { |idx, name, rate, depth, shape, enabled, phase, useClock = 0, ratio = 1|
         var i, tgt, cap, en, cfg, ph, live, structural, oldTgt, oldEn, oldPhase;
         i = idx.asInteger;
         if((i < 0) or: { i >= maxLfo }) {
@@ -293,11 +321,14 @@ s.doWhenBooted({
             cfg[\shape] = shape.asInteger.clip(0, 6);
             cfg[\enabled] = en;
             cfg[\phase] = ph;
+            cfg[\useClock] = (useClock ? 0).asInteger.clip(0, 1);
+            cfg[\ratio] = (ratio ? 1).asFloat.clip(0.01, 64);
 
             live = lfoSynths[i];
             structural = (oldTgt != tgt) or: { oldEn != en } or: { oldPhase != ph };
             if(live.notNil and: { structural.not }) {
-                live.set(\rate, cfg[\rate], \depth, cfg[\depth], \shape, cfg[\shape]);
+                live.set(\rate, cfg[\rate], \depth, cfg[\depth], \shape, cfg[\shape],
+                    \useClock, cfg[\useClock], \ratio, cfg[\ratio]);
             } {
                 spawnLfo.value(i);
             };
@@ -610,18 +641,22 @@ s.doWhenBooted({
     }, "/spaluter/lfo/count");
 
     OSCdef(\spaluterLfoSet, { |msg|
-        // [idx, targetName, rate, depth, shape, enabled, phase]
-        applyLfo.value(msg[1], msg[2], msg[3], msg[4], msg[5], msg[6], msg[7]);
+        // [idx, targetName, rate, depth, shape, enabled, phase, useClock, ratio]
+        applyLfo.value(msg[1], msg[2], msg[3], msg[4], msg[5], msg[6], msg[7], msg[8], msg[9]);
     }, "/spaluter/lfo/set");
 
     OSCdef(\spaluterLfoSetMany, { |msg|
-        // 7 args per LFO entry, packed after the address.
-        var entries = (msg.size - 1) div: 7;
+        // 9 args per LFO entry, packed after the address.
+        var entries = (msg.size - 1) div: 9;
         entries.do { |k|
-            var b = 1 + (k * 7);
-            applyLfo.value(msg[b], msg[b+1], msg[b+2], msg[b+3], msg[b+4], msg[b+5], msg[b+6]);
+            var b = 1 + (k * 9);
+            applyLfo.value(msg[b], msg[b+1], msg[b+2], msg[b+3], msg[b+4], msg[b+5], msg[b+6], msg[b+7], msg[b+8]);
         };
     }, "/spaluter/lfo/set-many");
+
+    OSCdef(\spaluterClock, { |msg|
+        applyClockSync.value(msg[1] ? 0, msg[2] ? 0, msg[3] ? 0);
+    }, "/spaluter/clock");
 
     OSCdef(\spaluterLfoRetrigger, { |msg|
         retriggerLfos.value;

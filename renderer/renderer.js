@@ -87,6 +87,9 @@ const DELAY_CLOCK_HZ_EPSILON = 0.0005;
 // lost when no tick has arrived for this long (two beats at 30 BPM).
 const MIDI_CLOCK_READOUT_MIN_INTERVAL_MS = 250;
 const MIDI_CLOCK_LOST_AFTER_MS = 4000;
+// Clock-locked LFOs: the engine's beat-position bus is resynced to the counted
+// tick position every sixteenth (6 ticks) and snapped on Start.
+const MIDI_CLOCK_SYNC_EVERY_TICKS = 6;
 const RENDERER_HEARTBEAT_MS = 1000;
 const DSP_CPU_STALE_MS = 3500;
 const DEBUG_FPS = false;
@@ -106,6 +109,8 @@ let midiClockLastSyncAtMs = 0;
 let midiClockReadoutLastAtMs = 0;
 let midiClockLostTimer = null;
 let midiClockPresent = false;
+let midiClockTickCount = 0;
+let midiClockTempoKnownSent = false;
 let lastLoggedMidiGate = -1;
 let synthRunning = false;
 let waveformLayoutDirty = true;
@@ -1661,17 +1666,28 @@ function updateDelayBaseTimeEnabled(syncModeValue) {
   if (ctl) ctl.classList.toggle("ctl-disabled", clockMode);
 }
 
+function sendClockSync(reset = false) {
+  if (!window.spaluterApi?.clockSync) return;
+  const hz = Number.isFinite(midiClockHz) && midiClockHz > 0 ? midiClockHz : 0;
+  window.spaluterApi.clockSync(midiClockTickCount / MIDI_CLOCK_TICKS_PER_QUARTER, hz, reset);
+}
+
 function syncMidiClockLockedLfos(nowMs = performance.now(), force = false) {
   const clockRate = midiClockRateHz();
   if (clockRate === null) return;
   if (!force && (nowMs - midiClockLastSyncAtMs) < MIDI_CLOCK_SYNC_MIN_INTERVAL_MS) return;
 
+  // The engine only locks an LFO's phase once a tempo exists (lfoToIpc's
+  // useClock), so the first estimate after a reset re-sends every synced LFO
+  // even if its rate did not move.
+  const tempoKnownChanged = !midiClockTempoKnownSent;
+  midiClockTempoKnownSent = true;
   const changed = [];
   for (let i = 0; i < LFO_MAX; i += 1) {
     const cfg = lfoConfigs[i];
     if (!cfg?.useMidiClock) continue;
     const nextRate = clamp(clockRate * lfoClockRatioValue(cfg), LFO_RATE_MIN, LFO_RATE_MAX);
-    if (Math.abs(cfg.rate - nextRate) <= MIDI_CLOCK_RATE_EPSILON) continue;
+    if (!tempoKnownChanged && Math.abs(cfg.rate - nextRate) <= MIDI_CLOCK_RATE_EPSILON) continue;
     cfg.rate = nextRate;
     changed.push(i);
   }
@@ -1731,6 +1747,10 @@ function noteMidiClockPresent() {
     midiClockPresent = true;
     appendLog("[MIDI] Clock detected on an input.");
     refreshMidiClockReadouts(true);
+    // Ticks resuming after a gap: the engine kept integrating at the old tempo
+    // while the count stood still, so snap it to the counted position instead
+    // of letting the resync glide sweep every locked LFO through its cycle.
+    sendClockSync(true);
   }
   if (midiClockLostTimer) clearTimeout(midiClockLostTimer);
   midiClockLostTimer = window.setTimeout(markMidiClockLost, MIDI_CLOCK_LOST_AFTER_MS);
@@ -1741,6 +1761,7 @@ function resetMidiClockTracking() {
   midiClockLastSyncAtMs = 0;
   midiClockBpm = null;
   midiClockHz = null;
+  midiClockTempoKnownSent = false;
 }
 
 function handleMidiRealtimeMessage(status, eventTimeMs) {
@@ -1751,6 +1772,14 @@ function handleMidiRealtimeMessage(status, eventTimeMs) {
     // LFOs at their old rate anyway.
     midiClockTickTimesMs.length = 0;
     midiClockLastSyncAtMs = 0;
+    if (status === MIDI_STATUS_START) {
+      // The first clock after Start is the downbeat: snap the engine's beat
+      // position to zero so clock-locked LFOs restart on the one.
+      midiClockTickCount = 0;
+      sendClockSync(true);
+    } else if (status === MIDI_STATUS_CONTINUE) {
+      sendClockSync(false);
+    }
     return;
   }
   if (status !== MIDI_STATUS_CLOCK) return;
@@ -1759,6 +1788,8 @@ function handleMidiRealtimeMessage(status, eventTimeMs) {
   // of the handler's run time keeps UI load out of the tempo estimate.
   const nowMs = Number.isFinite(eventTimeMs) ? eventTimeMs : performance.now();
   noteMidiClockPresent();
+  if (midiClockTickCount % MIDI_CLOCK_SYNC_EVERY_TICKS === 0) sendClockSync(false);
+  midiClockTickCount += 1;
   midiClockTickTimesMs.push(nowMs);
   if (midiClockTickTimesMs.length > MIDI_CLOCK_SMOOTHING_TICKS) midiClockTickTimesMs.shift();
   if (midiClockTickTimesMs.length < 8) return;
@@ -3091,7 +3122,10 @@ function lfoToIpc(index) {
     depth: c.depth,
     shape: c.shape,
     enabled: c.enabled,
-    phase: c.phase
+    phase: c.phase,
+    // Phase lock only once a tempo exists; until then the LFO free-runs at rate.
+    useClock: Boolean(c.useMidiClock) && Number.isFinite(midiClockHz),
+    clockRatio: lfoClockRatioValue(c)
   };
 }
 

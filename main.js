@@ -1042,7 +1042,9 @@ function registerIpcHandlers() {
       Number(cfg.depth),
       Math.round(Number(cfg.shape)),
       cfg.enabled ? 1 : 0,
-      Number(cfg.phase) || 0
+      Number(cfg.phase) || 0,
+      cfg.useClock ? 1 : 0,
+      Number(cfg.clockRatio) || 1
     ]);
   });
 
@@ -1061,10 +1063,19 @@ function registerIpcHandlers() {
         Number(cfg.depth),
         Math.round(Number(cfg.shape)),
         cfg.enabled ? 1 : 0,
-        Number(cfg.phase) || 0
+        Number(cfg.phase) || 0,
+        cfg.useClock ? 1 : 0,
+        Number(cfg.clockRatio) || 1
       );
     }
     if (args.length > 0) sendOsc("/spaluter/lfo/set-many", args);
+  });
+
+  // MIDI clock position report for the engine's beat-position bus
+  // (clock-locked LFOs): [beats since Start, tempo in Hz or 0, reset flag].
+  ipcMain.on("sc:clock-sync", (_evt, payload) => {
+    const { pos, hz, reset } = payload || {};
+    sendOsc("/spaluter/clock", [Number(pos) || 0, Number(hz) || 0, reset ? 1 : 0]);
   });
 
   ipcMain.on("sc:lfo-retrigger", () => {
