@@ -33,52 +33,6 @@
     <!-- ─── Screen stage ─── -->
     <div id="mainScreenStage" class="main-screen-stage">
 
-      <!-- ===== PERFORM ===== -->
-      <section class="main-screen active" data-screen="perform" aria-label="Perform screen">
-        <div class="perform-ghost" aria-hidden="true">PERFORM</div>
-        <div class="perform-row">
-
-          <div class="panel scope-card">
-            <div class="ph"><span class="t">Stereo Output</span><span class="m" id="outputScopeLabel">HERO · LIVE OSCILLOSCOPE</span></div>
-            <div class="scope-wrap">
-              <canvas id="outputScopeView" width="600" height="300" aria-label="Live output scope"></canvas>
-              <div class="legend"><span class="l">▮ CH_L</span><span class="r">▮ CH_R</span></div>
-            </div>
-            <div class="scope-foot">
-              <span class="scope-meta" id="midiActivityMeta">MIDI IN · waiting…</span>
-              <span class="scope-meta ok" id="peakMeterLabel">L -inf dB • R -inf dB</span>
-            </div>
-          </div>
-
-          <div class="panel peak-card">
-            <div class="ph"><span class="t">Peak</span></div>
-            <div class="peak-wrap"><canvas id="peakMeterView" width="80" height="240" aria-label="Stereo peak meter"></canvas></div>
-          </div>
-
-          <div class="panel macros-card">
-            <div class="ph"><span class="t">Macros</span><span class="num">M01—05</span></div>
-            <div class="macros">
-              <div class="mlane"><span class="bn" aria-hidden="true">01</span><span class="ix">M01</span>
-                <div><div class="nm">Brightness</div><input class="macro-slider" id="macroBrightness" type="range" min="0" max="1" step="0.01" value="0.3" /></div>
-                <div class="val" id="macroBrightnessVal">30<small>↳ F1·F2·DRIVE</small></div></div>
-              <div class="mlane"><span class="bn" aria-hidden="true">02</span><span class="ix">M02</span>
-                <div><div class="nm">Motion</div><input class="macro-slider" id="macroMotion" type="range" min="0" max="1" step="0.01" value="0" /></div>
-                <div class="val" id="macroMotionVal">0<small>↳ JITTER·GLISSON</small></div></div>
-              <div class="mlane"><span class="bn" aria-hidden="true">03</span><span class="ix">M03</span>
-                <div><div class="nm">Stereo Width</div><input class="macro-slider" id="macroWidth" type="range" min="0" max="1" step="0.01" value="0.5" /></div>
-                <div class="val" id="macroWidthVal">50<small>↳ PAN1·2·3</small></div></div>
-              <div class="mlane"><span class="bn" aria-hidden="true">04</span><span class="ix">M04</span>
-                <div><div class="nm">Texture</div><input class="macro-slider" id="macroTexture" type="range" min="0" max="1" step="0.01" value="0" /></div>
-                <div class="val" id="macroTextureVal">0<small>↳ MASK·DUTY</small></div></div>
-              <div class="mlane"><span class="bn" aria-hidden="true">05</span><span class="ix">M05</span>
-                <div><div class="nm">Grain Shape</div><input class="macro-slider" id="macroShape" type="range" min="0" max="1" step="0.01" value="0.28" /></div>
-                <div class="val" id="macroShapeVal">28<small>↳ PULSARET·WIN</small></div></div>
-            </div>
-          </div>
-
-        </div>
-      </section>
-
       <!-- ===== EDIT ===== -->
       <section class="main-screen" data-screen="edit" aria-label="Edit screen">
         <div class="edit-grid">
@@ -298,11 +252,10 @@
 
     <!-- ─── Bottom nav ─── -->
     <div class="main-screen-switch" id="mainScreenSwitch" role="tablist" aria-label="Main screens">
-      <button class="nav-btn active" data-screen="perform" type="button" aria-pressed="true"><span class="ix">[01]</span><span class="nm">Perform</span></button>
-      <button class="nav-btn" data-screen="edit" type="button" aria-pressed="false"><span class="ix">[02]</span><span class="nm">Edit</span></button>
-      <button class="nav-btn" data-screen="mods" type="button" aria-pressed="false"><span class="ix">[03]</span><span class="nm">Mods</span></button>
-      <button class="nav-btn" data-screen="reverb" type="button" aria-pressed="false"><span class="ix">[04]</span><span class="nm">EFFECTS</span></button>
-      <button class="nav-btn" data-screen="presets" type="button" aria-pressed="false"><span class="ix">[05]</span><span class="nm">Presets</span></button>
+      <button class="nav-btn active" data-screen="edit" type="button" aria-pressed="true"><span class="ix">[01]</span><span class="nm">Edit</span></button>
+      <button class="nav-btn" data-screen="mods" type="button" aria-pressed="false"><span class="ix">[02]</span><span class="nm">Mods</span></button>
+      <button class="nav-btn" data-screen="reverb" type="button" aria-pressed="false"><span class="ix">[03]</span><span class="nm">EFFECTS</span></button>
+      <button class="nav-btn" data-screen="presets" type="button" aria-pressed="false"><span class="ix">[04]</span><span class="nm">Presets</span></button>
       <button class="nav-kill" id="synthToggle" data-action="start" aria-pressed="false">Start Synth</button>
     </div>
 

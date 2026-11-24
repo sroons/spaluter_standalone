@@ -52,7 +52,9 @@ let quittingApp = false;
 let restartingApp = false;
 let sclangStartupBuffer = "";
 let shutdownPromise = null;
-let scopeStreamEnabled = true;
+// Audio output scope stream: off. Nothing draws it since the Perform screen
+// went away, and drawing it cost the Pi most of a core (parse + IPC + canvas).
+let scopeStreamEnabled = false;
 let scopeRateHz = DEFAULT_SCOPE_RATE_HZ;
 // Mods-screen monitor stream (/spaluter/modscope); off until the renderer asks.
 let modScopeEnabled = false;

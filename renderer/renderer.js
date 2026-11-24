@@ -19,16 +19,12 @@ const sampleFileEl = document.getElementById("sampleFile");
 const refreshSamplesBtn = document.getElementById("refreshSamples");
 const loadSampleBtn = document.getElementById("loadSample");
 const synthToggleBtn = document.getElementById("synthToggle");
-const outputScopeCanvas = document.getElementById("outputScopeView");
-const peakMeterCanvas = document.getElementById("peakMeterView");
 const pulsaretWaveCanvas = document.getElementById("pulsaretWaveView");
 const windowWaveCanvas = document.getElementById("windowWaveView");
 const dutyWaveCanvas = document.getElementById("dutyWaveView");
 const formantWaveCanvas = document.getElementById("formantWaveView");
 const formantActivityCanvas = document.getElementById("formantActivityView");
 const maskScopeCanvas = document.getElementById("maskScopeView");
-const outputScopeLabelEl = document.getElementById("outputScopeLabel");
-const peakMeterLabelEl = document.getElementById("peakMeterLabel");
 const pulsaretWaveLabelEl = document.getElementById("pulsaretWaveLabel");
 const windowWaveLabelEl = document.getElementById("windowWaveLabel");
 const dutyWaveLabelEl = document.getElementById("dutyWaveLabel");
@@ -65,13 +61,11 @@ const DEFAULT_SAMPLE_DIR = navigator.platform.toLowerCase().startsWith("win")
   : "/spaluter/samples/";
 const LOG_LINE_LIMIT = 400;
 const RESIZE_DEBOUNCE_MS = 120;
-const MIN_SCOPE_RATE_HZ = 2;
-const ACTIVE_SCOPE_RATE_HZ = 20;
 const PARAM_ANIM_TICK_MS_DEFAULT = 33;
 const PARAM_ANIM_TICK_MS_RESPONSIVE = 22;
 const RESPONSIVE_PREVIEW_MODE_STORAGE_KEY = "spaluter-responsive-preview-v1";
 const DEFAULT_RESPONSIVE_PREVIEW_MODE = true;
-const MAIN_SCREENS = ["perform", "edit", "mods", "reverb", "presets"];
+const MAIN_SCREENS = ["edit", "mods", "reverb", "presets"];
 const SCREEN_SLIDE_MS = 240;
 const SWIPE_MIN_DISTANCE_PX = 60;
 const SWIPE_MAX_OFF_AXIS_PX = 45;
@@ -119,9 +113,7 @@ let midiRebindTimer = null;
 let rendererHeartbeatTimer = null;
 let activeKnobDrag = null;
 let logLineCount = 0;
-let scopeStreamingEnabled = true;
-let scopeStreamingRateHz = ACTIVE_SCOPE_RATE_HZ;
-let currentMainScreen = "perform";
+let currentMainScreen = "edit";
 let currentViewIndex = 0;
 let screenTransitionTimer = null;
 let screenTransitionToken = 0;
@@ -214,8 +206,6 @@ const lastSentValueByParam = new Map();
 // per-event redraws to at most one per animation frame.
 let waveformViewsDirty = false;
 let waveformViewsRafId = 0;
-let outputScopeDirty = false;
-let outputScopeRafId = 0;
 // Phase 2.3b: pending CC stream as an ordered array of [param, value] tuples.
 // We preserve EVERY value (no per-param coalescing) so the synth receives the
 // full resolution of the incoming MIDI stream. Batching is done at the
@@ -301,19 +291,6 @@ const WINDOW_WAVE_NAMES = [
   "triangle"
 ];
 const TWO_PI = Math.PI * 2;
-// Per-channel scope frame size. MUST match `scopeFrames` in
-// spaluter_supercollider.scd: the patch emits scopeFrames L samples followed by
-// scopeFrames R samples in one /spaluter/scope payload, and the renderer splits
-// the payload into L/R on this boundary. If these drift apart, the R (white)
-// trace silently drops and the L trace reads both channels concatenated.
-const OUTPUT_SCOPE_FRAME_SIZE = 64;
-const OUTPUT_SCOPE_SMOOTHING_ALPHA = 0.35;
-const OUTPUT_SCOPE_ZERO_CROSSING_MIN_SLOPE = 0.02;
-const OUTPUT_SCOPE_COMPAND_GAMMA = 0.45;
-const OUTPUT_SCOPE_COMPAND_MIX = 0.75;
-const STEREO_PEAK_HOLD_FRAMES = 14;
-const STEREO_PEAK_DECAY_PER_FRAME = 0.03;
-const STEREO_HOLD_DECAY_PER_FRAME = 0.012;
 const FORMANT_SCOPE_COLORS = ["rgb(235, 110, 79)", "rgb(114, 213, 142)", "rgb(199, 146, 234)"];
 const MASK_MODE_NAMES = ["Off", "Stochastic", "Burst"];
 const MIDI_STATUS_TYPE_MASK = 0xF0;
@@ -326,29 +303,6 @@ const MIDI_STATUS_START = 0xFA;
 const MIDI_STATUS_CONTINUE = 0xFB;
 const MIDI_STATUS_STOP = 0xFC;
 const MIDI_INPUT_CHANNEL_ZERO_BASED = 0; // MIDI channel 1
-const scopeSampleBuffers = [
-  new Float64Array(OUTPUT_SCOPE_FRAME_SIZE),
-  new Float64Array(OUTPUT_SCOPE_FRAME_SIZE)
-];
-const scopeAlignedBuffers = [
-  new Float64Array(OUTPUT_SCOPE_FRAME_SIZE),
-  new Float64Array(OUTPUT_SCOPE_FRAME_SIZE)
-];
-const scopeRenderBuffers = [
-  new Float64Array(OUTPUT_SCOPE_FRAME_SIZE),
-  new Float64Array(OUTPUT_SCOPE_FRAME_SIZE)
-];
-let outputScopeSamples = {
-  left: scopeRenderBuffers[0],
-  right: null
-};
-let stereoPeakDisplayL = 0;
-let stereoPeakDisplayR = 0;
-let stereoPeakHoldL = 0;
-let stereoPeakHoldR = 0;
-let stereoPeakHoldAgeL = 0;
-let stereoPeakHoldAgeR = 0;
-
 function appendLogLine(line) {
   if (!logEl) return;
   logEl.appendChild(document.createTextNode(`${line}\n`));
@@ -722,201 +676,6 @@ function drawWaveform(canvas, sampleFn, minValue = -1, maxValue = 1, opts = {}) 
   ctx.shadowBlur = 0;
 }
 
-function drawScopeTrace(ctx, values, metrics, color) {
-  if (!values || values.length === 0) return;
-  const {
-    dpr, drawWidth, drawHeight, leftPad, rightPad, topPad, bottomPad
-  } = metrics;
-  const usableWidth = Math.max(1, rightPad - leftPad);
-  const usableHeight = Math.max(1, bottomPad - topPad);
-  const sampleAt = (t) => {
-    const idx = t * (values.length - 1);
-    const lo = Math.floor(idx);
-    const hi = Math.min(values.length - 1, lo + 1);
-    const mix = idx - lo;
-    return (values[lo] * (1 - mix)) + (values[hi] * mix);
-  };
-  const shapeScopeSample = (sample) => {
-    const dry = clamp(Number(sample) || 0, -1, 1);
-    const mag = Math.abs(dry);
-    const wet = Math.sign(dry) * Math.pow(mag, OUTPUT_SCOPE_COMPAND_GAMMA);
-    return (dry * (1 - OUTPUT_SCOPE_COMPAND_MIX)) + (wet * OUTPUT_SCOPE_COMPAND_MIX);
-  };
-  ctx.beginPath();
-  const samples = Math.max(48, Math.floor(drawWidth / 2));
-  for (let i = 0; i <= samples; i += 1) {
-    const t = i / samples;
-    const sample = shapeScopeSample(sampleAt(t));
-    const normalized = clamp((sample + 1) * 0.5, 0, 1);
-    const x = leftPad + (t * usableWidth);
-    const y = topPad + ((1 - normalized) * usableHeight);
-    if (i === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
-  }
-  // Cheap bloom: a wide, translucent underlay stroke (with the caller's
-  // "lighter" compositing) reads as a glow without the heavy offscreen
-  // Gaussian pass ctx.shadowBlur triggers — that pass on the large hero
-  // canvas at 20Hz was a measurable CPU cost on the Pi.
-  const baseAlpha = ctx.globalAlpha;
-  ctx.strokeStyle = color;
-  ctx.lineJoin = "round";
-  ctx.lineCap = "round";
-  ctx.globalAlpha = baseAlpha * 0.22;
-  ctx.lineWidth = Math.max(1, dpr) * 4;
-  ctx.stroke();
-  ctx.globalAlpha = baseAlpha;
-  ctx.lineWidth = Math.max(1, dpr);
-  ctx.stroke();
-}
-
-function drawOutputScope(canvas, left, right = null) {
-  if (!canvas) return;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return;
-  const metrics = getCanvasMetrics(canvas);
-  const {
-    dpr, drawWidth, drawHeight
-  } = metrics;
-
-  if (canvas.width !== drawWidth || canvas.height !== drawHeight) {
-    canvas.width = drawWidth;
-    canvas.height = drawHeight;
-  }
-
-  ctx.clearRect(0, 0, drawWidth, drawHeight);
-  ctx.lineWidth = Math.max(1, dpr);
-  ctx.strokeStyle = "rgba(169, 180, 208, 0.35)";
-  ctx.beginPath();
-  const centerY = drawHeight * 0.5;
-  ctx.moveTo(0, centerY);
-  ctx.lineTo(drawWidth, centerY);
-  ctx.stroke();
-
-  // Use additive ("lighter") compositing so that when L and R are identical
-  // (e.g. mono signal at centre pan) the overlapping blue + green strokes
-  // sum to a bright cyan that's clearly visible. Without this, the second
-  // trace would fully paint over the first and the user would think one
-  // channel had disappeared. Alpha < 1 lets the colours mix instead of
-  // saturating to white.
-  const prevComposite = ctx.globalCompositeOperation;
-  const prevAlpha = ctx.globalAlpha;
-  ctx.globalCompositeOperation = "lighter";
-  ctx.globalAlpha = 0.85;
-  drawScopeTrace(ctx, left, metrics, "#ff6f24");
-  if (right && right.length > 0) {
-    drawScopeTrace(ctx, right, metrics, "#cfe6ff");
-  }
-  ctx.globalAlpha = prevAlpha;
-  ctx.globalCompositeOperation = prevComposite;
-}
-
-function computeScopePeaksFromPayload(samples) {
-  if (!Array.isArray(samples) || samples.length === 0) return { leftPeak: 0, rightPeak: 0 };
-  let leftPeak = 0;
-  let rightPeak = 0;
-  let rightCount = 0;
-  const leftLimit = Math.min(samples.length, OUTPUT_SCOPE_FRAME_SIZE);
-  for (let i = 0; i < leftLimit; i += 1) {
-    const l = Math.abs(Number(samples[i]) || 0);
-    leftPeak = Math.max(leftPeak, l);
-  }
-  const rightStart = OUTPUT_SCOPE_FRAME_SIZE;
-  const rightLimit = Math.min(samples.length, rightStart + OUTPUT_SCOPE_FRAME_SIZE);
-  for (let i = rightStart; i < rightLimit; i += 1) {
-    const r = Math.abs(Number(samples[i]) || 0);
-    rightPeak = Math.max(rightPeak, r);
-    rightCount += 1;
-  }
-  if (rightCount === 0) rightPeak = leftPeak;
-  return { leftPeak: clamp(leftPeak, 0, 1), rightPeak: clamp(rightPeak, 0, 1) };
-}
-
-function updateStereoPeakState(leftPeak, rightPeak) {
-  stereoPeakDisplayL = Math.max(leftPeak, stereoPeakDisplayL - STEREO_PEAK_DECAY_PER_FRAME);
-  stereoPeakDisplayR = Math.max(rightPeak, stereoPeakDisplayR - STEREO_PEAK_DECAY_PER_FRAME);
-
-  if (leftPeak >= stereoPeakHoldL) {
-    stereoPeakHoldL = leftPeak;
-    stereoPeakHoldAgeL = 0;
-  } else {
-    stereoPeakHoldAgeL += 1;
-    if (stereoPeakHoldAgeL > STEREO_PEAK_HOLD_FRAMES) {
-      stereoPeakHoldL = Math.max(stereoPeakDisplayL, stereoPeakHoldL - STEREO_HOLD_DECAY_PER_FRAME);
-    }
-  }
-
-  if (rightPeak >= stereoPeakHoldR) {
-    stereoPeakHoldR = rightPeak;
-    stereoPeakHoldAgeR = 0;
-  } else {
-    stereoPeakHoldAgeR += 1;
-    if (stereoPeakHoldAgeR > STEREO_PEAK_HOLD_FRAMES) {
-      stereoPeakHoldR = Math.max(stereoPeakDisplayR, stereoPeakHoldR - STEREO_HOLD_DECAY_PER_FRAME);
-    }
-  }
-}
-
-function linearToDb(level) {
-  const v = Math.max(1e-4, Number(level) || 0);
-  return 20 * Math.log10(v);
-}
-
-function drawStereoPeakMeter(canvas) {
-  if (!canvas) return;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return;
-  const metrics = getCanvasMetrics(canvas);
-  const {
-    dpr, drawWidth, drawHeight, leftPad, rightPad, topPad, bottomPad
-  } = metrics;
-  if (canvas.width !== drawWidth || canvas.height !== drawHeight) {
-    canvas.width = drawWidth;
-    canvas.height = drawHeight;
-  }
-  ctx.clearRect(0, 0, drawWidth, drawHeight);
-
-  const usableWidth = Math.max(1, rightPad - leftPad);
-  const usableHeight = Math.max(1, bottomPad - topPad);
-  const laneGap = Math.max(3 * dpr, usableHeight * 0.08);
-  const laneHeight = Math.max(6 * dpr, (usableHeight - laneGap) * 0.5);
-  const laneY = [topPad, topPad + laneHeight + laneGap];
-  const levels = [stereoPeakDisplayL, stereoPeakDisplayR];
-  const holds = [stereoPeakHoldL, stereoPeakHoldR];
-  const laneColors = ["#ff6f24", "#cfe6ff"];
-  const labels = ["L", "R"];
-
-  for (let i = 0; i < 2; i += 1) {
-    const y = laneY[i];
-    const level = clamp(levels[i], 0, 1);
-    const hold = clamp(holds[i], 0, 1);
-    const fillW = level * usableWidth;
-
-    ctx.fillStyle = "rgba(233, 227, 214, 0.05)";
-    ctx.fillRect(leftPad, y, usableWidth, laneHeight);
-
-    ctx.fillStyle = laneColors[i];
-    ctx.fillRect(leftPad, y, fillW, laneHeight);
-
-    const holdX = leftPad + (hold * usableWidth);
-    ctx.strokeStyle = "rgba(240, 245, 255, 0.9)";
-    ctx.lineWidth = Math.max(1, dpr);
-    ctx.beginPath();
-    ctx.moveTo(holdX, y);
-    ctx.lineTo(holdX, y + laneHeight);
-    ctx.stroke();
-
-    ctx.fillStyle = "rgba(220, 228, 250, 0.9)";
-    ctx.font = `${Math.max(9, Math.round(9 * dpr))}px sans-serif`;
-    ctx.textAlign = "left";
-    ctx.textBaseline = "middle";
-    ctx.fillText(labels[i], leftPad + (3 * dpr), y + (laneHeight * 0.5));
-  }
-}
-
-function drawOutputAnalysisScopes() {
-  drawStereoPeakMeter(peakMeterCanvas);
-}
-
 function drawFormantWaves(canvas, formantHzValues, activeCount) {
   if (!canvas) return;
   const ctx = canvas.getContext("2d");
@@ -1158,113 +917,6 @@ function drawFormantActivityHeatmap(
     ctx.strokeRect(leftPad, laneY, usableWidth, laneHeight);
   }
 }
-function findScopeZeroCrossingOffset(values, length) {
-  let bestIndex = -1;
-  let bestDistance = Number.POSITIVE_INFINITY;
-  for (let i = 1; i < length; i += 1) {
-    const prev = Number(values[i - 1]);
-    const curr = Number(values[i]);
-    if (!Number.isFinite(prev) || !Number.isFinite(curr)) continue;
-    if (prev > 0 || curr < 0) continue;
-    const slope = curr - prev;
-    if (slope < OUTPUT_SCOPE_ZERO_CROSSING_MIN_SLOPE) continue;
-    const distanceToZero = Math.abs(curr);
-    if (distanceToZero < bestDistance) {
-      bestDistance = distanceToZero;
-      bestIndex = i;
-    }
-  }
-  return bestIndex >= 0 ? bestIndex : 0;
-}
-
-function normalizeScopeSamples(samples, channelIndex = 0, sourceOffset = 0) {
-  if (!Array.isArray(samples)) return null;
-  const sampleBuffer = scopeSampleBuffers[channelIndex];
-  const alignedBuffer = scopeAlignedBuffers[channelIndex];
-  const renderBuffer = scopeRenderBuffers[channelIndex];
-  let sampleCount = 0;
-  for (
-    let i = sourceOffset;
-    i < samples.length && sampleCount < OUTPUT_SCOPE_FRAME_SIZE;
-    i += 1
-  ) {
-    const value = Number(samples[i]);
-    if (!Number.isFinite(value)) continue;
-    sampleBuffer[sampleCount] = value;
-    sampleCount += 1;
-  }
-  if (sampleCount === 0) return null;
-  while (sampleCount < OUTPUT_SCOPE_FRAME_SIZE) {
-    sampleBuffer[sampleCount] = sampleBuffer[sampleCount - 1] ?? 0;
-    sampleCount += 1;
-  }
-  const offset = findScopeZeroCrossingOffset(sampleBuffer, OUTPUT_SCOPE_FRAME_SIZE);
-  for (let i = 0; i < OUTPUT_SCOPE_FRAME_SIZE; i += 1) {
-    const sourceIndex = (i + offset) % OUTPUT_SCOPE_FRAME_SIZE;
-    alignedBuffer[i] = sampleBuffer[sourceIndex];
-  }
-  for (let i = 0; i < OUTPUT_SCOPE_FRAME_SIZE; i += 1) {
-    const currentValue = Number(renderBuffer[i]) || 0;
-    const targetValue = Number(alignedBuffer[i]) || 0;
-    renderBuffer[i] = currentValue + ((targetValue - currentValue) * OUTPUT_SCOPE_SMOOTHING_ALPHA);
-  }
-  return renderBuffer;
-}
-
-function scheduleOutputScopeRedraw() {
-  outputScopeDirty = true;
-  if (outputScopeRafId) return;
-  outputScopeRafId = window.requestAnimationFrame(() => {
-    outputScopeRafId = 0;
-    if (!outputScopeDirty) return;
-    outputScopeDirty = false;
-    if (currentMainScreen !== "perform") return;
-    drawOutputScope(outputScopeCanvas, outputScopeSamples.left, outputScopeSamples.right);
-    drawOutputAnalysisScopes();
-  });
-}
-
-function setOutputScopeSamples(samples, label = "Live output") {
-  const peaks = computeScopePeaksFromPayload(samples);
-  const left = normalizeScopeSamples(samples, 0, 0);
-  if (!left) return;
-  const right = samples.length >= (OUTPUT_SCOPE_FRAME_SIZE * 2)
-    ? normalizeScopeSamples(samples, 1, OUTPUT_SCOPE_FRAME_SIZE)
-    : null;
-  outputScopeSamples = { left, right };
-  updateStereoPeakState(peaks.leftPeak, peaks.rightPeak);
-  if (peakMeterLabelEl) {
-    peakMeterLabelEl.textContent = `L ${linearToDb(peaks.leftPeak).toFixed(1)} dB • R ${linearToDb(peaks.rightPeak).toFixed(1)} dB`;
-  }
-  if (outputScopeLabelEl) outputScopeLabelEl.textContent = label;
-  // Only paint the scope/peak canvases when Perform is on screen. The scope
-  // payload still streams at 20Hz to keep peak state and labels current, but
-  // canvas drawing is coalesced to one paint per animation frame. The canvases
-  // are repainted on screen entry by handleMainScreenEntered().
-  if (currentMainScreen === "perform") {
-    scheduleOutputScopeRedraw();
-  }
-}
-
-function clearOutputScope(label = "Waiting for synth...") {
-  for (let ch = 0; ch < scopeRenderBuffers.length; ch += 1) {
-    for (let i = 0; i < OUTPUT_SCOPE_FRAME_SIZE; i += 1) {
-      scopeRenderBuffers[ch][i] = 0;
-    }
-  }
-  stereoPeakDisplayL = 0;
-  stereoPeakDisplayR = 0;
-  stereoPeakHoldL = 0;
-  stereoPeakHoldR = 0;
-  stereoPeakHoldAgeL = 0;
-  stereoPeakHoldAgeR = 0;
-  outputScopeSamples = { left: scopeRenderBuffers[0], right: scopeRenderBuffers[1] };
-  if (peakMeterLabelEl) peakMeterLabelEl.textContent = "L -inf dB • R -inf dB";
-  if (outputScopeLabelEl) outputScopeLabelEl.textContent = label;
-  drawOutputScope(outputScopeCanvas, outputScopeSamples.left, outputScopeSamples.right);
-  drawOutputAnalysisScopes();
-}
-
 function computeWaveformValues(nowSec) {
   return {
     pulsaret: currentParamValue("pulsaret", 2.5) + lfoModOffset("pulsaret", nowSec),
@@ -1373,10 +1025,6 @@ function updateWaveformViews() {
   drawDutyView(v);
   drawFormantViews(v);
   drawMaskView(v);
-  if (currentMainScreen === "perform") {
-    drawOutputScope(outputScopeCanvas, outputScopeSamples.left, outputScopeSamples.right);
-    drawOutputAnalysisScopes();
-  }
 }
 
 function defaultMidiMappingsForCurrentParams() {
@@ -3442,11 +3090,7 @@ function applyLfoState(state) {
 }
 
 function handleMainScreenEntered(targetScreen) {
-  if (targetScreen === "perform") {
-    scheduleWaveformResizeRefresh();
-    drawOutputScope(outputScopeCanvas, outputScopeSamples.left, outputScopeSamples.right);
-    drawOutputAnalysisScopes();
-  } else if (targetScreen === "edit") {
+  if (targetScreen === "edit") {
     scheduleWaveformResizeRefresh();
     updateEditLfoMarkers();
     scheduleParamModAnim();
@@ -3797,7 +3441,7 @@ function scheduleWaveformResizeRefresh() {
 }
 
 function setScreen(name, options = {}) {
-  const target = MAIN_SCREENS.includes(name) ? name : "perform";
+  const target = MAIN_SCREENS.includes(name) ? name : "edit";
   if (target === currentMainScreen && !options.force) return;
   currentMainScreen = target;
   currentViewIndex = MAIN_SCREENS.indexOf(target);
@@ -3822,20 +3466,10 @@ function initScreenNav() {
   });
 }
 
-function setScopeStreaming(enabled) {
-  const nextEnabled = Boolean(enabled);
-  const nextRate = nextEnabled ? ACTIVE_SCOPE_RATE_HZ : MIN_SCOPE_RATE_HZ;
-  if (scopeStreamingEnabled === nextEnabled && scopeStreamingRateHz === nextRate) return;
-  scopeStreamingEnabled = nextEnabled;
-  scopeStreamingRateHz = nextRate;
-  window.spaluterApi.setScope(nextEnabled, nextRate).catch(() => {
-    appendLog("[SCOPE] Failed to update scope streaming state.");
-  });
-}
-
+// Engine telemetry streams follow screen/window visibility. The audio output
+// scope stream (/spaluter/scope) is no longer requested: the Perform screen
+// that drew it was removed, and main.js starts sclang with it disabled.
 function refreshScopeStreamingState() {
-  const visible = document.visibilityState !== "hidden" && document.hasFocus();
-  setScopeStreaming(visible);
   refreshModScopeStreaming();
 }
 
@@ -3849,10 +3483,6 @@ window.spaluterApi.onStatus((text) => {
     activeMidiNotes = [];
     activeMidiNoteNumber = null;
     activeMidiBasePitchValue = null;
-    clearOutputScope("Waiting for synth...");
-  }
-  if (/synth started/.test(statusText) && outputScopeLabelEl) {
-    outputScopeLabelEl.textContent = "Live output";
   }
   if (/synth started/.test(statusText)) {
     // Re-push LFO state so the engine matches the UI after a (re)start.
@@ -3876,18 +3506,13 @@ window.spaluterApi.onLog((text) => {
   }
 });
 
-window.spaluterApi.onScope((samples) => {
-  setOutputScopeSamples(samples, "Live output");
-});
-
 renderSynthToggle();
 setCpuUsage(0);
 setDspCpu(null);
 initModulationUi();
 initScreenNav();
-setScreen("perform", { force: true });
+setScreen("edit", { force: true });
 updateWaveformViews();
-clearOutputScope();
 window.addEventListener("resize", scheduleWaveformResizeRefresh);
 document.addEventListener("visibilitychange", refreshScopeStreamingState);
 window.addEventListener("focus", refreshScopeStreamingState);
@@ -4172,23 +3797,11 @@ window.spaluterApi.getInitialState().then((state) => {
   refreshScopeStreamingState();
 });
 
-// ─────────────────────────── Live UI additions ─────────────────────────────
-// Performance-page macro encoders: each macro (0..1) drives several engine
-// params via linear interpolation, routed through setParamValue so the OSC
-// send + UI sync + previews all stay consistent.
-const MACRO_TARGETS = Object.freeze({
-  macroBrightness: [["drive", 1, 3.2], ["formant2", 200, 1400], ["formant3", 400, 2600]],
-  macroMotion: [["timingJitter", 0, 0.5], ["glisson", 0, 0.5]],
-  macroWidth: [["pan2", 0, 1], ["pan3", 0, -1]],
-  macroTexture: [["maskAmount", 0, 0.9], ["duty", 0.5, 0.12]],
-  macroShape: [["pulsaret", 0, 6], ["window", 0, 5]]
-});
-
 // ─────────────────────────── Edit screen cards ─────────────────────────────
 // The Edit screen is built from static grouped cards in index.html holding the
 // real [data-param] controls (already wired for OSC by the global range/select
 // listeners). Here we register each card's value readout + slider so external
-// value changes (presets, macros, MIDI) stay reflected, and paint the slider
+// value changes (presets, MIDI) stay reflected, and paint the slider
 // "fill" with the owning card's accent colour.
 function sliderAccentHex(key) {
   // Inline map keeps this callable from initEditCards() before any module-level
@@ -4287,30 +3900,7 @@ function initEditCards() {
   updateEditLfoMarkers();
 }
 
-function initMacros() {
-  Object.keys(MACRO_TARGETS).forEach((id) => {
-    const slider = document.getElementById(id);
-    if (!slider) return;
-    const valEl = document.getElementById(`${id}Val`);
-    const apply = () => {
-      const frac = clamp(Number(slider.value), 0, 1);
-      if (valEl) {
-        const num = String(Math.round(frac * 100));
-        if (valEl.firstChild && valEl.firstChild.nodeType === 3) {
-          valEl.firstChild.nodeValue = num;
-        } else {
-          valEl.insertBefore(document.createTextNode(num), valEl.firstChild);
-        }
-      }
-      MACRO_TARGETS[id].forEach(([param, lo, hi]) => {
-        setParamValue(param, lo + ((hi - lo) * frac), true);
-      });
-    };
-    slider.addEventListener("input", apply);
-  });
-}
-
-// Header status chips + perform-page MIDI activity readout.
+// Header status chips.
 function setChip(id, cls, label) {
   const el = document.getElementById(id);
   if (!el) return;
@@ -4331,18 +3921,7 @@ function refreshStatusChips() {
   if (lastMidiInputCount > 0) setChip("chipMidi", "ok", "LIVE");
   else if (lastMidiInputCount === 0) setChip("chipMidi", "warn", "NONE");
   else setChip("chipMidi", "", "—");
-
-  const midiMeta = document.getElementById("midiActivityMeta");
-  if (midiMeta) {
-    if (lastMidiInputCount > 0) {
-      const n = activeMidiNotes.length;
-      midiMeta.textContent = `MIDI IN · ${lastMidiInputCount} dev · ${n} note${n === 1 ? "" : "s"}`;
-    } else {
-      midiMeta.textContent = "MIDI IN · no device";
-    }
-  }
 }
 
-initMacros();
 refreshStatusChips();
 window.setInterval(refreshStatusChips, 750);
