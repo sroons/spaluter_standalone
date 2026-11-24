@@ -380,8 +380,11 @@ s.waitForBoot {
     // sits on the same beat every bar instead of merely running at tempo.
     // useClock 0: free-running at rate. S&H steps on the cycle boundary in both
     // modes, so clocked steps land on the grid.
-    SynthDef(\spaluterLfo, { |modBus=0, targetIdx=0, rate=1, depth=0, shape=0, phase=0, enabled=1, lag=0.02, clockBus=0, useClock=0, ratio=1|
-        var freePh, clockPh, ph, wrapTrig, sine, tri, sawU, sawD, sqr, sh, rnd, osc, sig;
+    // scopeOut: index of this LFO's channel on the 16-channel LFO output bus.
+    // The normalised (-1..1, depth-free) value is published there for the
+    // Mods screen monitor; the main synth never reads it.
+    SynthDef(\spaluterLfo, { |modBus=0, targetIdx=0, rate=1, depth=0, shape=0, phase=0, enabled=1, lag=0.02, clockBus=0, useClock=0, ratio=1, scopeOut=0|
+        var freePh, clockPh, ph, wrapTrig, sine, tri, sawU, sawD, sqr, sh, rnd, osc, sig, norm;
         freePh = LFSaw.kr(rate, 0).range(0, 1);
         clockPh = (In.kr(clockBus, 1) * ratio).wrap(0, 1);
         ph = (Select.kr(useClock.clip(0, 1), [freePh, clockPh]) + phase).wrap(0, 1);
@@ -394,8 +397,21 @@ s.waitForBoot {
         sh   = TRand.kr(-1, 1, wrapTrig);
         rnd  = LFNoise2.kr(rate);
         osc  = Select.kr(shape.clip(0, 6), [sine, tri, sawU, sawD, sqr, sh, rnd]);
-        sig  = Lag.kr(osc * depth * enabled, lag);
+        norm = Lag.kr(osc * enabled, lag);
+        sig  = norm * depth;
         Out.kr(modBus + targetIdx, sig);
+        ReplaceOut.kr(scopeOut, norm);
+    }).add;
+
+    // Modulation monitor for the Mods screen. Runs right after the LFO group
+    // and reports, at `rate` Hz while enabled, the 16 normalised LFO outputs,
+    // the 20 summed mod-bus channels (native units, what the synth actually
+    // receives) and the beat position. The renderer draws its LFO scope and
+    // live meters from this, so what it shows is the engine's output rather
+    // than a client-side re-synthesis of the LFO shapes.
+    SynthDef(\spaluterModScope, { |lfoBus=0, modBus=0, clockBus=0, rate=30, enabled=0|
+        var trig = Impulse.kr(rate.clip(1, 60)) * (enabled > 0);
+        SendReply.kr(trig, "/spaluter/modscope", In.kr(lfoBus, 16) ++ In.kr(modBus, 20) ++ In.kr(clockBus, 1));
     }).add;
 
     // Mutable Instruments Clouds-style reverb core with an added octave shimmer

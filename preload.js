@@ -24,6 +24,8 @@ contextBridge.exposeInMainWorld("spaluterApi", {
   retriggerLfos: () => ipcRenderer.send("sc:lfo-retrigger"),
   trigger: (action) => ipcRenderer.invoke("sc:trigger", action),
   setScope: (enabled, rate) => ipcRenderer.invoke("sc:set-scope", { enabled, rate }),
+  // Mods-screen monitor stream: 16 LFO outputs + 20 mod-bus channels + beat position.
+  setModScope: (enabled, rate) => ipcRenderer.invoke("sc:set-modscope", { enabled, rate }),
   listSamples: (dirPath) => ipcRenderer.invoke("samples:list", dirPath),
   loadSample: (samplePath) => ipcRenderer.invoke("samples:load", samplePath),
   getInitialState: () => ipcRenderer.invoke("sc:get-initial-state"),
@@ -38,5 +40,6 @@ contextBridge.exposeInMainWorld("spaluterApi", {
   // Engine load: scsynth /status avg/peak CPU + UGen/synth counts, 1 Hz.
   onDspCpu: (fn) => ipcRenderer.on("sc-cpu", (_e, info) => fn(info)),
   onLog: (fn) => ipcRenderer.on("sc-log", (_e, msg) => fn(msg)),
-  onScope: (fn) => ipcRenderer.on("sc-scope", (_e, samples) => fn(samples))
+  onScope: (fn) => ipcRenderer.on("sc-scope", (_e, samples) => fn(samples)),
+  onModScope: (fn) => ipcRenderer.on("sc-modscope", (_e, values) => fn(values))
 });

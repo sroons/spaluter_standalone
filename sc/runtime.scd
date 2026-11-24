@@ -17,6 +17,7 @@ Boots local scsynth, loads patch file, and exposes OSC control:
     var patchWaitRetries, synthDefWaitRetries, scopeRate, scopeEnabled, applyScopeConfig;
     var modBus, lfoGroup, modClearSynth, lfoSynths, lfoConfigs, lfoCount, maxLfo;
     var clockBus, clockMasterSynth, clockHz, clockPos, applyClockSync;
+    var lfoOutBus, modScopeSynth, modScopeEnabled, modScopeRate, forwardModScope, applyModScopeConfig;
     var modParams, modParamIndex, modDepthCap, setupModulation, spawnLfo, releaseLfo, setLfoCount, applyLfo, rebuildLfos, retriggerLfos, lfoWarn, lfoWarnLast, lfoWarnCount;
     var reverbDefaults, reverbState, reverbParamSet, reverbSynthDef, reverbDefForState, applyReverbState, spawnReverb, setReverbParam, resetReverbParams, updateReverbBypass;
     var setupMidi, midiNoteOn, midiNoteOff, midiNoteToBasePitch, midiSoundingNote, midiVoiceActive, currentGateMode, midiInitialized, midiChannel;
@@ -52,6 +53,19 @@ appAddr = NetAddr("127.0.0.1", appPort);
             };
         };
     };
+
+    // Mods-screen monitor frames: [16 LFO outputs, 20 mod-bus channels, beat].
+    forwardModScope = { |vals, start=0|
+        var count;
+        if(vals.notNil) {
+            count = vals.size - start;
+            if(count > 0) {
+                appAddr.sendMsg("/spaluter/modscope", *Array.fill(count, { |i| vals[start + i].asFloat }));
+            };
+        };
+    };
+    modScopeEnabled = false;
+    modScopeRate = 30;
 
 s.options.numInputBusChannels = 0;
 s.options.numOutputBusChannels = 2;
@@ -193,6 +207,7 @@ s.doWhenBooted({
     setupModulation = {
         if(modBus.isNil) { modBus = Bus.control(s, 20); };
         if(clockBus.isNil) { clockBus = Bus.control(s, 1); };
+        if(lfoOutBus.isNil) { lfoOutBus = Bus.control(s, 16); };
         if(lfoGroup.isNil) {
             lfoGroup = Group.new(s);
             modClearSynth = Synth(\modClear, [\modBus, modBus.index], lfoGroup, \addToHead);
@@ -200,7 +215,21 @@ s.doWhenBooted({
             clockMasterSynth = Synth(\spaluterClockMaster, [
                 \clockBus, clockBus.index, \hz, clockHz, \pos, clockPos, \t_resync, 1
             ], lfoGroup, \addToTail);
+            // Monitor sits directly after the group so it reads the summed mod
+            // bus of the same control block (before \modClear zeroes it again).
+            modScopeSynth = Synth(\spaluterModScope, [
+                \lfoBus, lfoOutBus.index, \modBus, modBus.index, \clockBus, clockBus.index,
+                \rate, modScopeRate, \enabled, if(modScopeEnabled) { 1 } { 0 }
+            ], lfoGroup, \addAfter);
             rebuildLfos.value;
+        };
+    };
+
+    // /spaluter/modscope-config [enabled, rate]: the renderer turns the monitor
+    // stream on only while the Mods screen is showing.
+    applyModScopeConfig = {
+        if(modScopeSynth.notNil) {
+            modScopeSynth.set(\enabled, if(modScopeEnabled) { 1 } { 0 }, \rate, modScopeRate);
         };
     };
 
@@ -224,7 +253,12 @@ s.doWhenBooted({
         if(old.notNil) {
             // ramp the LFO to 0 (its internal Lag) then free, avoiding a click.
             old.set(\enabled, 0);
-            AppClock.sched(0.12, { old.free; nil });
+            AppClock.sched(0.12, {
+                old.free;
+                // The scope channel keeps its last value once the synth is gone.
+                if(lfoOutBus.notNil) { lfoOutBus.setAt(idx, 0.0) };
+                nil
+            });
             lfoSynths[idx] = nil;
         };
     };
@@ -250,7 +284,8 @@ s.doWhenBooted({
                 \enabled, 1,
                 \clockBus, clockBus.index,
                 \useClock, cfg[\useClock],
-                \ratio, cfg[\ratio]
+                \ratio, cfg[\ratio],
+                \scopeOut, lfoOutBus.index + idx
             ], lfoGroup, \addToTail);
         };
     };
@@ -688,7 +723,24 @@ s.doWhenBooted({
         if(msg.size > 4 and: { msg[1].notNil and: { msg[1].asString == "/spaluter/scope" } }) {
             forwardScope.value(msg, 4);
         };
+        if(msg.size > 4 and: { msg[1].notNil and: { msg[1].asString == "/spaluter/modscope" } }) {
+            forwardModScope.value(msg, 4);
+        };
     }, "/reply");
+
+    OSCdef(\spaluterModScopeDirect, { |msg|
+        // [path, nodeID, replyID, values...] as for /spaluter/scope.
+        if(msg.size > 3) {
+            forwardModScope.value(msg, 3);
+        };
+    }, "/spaluter/modscope");
+
+    OSCdef(\spaluterModScopeConfig, { |msg|
+        var enabled = msg[1], rate = msg[2];
+        modScopeEnabled = (enabled ? 0).asInteger > 0;
+        if(rate.notNil) { modScopeRate = rate.asFloat.clip(1, 60) };
+        { applyModScopeConfig.value }.defer;
+    }, "/spaluter/modscope-config");
 
     OSCdef(\spaluterScopeConfig, { |msg|
         var enabled, rate;

@@ -157,12 +157,38 @@
 
       <!-- ===== MODS ===== -->
       <section class="main-screen" data-screen="mods" aria-label="Modulation screen">
-        <div class="modbar">
-          <span class="modbar-title">Internal LFO Bus · <b id="lfoActiveCount">0</b> Active / 16</span>
-          <span class="modbar-meta" id="lfoCountHint">Tap controls to edit Shape, Depth, and Target</span>
+        <div class="mods-layout">
+
+          <!-- Monitor: what the 16 LFOs are doing right now (engine telemetry) -->
+          <div class="panel mods-monitor" aria-label="LFO monitor">
+            <div class="ph mods-ph">
+              <span class="mods-ph-title"><span class="t">Monitor</span><span class="m" id="lfoCountHint">0 running</span></span>
+              <span class="mods-count"><b id="lfoActiveCount">0</b>/16</span>
+              <button class="mods-toggle" id="lfoScopeToggle" type="button" aria-pressed="true">Scope</button>
+            </div>
+            <div class="lfo-scope-box" id="lfoScopeBox">
+              <canvas id="lfoScopeView" width="480" height="100" aria-label="LFO output scope"></canvas>
+              <div class="lfo-scope-legend"><span id="lfoScopeLegend">—</span><span id="lfoScopeMeta"></span></div>
+            </div>
+            <div class="lfo-row-grid" id="lfoStripList" aria-label="LFO modulators"></div>
+            <div class="lfo-live" aria-live="off">
+              <span class="lfo-live-line" id="lfoLiveLine">—</span>
+              <div class="lfo-meter lfo-live-meter"><span class="lfo-meter-fill" id="lfoLiveFill"></span></div>
+            </div>
+          </div>
+
+          <!-- Editor: the selected LFO -->
+          <div class="panel mods-editor" aria-label="LFO editor">
+            <div class="ph mods-ph mods-editor-head">
+              <button class="mods-nav" id="lfoPrev" type="button" aria-label="Previous LFO">‹</button>
+              <span class="mods-ph-title"><span class="t" id="lfoEditTitle">LFO 01</span><span class="m" id="lfoEditSub">—</span></span>
+              <button class="mods-nav" id="lfoNext" type="button" aria-label="Next LFO">›</button>
+              <button class="lfo-run" id="lfoEditRun" type="button" aria-pressed="false">Off</button>
+            </div>
+            <div class="mods-editor-body" id="lfoEditorBody"></div>
+          </div>
+
         </div>
-        <div class="lfo-impact-matrix" id="lfoImpactMatrix" aria-label="LFO impact matrix"></div>
-        <div class="lfo-card-grid" id="lfoStripList" aria-label="LFO modulators"></div>
       </section>
 
       <!-- ===== VERB/DLY ===== -->

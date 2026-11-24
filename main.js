@@ -54,6 +54,9 @@ let sclangStartupBuffer = "";
 let shutdownPromise = null;
 let scopeStreamEnabled = true;
 let scopeRateHz = DEFAULT_SCOPE_RATE_HZ;
+// Mods-screen monitor stream (/spaluter/modscope); off until the renderer asks.
+let modScopeEnabled = false;
+let modScopeRateHz = 30;
 let rendererUnresponsiveTimer = null;
 let rendererHeartbeatInterval = null;
 let lastRendererHeartbeatAt = 0;
@@ -346,6 +349,13 @@ function createOscClient() {
           if (s === "Runtime ready") {
             sendLog("[BOOT] sending /spaluter/start");
             sendOsc("/spaluter/start", []);
+            // A fresh sclang forgets the monitor state; restore what the renderer wants.
+            if (modScopeEnabled) sendOsc("/spaluter/modscope-config", [1, modScopeRateHz]);
+          }
+        } else if (msg.address === "/spaluter/modscope") {
+          const values = getScopeSamplesForRenderer(msg.args);
+          if (values.length > 0 && mainWindow) {
+            mainWindow.webContents.send("sc-modscope", values);
           }
         } else if (msg.address === "/spaluter/scope") {
           const samples = getScopeSamplesForRenderer(msg.args);
@@ -1130,6 +1140,15 @@ function registerIpcHandlers() {
     scopeStreamEnabled = enabled;
     scopeRateHz = rate;
     sendOsc("/spaluter/scope-config", [enabled ? 1 : 0, rate]);
+    return true;
+  });
+
+  ipcMain.handle("sc:set-modscope", (_evt, payload) => {
+    const enabled = payload?.enabled === true;
+    const rate = normalizedScopeRate(payload?.rate);
+    modScopeEnabled = enabled;
+    modScopeRateHz = rate;
+    sendOsc("/spaluter/modscope-config", [enabled ? 1 : 0, rate]);
     return true;
   });
 }

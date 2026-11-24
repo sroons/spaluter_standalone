@@ -2324,17 +2324,6 @@ const lfoRetriggerEpochSec = Array.from({ length: LFO_MAX }, () => 0);
 // All 16 LFOs are always presented and always live on the engine; each one's
 // `enabled` flag (not the count) decides whether it actually runs.
 let lfoCount = LFO_MAX;
-let lfoCursorRafId = 0;
-let lfoCursorLast = 0;
-
-const lfoOverviewEl = document.getElementById("lfoOverview");
-const lfoStripListEl = document.getElementById("lfoStripList");
-const lfoImpactMatrixEl = document.getElementById("lfoImpactMatrix");
-const lfoCountHintEl = document.getElementById("lfoCountHint");
-const lfoStripEls = [];
-const lfoImpactMatrixRows = [];
-const lfoThumbCacheByCanvas = new WeakMap();
-let lfoImpactMatrixLastUpdate = 0;
 
 function lfoCapFor(targetName) {
   const t = LFO_TARGET_BY_NAME.get(targetName);
@@ -2453,13 +2442,6 @@ function retriggerLfosForMidiNote(nowSec = performance.now() / 1000) {
   if (retriggered === 0) return;
 
   window.spaluterApi.retriggerLfos();
-  if (currentMainScreen === "mods") {
-    refreshLfoImpactMatrix(nowSec, true);
-    for (let i = 0; i < LFO_MAX; i += 1) {
-      if (lfoStripEls[i]) refreshLfoStripImpact(i, nowSec);
-    }
-    scheduleLfoCursor();
-  }
   if (currentMainScreen === "edit") updateEditLfoMarkers(nowSec);
 }
 
@@ -2593,93 +2575,112 @@ window.spaluterApi.onParamAnimTick(() => {
   updateEditLfoMarkers(nowSec);
 });
 
-function drawLfoCursor(canvas, cursorT) {
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return;
-  const metrics = getCanvasMetrics(canvas);
-  const { leftPad, rightPad, drawHeight, dpr } = metrics;
-  const usableWidth = Math.max(1, rightPad - leftPad);
-  const x = leftPad + ((cursorT - Math.floor(cursorT)) * usableWidth);
-  ctx.strokeStyle = "rgba(255, 255, 255, 0.5)";
-  ctx.lineWidth = Math.max(1, dpr);
-  ctx.beginPath();
-  ctx.moveTo(x, 0);
-  ctx.lineTo(x, drawHeight);
-  ctx.stroke();
-}
+// ─── Mods screen ─────────────────────────────────────────────────────────────
+// Two panes. MONITOR (left): the 16 LFO rows (tap to select, tap the number to
+// run/stop) with live meters, an optional scope and a live target readout.
+// EDITOR (right): the selected LFO's controls in two accordion sections.
+// Everything live here comes from the engine's /spaluter/modscope stream
+// (\spaluterModScope): 16 normalised LFO outputs, the 20 summed mod-bus
+// channels the synth actually receives, and the beat position. Nothing on this
+// screen is a client-side re-synthesis of the LFO shapes, and no renderer
+// timer is involved (requestAnimationFrame is throttled on the Pi kiosk).
 
-function lfoThumbCacheKey(metrics, cfg, seed) {
-  const depthFrac = lfoDepthFractionSigned(cfg);
-  const active = lfoIsActive(cfg) ? 1 : 0;
-  return `${metrics.drawWidth}x${metrics.drawHeight}|${seed}|${cfg.shape}|${cfg.phase.toFixed(4)}|${depthFrac.toFixed(4)}|${cfg.depth.toFixed(4)}|${active}`;
-}
-
-function renderLfoThumbBase(canvas, cfg, seed) {
-  const active = lfoIsActive(cfg);
-  const amp = active ? Math.max(0.08, Math.abs(lfoDepthFractionSigned(cfg))) : 0.55;
-  const sign = cfg.depth < 0 ? -1 : 1;
-  const accent = lfoCardAccent(seed || 0);
-  drawWaveform(
-    canvas,
-    (t) => sign * amp * lfoShapeSample(cfg.shape, t + cfg.phase, seed),
-    -1,
-    1,
-    { color: accent, lineWidth: 1.9, glow: false, sampleCount: 96 }
-  );
-}
-
-function ensureLfoThumbCache(canvas, cfg, seed) {
-  if (!canvas) return null;
-  const metrics = getCanvasMetrics(canvas);
-  const key = lfoThumbCacheKey(metrics, cfg, seed);
-  let cache = lfoThumbCacheByCanvas.get(canvas);
-  if (cache && cache.key === key && cache.baseCanvas) return cache;
-
-  renderLfoThumbBase(canvas, cfg, seed);
-  const baseCanvas = cache?.baseCanvas || document.createElement("canvas");
-  if (baseCanvas.width !== canvas.width || baseCanvas.height !== canvas.height) {
-    baseCanvas.width = canvas.width;
-    baseCanvas.height = canvas.height;
-  }
-  const baseCtx = baseCanvas.getContext("2d");
-  if (!baseCtx) return null;
-  baseCtx.clearRect(0, 0, baseCanvas.width, baseCanvas.height);
-  baseCtx.drawImage(canvas, 0, 0);
-  cache = { key, baseCanvas };
-  lfoThumbCacheByCanvas.set(canvas, cache);
-  return cache;
-}
-
-function drawLfoThumb(canvas, cfg, seed, cursorT = null) {
-  if (!canvas) return;
-  const cache = ensureLfoThumbCache(canvas, cfg, seed);
-  if (!cache?.baseCanvas) return;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return;
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.drawImage(cache.baseCanvas, 0, 0);
-  if (lfoIsActive(cfg) && cursorT !== null) drawLfoCursor(canvas, cursorT);
-}
-
-function lfoField(labelText) {
-  const field = document.createElement("div");
-  field.className = "lfo-field";
-  const label = document.createElement("label");
-  const text = document.createElement("span");
-  text.textContent = labelText;
-  const val = document.createElement("span");
-  val.className = "lfo-field-val";
-  label.appendChild(text);
-  label.appendChild(val);
-  field.appendChild(label);
-  return field;
-}
-
-const LFO_CARD_ACCENTS = ["#1f8bff", "#ff6f24", "#cfe6ff", "#8fe39b"];
 const LFO_PRIMARY_ACCENT = "#ff6f24";
+const MOD_SCOPE_LFO_COUNT = 16;
+const MOD_SCOPE_MOD_COUNT = 20;
+const MOD_SCOPE_HISTORY = 512;
+const MOD_SCOPE_WINDOW_SEC = 4;
+const MOD_SCOPE_RATE_SCOPE_HZ = 30;
+const MOD_SCOPE_RATE_ROWS_HZ = 10;
+const MOD_SCOPE_STALE_MS = 1500;
+const MOD_SCOPE_GAP_MS = 400;
+const MOD_SCOPE_ROWS_MIN_INTERVAL_MS = 60;
+const MOD_SCOPE_LIVE_MIN_INTERVAL_MS = 120;
+const MODS_SCOPE_STORAGE_KEY = "spaluter.mods.scopeVisible";
+const MODS_ACCORDION_STORAGE_KEY = "spaluter.mods.accordion";
+// Channel order of the engine's mod bus. MUST match `modParams` in sc/runtime.scd.
+const MOD_BUS_INDEX = new Map([
+  "amp", "drive", "pulsaret", "window", "duty",
+  "formant1", "formant2", "formant3", "maskAmount",
+  "pan1", "pan2", "pan3",
+  "ampJitter", "timingJitter", "glisson", "basePitch",
+  "attackMs", "releaseMs", "glideMs", "sampleRate"
+].map((name, i) => [name, i]));
+const LFO_SHAPE_SHORT = ["Sine", "Tri", "Saw ↑", "Saw ↓", "Square", "S&H", "Rnd"];
+// 24x14 glyph polylines for the shape chooser.
+const LFO_SHAPE_GLYPHS = [
+  Array.from({ length: 13 }, (_, k) => `${k * 2},${(7 - (6 * Math.sin((k / 12) * TWO_PI))).toFixed(1)}`).join(" "),
+  "0,7 6,1 18,13 24,7",
+  "0,13 12,1 12,13 24,1",
+  "0,1 12,13 12,1 24,13",
+  "0,13 0,1 12,1 12,13 24,13 24,1",
+  "0,9 6,9 6,3 12,3 12,11 18,11 18,5 24,5",
+  "0,8 4,4 8,3 12,8 16,12 20,9 24,5"
+];
 
-function lfoCardAccent(index) {
-  return LFO_CARD_ACCENTS[index % LFO_CARD_ACCENTS.length];
+const lfoStripListEl = document.getElementById("lfoStripList");
+const lfoCountHintEl = document.getElementById("lfoCountHint");
+const lfoActiveCountEl = document.getElementById("lfoActiveCount");
+const lfoScopeToggleEl = document.getElementById("lfoScopeToggle");
+const lfoScopeBoxEl = document.getElementById("lfoScopeBox");
+const lfoScopeCanvasEl = document.getElementById("lfoScopeView");
+const lfoScopeLegendEl = document.getElementById("lfoScopeLegend");
+const lfoScopeMetaEl = document.getElementById("lfoScopeMeta");
+const lfoLiveLineEl = document.getElementById("lfoLiveLine");
+const lfoLiveFillEl = document.getElementById("lfoLiveFill");
+const lfoEditorBodyEl = document.getElementById("lfoEditorBody");
+const lfoEditTitleEl = document.getElementById("lfoEditTitle");
+const lfoEditSubEl = document.getElementById("lfoEditSub");
+const lfoEditRunEl = document.getElementById("lfoEditRun");
+const lfoPrevEl = document.getElementById("lfoPrev");
+const lfoNextEl = document.getElementById("lfoNext");
+const lfoStripEls = [];
+let lfoEditor = null;
+let selectedLfoIndex = 0;
+let lfoScopeVisible = loadModsScopeVisible();
+const lfoAccordionOpen = loadModsAccordionState();
+
+// Telemetry ring buffers (newest at modScopeHead - 1).
+const modScopeHist = Array.from({ length: MOD_SCOPE_LFO_COUNT }, () => new Float32Array(MOD_SCOPE_HISTORY));
+const modScopeHistBeat = new Float32Array(MOD_SCOPE_HISTORY);
+const modScopeHistT = new Float64Array(MOD_SCOPE_HISTORY);
+let modScopeHead = 0;
+let modScopeCount = 0;
+let modScopeLastAtMs = 0;
+const lfoLiveOut = new Float32Array(MOD_SCOPE_LFO_COUNT);
+const modBusLive = new Float32Array(MOD_SCOPE_MOD_COUNT);
+let modScopeRowsLastAtMs = 0;
+let modScopeLiveLastAtMs = 0;
+let modScopeStreamEnabled = false;
+let modScopeStreamRateHz = 0;
+
+function loadModsScopeVisible() {
+  try {
+    const raw = localStorage.getItem(MODS_SCOPE_STORAGE_KEY);
+    return raw === null ? true : raw === "1";
+  } catch (_err) {
+    return true;
+  }
+}
+
+function loadModsAccordionState() {
+  const state = { source: true, destination: true };
+  try {
+    const raw = localStorage.getItem(MODS_ACCORDION_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    if (parsed && typeof parsed === "object") {
+      if (typeof parsed.source === "boolean") state.source = parsed.source;
+      if (typeof parsed.destination === "boolean") state.destination = parsed.destination;
+    }
+  } catch (_err) { /* defaults */ }
+  return state;
+}
+
+function saveModsUiState() {
+  try {
+    localStorage.setItem(MODS_SCOPE_STORAGE_KEY, lfoScopeVisible ? "1" : "0");
+    localStorage.setItem(MODS_ACCORDION_STORAGE_KEY, JSON.stringify(lfoAccordionOpen));
+  } catch (_err) { /* storage unavailable */ }
 }
 
 function applyCenteredMeterFill(fillEl, normalized) {
@@ -2691,194 +2692,271 @@ function applyCenteredMeterFill(fillEl, normalized) {
   fillEl.style.left = n < 0 ? `${(50 - widthPct).toFixed(1)}%` : "50%";
 }
 
-function refreshLfoStripImpact(index, nowSec = performance.now() / 1000) {
-  const refs = lfoStripEls[index];
-  if (!refs?.impactLiveEl || !refs?.impactDeltaEl || !refs?.impactFillEl) return;
-  const cfg = lfoConfigs[index];
-  const target = cfg.target;
-  const cap = lfoCapFor(target);
-  if (!lfoIsActive(cfg) || cap <= 0) {
-    refs.impactLiveEl.textContent = "No active modulation";
-    refs.impactDeltaEl.textContent = "ΔLFO 0 · Σ 0";
-    applyCenteredMeterFill(refs.impactFillEl, 0);
-    return;
+function lfoNumberText(index) {
+  return String(index + 1).padStart(2, "0");
+}
+
+function lfoTargetLabel(cfg) {
+  return LFO_TARGET_BY_NAME.get(cfg.target)?.label || "—";
+}
+
+// Effective rate text: free rate, or clock ratio with the resulting Hz once a
+// tempo is known.
+function lfoRateText(cfg) {
+  const hasTempo = Number.isFinite(midiClockHz);
+  if (cfg.useMidiClock) {
+    const ratioLabel = lfoClockRatioLabel(lfoClockRatioValue(cfg));
+    if (!hasTempo) return `clock ${ratioLabel} · no tempo`;
+    const hz = clamp(midiClockHz * lfoClockRatioValue(cfg), LFO_RATE_MIN, LFO_RATE_MAX);
+    return `clock ${ratioLabel} · ${hz.toFixed(2)} Hz`;
   }
-  const base = currentParamValue(target, 0);
-  const total = lfoModOffset(target, nowSec);
-  const live = clampToParamMeta(target, base + total);
-  const own = lfoInstantContribution(cfg, index, nowSec);
-  refs.impactLiveEl.textContent = `${formatParamValue(target, base)} → ${formatParamValue(target, live)}`;
-  refs.impactDeltaEl.textContent = `ΔLFO ${own >= 0 ? "+" : ""}${formatParamDelta(target, own)} · Σ ${total >= 0 ? "+" : ""}${formatParamDelta(target, total)}`;
-  applyCenteredMeterFill(refs.impactFillEl, own / cap);
+  return `${cfg.rate.toFixed(2)} Hz`;
 }
 
-function ensureLfoImpactMatrixRows() {
-  if (!lfoImpactMatrixEl || lfoImpactMatrixRows.length > 0) return;
-  for (let i = 0; i < LFO_MAX; i += 1) {
-    const row = document.createElement("div");
-    row.className = "lfo-impact-row";
-    const lfoEl = document.createElement("span");
-    lfoEl.className = "lfo-impact-lfo";
-    lfoEl.textContent = `L${String(i + 1).padStart(2, "0")}`;
-    const targetEl = document.createElement("span");
-    targetEl.className = "lfo-impact-target";
-    const deltaEl = document.createElement("span");
-    deltaEl.className = "lfo-impact-delta";
-    const bar = document.createElement("div");
-    bar.className = "lfo-impact-bar";
-    const fill = document.createElement("span");
-    fill.className = "lfo-impact-bar-fill";
-    bar.appendChild(fill);
-    row.append(lfoEl, targetEl, deltaEl, bar);
-    lfoImpactMatrixEl.appendChild(row);
-    lfoImpactMatrixRows.push({
-      row, targetEl, deltaEl, fillEl: fill, index: i
-    });
+function lfoRowSummary(cfg) {
+  return `${LFO_SHAPE_NAMES[cfg.shape]} · ${lfoRateText(cfg)}`;
+}
+
+// Compact form for the monitor rows (two columns, ~120 px of text).
+function lfoRowShortSummary(cfg) {
+  const shape = LFO_SHAPE_SHORT[cfg.shape];
+  if (cfg.useMidiClock) {
+    const ratioLabel = lfoClockRatioLabel(lfoClockRatioValue(cfg));
+    if (!Number.isFinite(midiClockHz)) return `${shape} · ${ratioLabel} · no clock`;
+    const hz = clamp(midiClockHz * lfoClockRatioValue(cfg), LFO_RATE_MIN, LFO_RATE_MAX);
+    return `${shape} · ${ratioLabel} · ${hz.toFixed(2)} Hz`;
   }
+  return `${shape} · ${cfg.rate.toFixed(2)} Hz`;
 }
 
-function refreshLfoImpactMatrix(nowSec = performance.now() / 1000, force = false) {
-  if (!lfoImpactMatrixEl || currentMainScreen !== "mods") return;
-  const nowMs = performance.now();
-  if (!force && (nowMs - lfoImpactMatrixLastUpdate) < 120) return;
-  lfoImpactMatrixLastUpdate = nowMs;
-  ensureLfoImpactMatrixRows();
-  lfoImpactMatrixRows.forEach((entry) => {
-    const cfg = lfoConfigs[entry.index];
-    const target = cfg.target;
-    const targetLabel = LFO_TARGET_BY_NAME.get(target)?.label || "—";
-    entry.targetEl.textContent = targetLabel;
-    if (!lfoIsActive(cfg) || lfoCapFor(target) <= 0) {
-      entry.row.classList.add("is-off");
-      entry.deltaEl.textContent = "0";
-      applyCenteredMeterFill(entry.fillEl, 0);
-      return;
-    }
-    entry.row.classList.remove("is-off");
-    const own = lfoInstantContribution(cfg, entry.index, nowSec);
-    entry.deltaEl.textContent = `${own >= 0 ? "+" : ""}${formatParamDelta(target, own)}`;
-    applyCenteredMeterFill(entry.fillEl, own / lfoCapFor(target));
-  });
-}
-
-function createLfoStrip(index) {
+// Live own contribution of LFO `index` in native units of its target.
+function lfoLiveContribution(index) {
   const cfg = lfoConfigs[index];
-  const accent = lfoCardAccent(index);
+  if (!lfoIsActive(cfg)) return 0;
+  return lfoLiveOut[index] * cfg.depth;
+}
 
-  const card = document.createElement("div");
-  card.className = "lfo-card";
-  card.dataset.lfoIndex = String(index);
-  card.style.setProperty("--lfo-accent", accent);
+// ── monitor rows ────────────────────────────────────────────────────────────
 
-  const ghost = document.createElement("span");
-  ghost.className = "lfo-ghost";
-  ghost.textContent = String(index + 1).padStart(2, "0");
+function createLfoRow(index) {
+  const row = document.createElement("div");
+  row.className = "lfo-row";
+  row.dataset.lfoIndex = String(index);
+  row.setAttribute("role", "button");
+  row.tabIndex = 0;
 
-  const head = document.createElement("div");
-  head.className = "lfo-card-head";
-  const idEl = document.createElement("span");
-  idEl.className = "lfo-id";
-  idEl.textContent = `LFO·${String(index + 1).padStart(2, "0")}`;
   const runBtn = document.createElement("button");
   runBtn.type = "button";
-  runBtn.className = "lfo-run";
-  runBtn.textContent = "OFF";
-  head.append(idEl, runBtn);
+  runBtn.className = "lfo-row-run";
+  runBtn.textContent = lfoNumberText(index);
+  runBtn.setAttribute("aria-label", `LFO ${index + 1} run/stop`);
+  runBtn.title = "Run / stop";
 
-  const waveBox = document.createElement("div");
-  waveBox.className = "lfo-wv-box";
-  const canvas = document.createElement("canvas");
-  canvas.className = "lfo-wv";
-  canvas.width = 240;
-  canvas.height = 56;
-  waveBox.appendChild(canvas);
+  const main = document.createElement("div");
+  main.className = "lfo-row-main";
+  const targetEl = document.createElement("span");
+  targetEl.className = "lfo-row-target";
+  const subEl = document.createElement("span");
+  subEl.className = "lfo-row-sub";
+  main.append(targetEl, subEl);
 
-  const body = document.createElement("div");
-  body.className = "lfo-card-body";
+  const meter = document.createElement("div");
+  meter.className = "lfo-meter lfo-row-meter";
+  const fill = document.createElement("span");
+  fill.className = "lfo-meter-fill";
+  meter.appendChild(fill);
 
-  // Shape field — value styled select
-  const shapeRow = document.createElement("div");
-  shapeRow.className = "lfo-field";
-  const shapeKey = document.createElement("span");
-  shapeKey.className = "k";
-  shapeKey.textContent = "Shape";
-  const shapeSel = document.createElement("select");
-  shapeSel.className = "lfo-shape";
-  LFO_SHAPE_NAMES.forEach((shapeName, shapeIdx) => {
-    const option = document.createElement("option");
-    option.value = String(shapeIdx);
-    option.textContent = shapeName;
-    shapeSel.appendChild(option);
+  row.append(runBtn, main, meter);
+  lfoStripListEl.appendChild(row);
+
+  runBtn.addEventListener("click", (event) => {
+    event.stopPropagation();
+    toggleLfoEnabled(index);
   });
-  shapeSel.value = String(cfg.shape);
-  shapeRow.append(shapeKey, shapeSel);
+  row.addEventListener("click", () => selectLfo(index));
+  row.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      selectLfo(index);
+    }
+  });
 
-  const clockRow = document.createElement("div");
-  clockRow.className = "lfo-field lfo-clock-row";
-  const clockKey = document.createElement("span");
-  clockKey.className = "k";
-  clockKey.textContent = "Rate Source";
-  const clockToggle = document.createElement("label");
-  clockToggle.className = "lfo-clock-toggle";
-  const clockCheck = document.createElement("input");
-  clockCheck.type = "checkbox";
-  clockCheck.className = "lfo-clock-check";
-  clockCheck.checked = Boolean(cfg.useMidiClock);
+  return { index, strip: row, runBtn, targetEl, subEl, meterFill: fill };
+}
+
+function buildLfoStrips() {
+  if (!lfoStripListEl) return;
+  lfoStripListEl.innerHTML = "";
+  lfoStripEls.length = 0;
+  for (let i = 0; i < LFO_MAX; i += 1) lfoStripEls.push(createLfoRow(i));
+}
+
+function refreshLfoRowMeter(index) {
+  const r = lfoStripEls[index];
+  if (!r) return;
+  const cfg = lfoConfigs[index];
+  const frac = lfoIsActive(cfg) ? lfoLiveOut[index] * lfoDepthFractionSigned(cfg) : 0;
+  applyCenteredMeterFill(r.meterFill, frac);
+}
+
+function refreshLfoRow(index) {
+  const r = lfoStripEls[index];
+  if (!r) return;
+  const cfg = lfoConfigs[index];
+  const running = lfoIsActive(cfg);
+  r.strip.classList.toggle("lfo-disabled", !cfg.enabled);
+  r.strip.classList.toggle("lfo-running", running);
+  r.strip.classList.toggle("is-selected", index === selectedLfoIndex);
+  r.strip.setAttribute("aria-pressed", String(index === selectedLfoIndex));
+  r.runBtn.classList.toggle("on", cfg.enabled);
+  r.runBtn.setAttribute("aria-pressed", String(cfg.enabled));
+  r.targetEl.textContent = cfg.target === "none" ? "unassigned" : lfoTargetLabel(cfg);
+  r.targetEl.classList.toggle("is-empty", cfg.target === "none");
+  r.subEl.textContent = lfoRowShortSummary(cfg);
+  refreshLfoRowMeter(index);
+}
+
+// Kept under its historical name: callers elsewhere (clock sync, readouts)
+// refresh "the strip" for one LFO. Now that is its row, and the editor when it
+// is the selected one.
+function refreshLfoStrip(index) {
+  refreshLfoRow(index);
+  if (index === selectedLfoIndex) refreshLfoEditor();
+}
+
+function toggleLfoEnabled(index) {
+  const cfg = lfoConfigs[index];
+  cfg.enabled = !cfg.enabled;
+  refreshLfoStrip(index);
+  updateLfoHint();
+  sendLfo(index);
+  drawLfoScope();
+}
+
+function selectLfo(index) {
+  const next = clamp(Math.round(Number(index) || 0), 0, LFO_MAX - 1);
+  const prev = selectedLfoIndex;
+  selectedLfoIndex = next;
+  if (prev !== next) refreshLfoRow(prev);
+  refreshLfoRow(next);
+  refreshLfoEditor();
+  refreshLfoLiveReadout(true);
+  drawLfoScope();
+  const row = lfoStripEls[next]?.strip;
+  if (row && typeof row.scrollIntoView === "function") {
+    row.scrollIntoView({ block: "nearest" });
+  }
+}
+
+// ── editor ──────────────────────────────────────────────────────────────────
+
+function makeLfoAccordion(key, title) {
+  const section = document.createElement("section");
+  section.className = "lfo-acc";
+  section.dataset.acc = key;
+  const head = document.createElement("button");
+  head.type = "button";
+  head.className = "lfo-acc-head";
+  const t = document.createElement("span");
+  t.className = "t";
+  t.textContent = title;
+  const sum = document.createElement("span");
+  sum.className = "sum";
+  const chev = document.createElement("span");
+  chev.className = "chev";
+  chev.setAttribute("aria-hidden", "true");
+  head.append(t, sum, chev);
+  const body = document.createElement("div");
+  body.className = "lfo-acc-body";
+  section.append(head, body);
+  head.addEventListener("click", () => {
+    lfoAccordionOpen[key] = !lfoAccordionOpen[key];
+    saveModsUiState();
+    refreshLfoEditor();
+  });
+  return { section, head, sum, body };
+}
+
+function makeLfoSliderRow(labelText, slider) {
+  const row = document.createElement("div");
+  row.className = "lfo-field lfo-field-slider";
+  const key = document.createElement("span");
+  key.className = "k";
+  key.textContent = labelText;
+  const val = document.createElement("span");
+  val.className = "v is-accent";
+  row.append(key, slider, val);
+  return { row, val };
+}
+
+function buildLfoEditor() {
+  if (!lfoEditorBodyEl) return null;
+  lfoEditorBodyEl.innerHTML = "";
+
+  // SOURCE: shape, clock source, rate or ratio.
+  const source = makeLfoAccordion("source", "Source");
+  const seg = document.createElement("div");
+  seg.className = "lfo-seg";
+  seg.setAttribute("role", "group");
+  seg.setAttribute("aria-label", "LFO shape");
+  const shapeBtns = LFO_SHAPE_SHORT.map((label, shapeIdx) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "lfo-seg-btn";
+    b.dataset.shape = String(shapeIdx);
+    b.innerHTML = `<svg viewBox="0 0 24 14" width="26" height="15" aria-hidden="true"><polyline points="${LFO_SHAPE_GLYPHS[shapeIdx]}" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/></svg><span>${label}</span>`;
+    b.setAttribute("aria-label", LFO_SHAPE_NAMES[shapeIdx]);
+    seg.appendChild(b);
+    return b;
+  });
+
+  const clockBtn = document.createElement("button");
+  clockBtn.type = "button";
+  clockBtn.className = "lfo-clock-toggle";
+  const clockDot = document.createElement("span");
+  clockDot.className = "lfo-clock-dot";
   const clockText = document.createElement("span");
-  clockText.textContent = "Use MIDI Clock";
-  clockToggle.append(clockCheck, clockText);
-  clockRow.append(clockKey, clockToggle);
+  clockText.className = "lfo-clock-text";
+  clockBtn.append(clockDot, clockText);
 
-  // Rate field — big value + thin slider
-  const rateRow = document.createElement("div");
-  rateRow.className = "lfo-field lfo-field-slider";
-  const rateTop = document.createElement("div");
-  rateTop.className = "lfo-field-top";
-  const rateKey = document.createElement("span");
-  rateKey.className = "k";
-  rateKey.textContent = "Rate";
-  const rateVal = document.createElement("span");
-  rateVal.className = "v is-accent";
-  rateTop.append(rateKey, rateVal);
   const rateEl = document.createElement("input");
   rateEl.type = "range";
   rateEl.className = "lfo-range";
   rateEl.min = "0";
   rateEl.max = "1";
   rateEl.step = "0.001";
-  rateEl.value = String(lfoRateToSliderPos(cfg.rate));
-  rateRow.append(rateTop, rateEl);
+  rateEl.setAttribute("aria-label", "Rate");
+  const rateRow = makeLfoSliderRow("Rate", rateEl);
 
-  const ratioRow = document.createElement("div");
-  ratioRow.className = "lfo-field lfo-field-slider";
-  const ratioTop = document.createElement("div");
-  ratioTop.className = "lfo-field-top";
-  const ratioKey = document.createElement("span");
-  ratioKey.className = "k";
-  ratioKey.textContent = "Clock Div/Mult";
-  const ratioVal = document.createElement("span");
-  ratioVal.className = "v is-accent";
-  ratioTop.append(ratioKey, ratioVal);
   const ratioEl = document.createElement("input");
   ratioEl.type = "range";
   ratioEl.className = "lfo-range lfo-clock-ratio-range";
   ratioEl.min = "0";
   ratioEl.max = String(LFO_CLOCK_RATIO_OPTIONS.length - 1);
   ratioEl.step = "1";
-  ratioEl.value = String(lfoClockRatioIndexFromValue(cfg.clockRatio));
-  ratioRow.append(ratioTop, ratioEl);
+  ratioEl.setAttribute("aria-label", "Clock ratio");
+  const ratioRow = makeLfoSliderRow("Ratio", ratioEl);
 
-  // Depth field — big value + thin slider
-  const depthRow = document.createElement("div");
-  depthRow.className = "lfo-field lfo-field-slider lfo-field-slider-depth";
-  const depthTop = document.createElement("div");
-  depthTop.className = "lfo-field-top";
-  const depthKey = document.createElement("span");
-  depthKey.className = "k";
-  depthKey.textContent = "Depth";
-  const depthVal = document.createElement("span");
-  depthVal.className = "v is-accent";
-  depthTop.append(depthKey, depthVal);
+  source.body.append(seg, clockBtn, rateRow.row, ratioRow.row);
+
+  // DESTINATION: target, depth.
+  const dest = makeLfoAccordion("destination", "Destination");
+  const targetRow = document.createElement("div");
+  targetRow.className = "lfo-field lfo-field-select";
+  const targetKey = document.createElement("span");
+  targetKey.className = "k";
+  targetKey.textContent = "Target";
+  const targetSel = document.createElement("select");
+  targetSel.className = "lfo-target-sel";
+  targetSel.setAttribute("aria-label", "Target parameter");
+  LFO_TARGETS.forEach((t) => {
+    const option = document.createElement("option");
+    option.value = t.name;
+    option.textContent = t.label;
+    targetSel.appendChild(option);
+  });
+  targetRow.append(targetKey, targetSel);
+
   const depthEl = document.createElement("input");
   depthEl.type = "range";
   depthEl.className = "lfo-range";
@@ -2886,84 +2964,25 @@ function createLfoStrip(index) {
   depthEl.min = "-1";
   depthEl.max = "1";
   depthEl.step = "0.01";
-  depthEl.value = String(lfoDepthFractionSigned(cfg));
-  depthRow.append(depthTop, depthEl);
+  depthEl.setAttribute("aria-label", "Depth");
+  const depthRow = makeLfoSliderRow("Depth", depthEl);
+  const depthNote = document.createElement("div");
+  depthNote.className = "lfo-field-note";
 
-  // Bus target — routed box
-  const targetBox = document.createElement("div");
-  targetBox.className = "lfo-route";
-  const targetKey = document.createElement("div");
-  targetKey.className = "k";
-  targetKey.textContent = "BUS TARGET";
-  const targetVal = document.createElement("div");
-  targetVal.className = "lfo-route-v";
-  const targetSel = document.createElement("select");
-  targetSel.className = "lfo-target-sel";
-  LFO_TARGETS.forEach((t) => {
-    const option = document.createElement("option");
-    option.value = t.name;
-    option.textContent = t.label;
-    targetSel.appendChild(option);
-  });
-  targetSel.value = cfg.target;
-  targetVal.appendChild(targetSel);
+  dest.body.append(targetRow, depthRow.row, depthNote);
+  lfoEditorBodyEl.append(source.section, dest.section);
 
-  const impact = document.createElement("div");
-  impact.className = "lfo-target-impact";
-  const impactKey = document.createElement("div");
-  impactKey.className = "k";
-  impactKey.textContent = "Target Delta";
-  const impactLive = document.createElement("div");
-  impactLive.className = "lfo-target-impact-live";
-  const impactDelta = document.createElement("div");
-  impactDelta.className = "lfo-target-impact-delta";
-  const impactBar = document.createElement("div");
-  impactBar.className = "lfo-target-impact-bar";
-  const impactFill = document.createElement("span");
-  impactFill.className = "lfo-target-impact-fill";
-  impactBar.appendChild(impactFill);
-  impact.append(impactKey, impactLive, impactDelta, impactBar);
-
-  targetBox.append(targetKey, targetVal, impact);
-
-  // Hidden enable mirror keeps syncLfoStripFromConfig() working unchanged.
-  const enableInput = document.createElement("input");
-  enableInput.type = "checkbox";
-  enableInput.style.display = "none";
-  enableInput.checked = cfg.enabled;
-
-  body.append(shapeRow, clockRow, rateRow, ratioRow, depthRow, targetBox, enableInput);
-  card.append(ghost, head, waveBox, body);
-  lfoStripListEl.appendChild(card);
-
-  const refs = {
-    index,
-    strip: card,
-    canvas,
-    metaEl: null,
-    idEl,
-    runBtn,
-    targetSel,
-    shapeSel,
-    clockCheck,
-    rateEl,
-    clockRatioEl: ratioEl,
-    depthEl,
-    enableInput,
-    rateLabelVal: rateVal,
-    clockRatioLabelVal: ratioVal,
-    depthLabelVal: depthVal,
-    accent,
-    impactLiveEl: impactLive,
-    impactDeltaEl: impactDelta,
-    impactFillEl: impactFill
+  const editor = {
+    source, dest, shapeBtns, clockBtn, clockText,
+    rateEl, rateVal: rateRow.val, rateRow: rateRow.row,
+    ratioEl, ratioVal: ratioRow.val, ratioRow: ratioRow.row,
+    targetSel, depthEl, depthVal: depthRow.val, depthNote
   };
 
-  const onChange = () => {
-    const c = lfoConfigs[index];
+  const commit = () => {
+    const i = selectedLfoIndex;
+    const c = lfoConfigs[i];
     c.target = LFO_TARGET_BY_NAME.has(targetSel.value) ? targetSel.value : "none";
-    c.shape = clamp(parseInt(shapeSel.value, 10) || 0, 0, 6);
-    c.useMidiClock = Boolean(clockCheck.checked);
     c.clockRatio = lfoClockRatioFromIndex(ratioEl.value);
     const clockRate = midiClockRateHz();
     if (c.useMidiClock) {
@@ -2972,81 +2991,105 @@ function createLfoStrip(index) {
       c.rate = lfoSliderPosToRate(rateEl.value);
     }
     c.depth = clamp(Number(depthEl.value) || 0, -1, 1) * lfoCapFor(c.target);
-    c.enabled = enableInput.checked;
-    const depthFrac = lfoDepthFractionSigned(c);
-    if (String(depthFrac) !== depthEl.value) depthEl.value = String(depthFrac);
-    refreshLfoStrip(index);
+    refreshLfoStrip(i);
     updateLfoHint();
-    sendLfo(index);
+    sendLfo(i);
   };
 
-  runBtn.addEventListener("click", () => {
-    enableInput.checked = !enableInput.checked;
-    onChange();
+  shapeBtns.forEach((b) => b.addEventListener("click", () => {
+    lfoConfigs[selectedLfoIndex].shape = clamp(parseInt(b.dataset.shape, 10) || 0, 0, 6);
+    commit();
+  }));
+  clockBtn.addEventListener("click", () => {
+    lfoConfigs[selectedLfoIndex].useMidiClock = !lfoConfigs[selectedLfoIndex].useMidiClock;
+    commit();
   });
-  targetSel.addEventListener("change", onChange);
-  shapeSel.addEventListener("change", onChange);
-  clockCheck.addEventListener("change", onChange);
-  rateEl.addEventListener("input", onChange);
-  ratioEl.addEventListener("input", onChange);
-  depthEl.addEventListener("input", onChange);
+  targetSel.addEventListener("change", commit);
+  rateEl.addEventListener("input", commit);
+  ratioEl.addEventListener("input", commit);
+  depthEl.addEventListener("input", commit);
 
-  return refs;
+  return editor;
 }
 
-function buildLfoStrips() {
-  if (!lfoStripListEl) return;
-  lfoStripListEl.innerHTML = "";
-  lfoStripEls.length = 0;
-  for (let i = 0; i < LFO_MAX; i += 1) {
-    lfoStripEls.push(createLfoStrip(i));
-  }
-}
-
-function refreshLfoStrip(index) {
-  const r = lfoStripEls[index];
-  if (!r) return;
-  const c = lfoConfigs[index];
-  const clockRatio = lfoClockRatioValue(c);
-  const hasClockTempo = Number.isFinite(midiClockHz);
-  const displayedRate = (c.useMidiClock && hasClockTempo)
-    ? clamp(midiClockHz * clockRatio, LFO_RATE_MIN, LFO_RATE_MAX)
+function refreshLfoEditor() {
+  const e = lfoEditor;
+  if (!e) return;
+  const i = selectedLfoIndex;
+  const c = lfoConfigs[i];
+  const hasTempo = Number.isFinite(midiClockHz);
+  const ratio = lfoClockRatioValue(c);
+  const displayedRate = (c.useMidiClock && hasTempo)
+    ? clamp(midiClockHz * ratio, LFO_RATE_MIN, LFO_RATE_MAX)
     : c.rate;
-  const running = lfoIsActive(c);
-  r.strip.classList.toggle("lfo-disabled", !c.enabled);
-  r.strip.classList.toggle("lfo-running", running);
-  if (r.metaEl) {
-    const tgt = LFO_TARGET_BY_NAME.get(c.target);
-    r.metaEl.textContent = `${tgt ? tgt.label : "none"} • ${LFO_SHAPE_NAMES[c.shape]} • ${c.rate.toFixed(2)} Hz`;
+
+  if (lfoEditTitleEl) lfoEditTitleEl.textContent = `LFO ${lfoNumberText(i)}`;
+  if (lfoEditSubEl) {
+    lfoEditSubEl.textContent = c.target === "none"
+      ? "unassigned"
+      : `${lfoTargetLabel(c)} · ${lfoRateText(c)}`;
   }
-  if (r.runBtn) {
-    r.runBtn.textContent = c.enabled ? "RUNNING" : "OFF";
-    r.runBtn.classList.toggle("on", c.enabled);
+  if (lfoEditRunEl) {
+    lfoEditRunEl.textContent = c.enabled ? "Running" : "Off";
+    lfoEditRunEl.classList.toggle("on", c.enabled);
+    lfoEditRunEl.setAttribute("aria-pressed", String(c.enabled));
   }
-  if (r.clockCheck) r.clockCheck.checked = Boolean(c.useMidiClock);
-  if (r.rateLabelVal) {
-    r.rateLabelVal.textContent = c.useMidiClock && !hasClockTempo
-      ? "CLOCK —"
-      : `${displayedRate.toFixed(2)} Hz`;
+
+  // Accordion open state + summaries (so a collapsed section still reads).
+  e.source.section.classList.toggle("closed", !lfoAccordionOpen.source);
+  e.source.head.setAttribute("aria-expanded", String(Boolean(lfoAccordionOpen.source)));
+  e.dest.section.classList.toggle("closed", !lfoAccordionOpen.destination);
+  e.dest.head.setAttribute("aria-expanded", String(Boolean(lfoAccordionOpen.destination)));
+  e.source.sum.textContent = lfoRowSummary(c);
+  e.dest.sum.textContent = c.target === "none"
+    ? "no target"
+    : `${lfoTargetLabel(c)} · ${Math.round(lfoDepthFractionSigned(c) * 100)}%`;
+
+  e.shapeBtns.forEach((b, idx) => {
+    b.classList.toggle("on", idx === c.shape);
+    b.setAttribute("aria-pressed", String(idx === c.shape));
+  });
+
+  e.clockBtn.classList.toggle("on", Boolean(c.useMidiClock));
+  e.clockBtn.setAttribute("aria-pressed", String(Boolean(c.useMidiClock)));
+  const tempo = midiClockTempoText();
+  if (c.useMidiClock) {
+    e.clockText.textContent = tempo
+      ? `MIDI clock · ${tempo}${midiClockPresent ? "" : " (stopped)"} · ${displayedRate.toFixed(2)} Hz`
+      : "MIDI clock · waiting for tempo";
+  } else {
+    e.clockText.textContent = tempo ? `Free rate · clock ${tempo} available` : "Free rate";
   }
-  if (r.clockRatioLabelVal) r.clockRatioLabelVal.textContent = lfoClockRatioLabel(clockRatio);
-  if (r.clockRatioEl) {
-    r.clockRatioEl.value = String(lfoClockRatioIndexFromValue(clockRatio));
-    r.clockRatioEl.disabled = !c.useMidiClock;
-    r.clockRatioEl.classList.toggle("is-locked", !c.useMidiClock);
-    refreshSliderFill(r.clockRatioEl, LFO_PRIMARY_ACCENT);
-  }
-  if (r.depthLabelVal) r.depthLabelVal.textContent = `${Math.round(lfoDepthFractionSigned(c) * 100)}%`;
-  if (r.rateEl) {
-    r.rateEl.disabled = Boolean(c.useMidiClock);
-    r.rateEl.classList.toggle("is-locked", Boolean(c.useMidiClock));
-    r.rateEl.value = String(lfoRateToSliderPos(displayedRate));
-    refreshSliderFill(r.rateEl, LFO_PRIMARY_ACCENT);
-  }
-  if (r.depthEl) refreshSliderFill(r.depthEl, LFO_PRIMARY_ACCENT);
-  drawLfoThumb(r.canvas, c, index);
-  refreshLfoStripImpact(index);
-  refreshLfoImpactMatrix(undefined, true);
+
+  // One rate control at a time: the free rate slider or the clock ratio.
+  e.rateRow.hidden = Boolean(c.useMidiClock);
+  e.ratioRow.hidden = !c.useMidiClock;
+  e.rateEl.value = String(lfoRateToSliderPos(displayedRate));
+  e.rateVal.textContent = `${displayedRate.toFixed(2)} Hz`;
+  refreshSliderFill(e.rateEl, LFO_PRIMARY_ACCENT);
+  e.ratioEl.value = String(lfoClockRatioIndexFromValue(ratio));
+  // Short value only: the resulting Hz lives in the clock button text. The
+  // value column is 96 px and the Pi substitutes a wide font for the condensed
+  // one, so anything longer overflowed the pane and flickered its scrollbars.
+  e.ratioVal.textContent = lfoClockRatioLabel(ratio);
+  refreshSliderFill(e.ratioEl, LFO_PRIMARY_ACCENT);
+
+  e.targetSel.value = c.target;
+  const depthFrac = lfoDepthFractionSigned(c);
+  e.depthEl.value = String(depthFrac);
+  e.depthEl.disabled = c.target === "none";
+  e.depthEl.classList.toggle("is-locked", c.target === "none");
+  e.depthVal.textContent = `${depthFrac >= 0 ? "+" : ""}${Math.round(depthFrac * 100)}%`;
+  refreshSliderFill(e.depthEl, LFO_PRIMARY_ACCENT);
+  const cap = lfoCapFor(c.target);
+  e.depthNote.textContent = c.target === "none"
+    ? "Pick a target to set a depth."
+    : `±100% = ±${formatParamDelta(c.target, cap)} ${lfoTargetLabel(c)}; negative depth inverts the shape.`;
+}
+
+// Historical name: controls are config-driven now, so this is a refresh.
+function syncLfoStripFromConfig(index) {
+  refreshLfoStrip(index);
 }
 
 function lfoActiveCount() {
@@ -3055,62 +3098,264 @@ function lfoActiveCount() {
   return n;
 }
 
-const lfoActiveCountEl = document.getElementById("lfoActiveCount");
-
 function updateLfoHint() {
   const active = lfoActiveCount();
   if (lfoActiveCountEl) lfoActiveCountEl.textContent = String(active);
   if (lfoCountHintEl) {
     const tempo = midiClockTempoText();
-    const tempoText = tempo ? ` · MIDI ${tempo}${midiClockPresent ? "" : " (clock stopped)"}` : "";
-    lfoCountHintEl.textContent = `${active} running · tap controls to edit shape, depth, and target${tempoText}`;
-  }
-}
-
-function syncLfoStripFromConfig(index) {
-  const r = lfoStripEls[index];
-  if (!r) return;
-  const c = lfoConfigs[index];
-  r.targetSel.value = c.target;
-  r.shapeSel.value = String(c.shape);
-  r.rateEl.value = String(lfoRateToSliderPos(c.rate));
-  r.depthEl.value = String(lfoDepthFractionSigned(c));
-  r.enableInput.checked = c.enabled;
-  refreshLfoStrip(index);
-}
-
-function rebuildLfoOverview() {
-  if (!lfoOverviewEl) return;
-  lfoOverviewEl.innerHTML = "";
-  for (let i = 0; i < LFO_MAX; i += 1) {
-    const c = lfoConfigs[i];
-    if (!c.enabled) continue;
-    const tgt = LFO_TARGET_BY_NAME.get(c.target);
-    const card = document.createElement("div");
-    card.className = "lfo-overview-card";
-    if (!lfoIsActive(c)) card.classList.add("lfo-disabled");
-    card.style.borderLeftColor = lfoAccent(i);
-    const title = document.createElement("div");
-    title.className = "lfo-overview-title";
-    const left = document.createElement("span");
-    left.textContent = `L${i + 1}`;
-    const right = document.createElement("span");
-    right.textContent = tgt ? tgt.label : "—";
-    title.append(left, right);
-    const canvas = document.createElement("canvas");
-    canvas.width = 220;
-    canvas.height = 38;
-    card.append(title, canvas);
-    lfoOverviewEl.appendChild(card);
-    drawLfoThumb(canvas, c, i);
+    const tempoText = tempo
+      ? `MIDI ${tempo}${midiClockPresent ? "" : " (stopped)"}`
+      : "no MIDI clock";
+    lfoCountHintEl.textContent = `${active} running · ${tempoText}`;
   }
 }
 
 function redrawAllLfoViews() {
-  for (let i = 0; i < LFO_MAX; i += 1) {
-    if (lfoStripEls[i]) refreshLfoStrip(i);
+  for (let i = 0; i < LFO_MAX; i += 1) refreshLfoRow(i);
+  updateLfoHint();
+  refreshLfoEditor();
+  refreshLfoLiveReadout(true);
+  drawLfoScope();
+}
+
+// ── live readout + scope (engine telemetry) ─────────────────────────────────
+
+function refreshLfoLiveReadout(force = false, nowMs = performance.now()) {
+  if (!lfoLiveLineEl) return;
+  if (!force && (nowMs - modScopeLiveLastAtMs) < MOD_SCOPE_LIVE_MIN_INTERVAL_MS) return;
+  modScopeLiveLastAtMs = nowMs;
+  const i = selectedLfoIndex;
+  const c = lfoConfigs[i];
+  const stale = (nowMs - modScopeLastAtMs) > MOD_SCOPE_STALE_MS;
+  if (c.target === "none") {
+    lfoLiveLineEl.textContent = `LFO ${lfoNumberText(i)} · no target`;
+    applyCenteredMeterFill(lfoLiveFillEl, 0);
+    return;
   }
-  rebuildLfoOverview();
+  if (stale) {
+    lfoLiveLineEl.textContent = `${lfoTargetLabel(c)} · engine idle`;
+    applyCenteredMeterFill(lfoLiveFillEl, 0);
+    return;
+  }
+  const busIdx = MOD_BUS_INDEX.get(c.target);
+  const base = currentParamValue(c.target, 0);
+  const total = busIdx === undefined ? 0 : modBusLive[busIdx];
+  const own = lfoLiveContribution(i);
+  const live = clampToParamMeta(c.target, base + total);
+  const sign = (v) => (v >= 0 ? "+" : "");
+  lfoLiveLineEl.textContent =
+    `${lfoTargetLabel(c)} ${formatParamValue(c.target, base)} → ${formatParamValue(c.target, live)}`
+    + ` · LFO ${lfoNumberText(i)} ${sign(own)}${formatParamDelta(c.target, own)}`
+    + ` · Σ ${sign(total)}${formatParamDelta(c.target, total)}`;
+  const cap = lfoCapFor(c.target);
+  applyCenteredMeterFill(lfoLiveFillEl, cap > 0 ? total / cap : 0);
+}
+
+function setLfoScopeVisible(visible) {
+  lfoScopeVisible = Boolean(visible);
+  if (lfoScopeBoxEl) lfoScopeBoxEl.hidden = !lfoScopeVisible;
+  if (lfoScopeToggleEl) lfoScopeToggleEl.setAttribute("aria-pressed", String(lfoScopeVisible));
+  saveModsUiState();
+  waveformLayoutDirty = true;
+  refreshModScopeStreaming();
+  drawLfoScope();
+}
+
+// Ask the engine for the monitor stream only while this screen can show it.
+// 30 Hz with the scope up, 10 Hz for the row meters alone, off otherwise.
+function refreshModScopeStreaming() {
+  const visible = document.visibilityState !== "hidden" && document.hasFocus();
+  const enabled = visible && isModulationScreenActive();
+  const rate = lfoScopeVisible ? MOD_SCOPE_RATE_SCOPE_HZ : MOD_SCOPE_RATE_ROWS_HZ;
+  if (modScopeStreamEnabled === enabled && modScopeStreamRateHz === rate) return;
+  modScopeStreamEnabled = enabled;
+  modScopeStreamRateHz = rate;
+  if (!window.spaluterApi?.setModScope) return;
+  window.spaluterApi.setModScope(enabled, rate).catch(() => {
+    appendLog("[SCOPE] Failed to update LFO monitor streaming state.");
+  });
+}
+
+function handleModScopeFrame(values) {
+  if (!Array.isArray(values) || values.length < MOD_SCOPE_LFO_COUNT) return;
+  const nowMs = performance.now();
+  for (let i = 0; i < MOD_SCOPE_LFO_COUNT; i += 1) {
+    const v = Number(values[i]);
+    lfoLiveOut[i] = Number.isFinite(v) ? v : 0;
+    modScopeHist[i][modScopeHead] = lfoLiveOut[i];
+  }
+  for (let k = 0; k < MOD_SCOPE_MOD_COUNT; k += 1) {
+    const v = Number(values[MOD_SCOPE_LFO_COUNT + k]);
+    modBusLive[k] = Number.isFinite(v) ? v : 0;
+  }
+  const beat = Number(values[MOD_SCOPE_LFO_COUNT + MOD_SCOPE_MOD_COUNT]);
+  modScopeHistBeat[modScopeHead] = Number.isFinite(beat) ? beat : 0;
+  modScopeHistT[modScopeHead] = nowMs;
+  modScopeHead = (modScopeHead + 1) % MOD_SCOPE_HISTORY;
+  if (modScopeCount < MOD_SCOPE_HISTORY) modScopeCount += 1;
+  modScopeLastAtMs = nowMs;
+
+  if (!isModulationScreenActive()) return;
+  if ((nowMs - modScopeRowsLastAtMs) >= MOD_SCOPE_ROWS_MIN_INTERVAL_MS) {
+    modScopeRowsLastAtMs = nowMs;
+    for (let i = 0; i < LFO_MAX; i += 1) refreshLfoRowMeter(i);
+  }
+  refreshLfoLiveReadout(false, nowMs);
+  drawLfoScope(nowMs);
+}
+
+function drawLfoScope(nowMs = performance.now()) {
+  const canvas = lfoScopeCanvasEl;
+  if (!canvas || !lfoScopeVisible || !isModulationScreenActive()) return;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  const m = getCanvasMetrics(canvas);
+  const { dpr, drawWidth, drawHeight, leftPad, rightPad } = m;
+  if (canvas.width !== drawWidth || canvas.height !== drawHeight) {
+    canvas.width = drawWidth;
+    canvas.height = drawHeight;
+  }
+  const topPad = 8 * dpr;
+  const bottomPad = drawHeight - (8 * dpr);
+  const usableWidth = Math.max(1, rightPad - leftPad);
+  const half = Math.max(1, (bottomPad - topPad) / 2);
+  const centerY = topPad + half;
+  const windowMs = MOD_SCOPE_WINDOW_SEC * 1000;
+  const xAt = (t) => leftPad + ((1 - ((nowMs - t) / windowMs)) * usableWidth);
+  const yAt = (v) => centerY - (clamp(v, -1, 1) * half);
+
+  ctx.clearRect(0, 0, drawWidth, drawHeight);
+  // Grid: centre, ±1 and one-second ticks.
+  ctx.lineWidth = Math.max(1, dpr);
+  ctx.strokeStyle = "rgba(233,227,214,0.10)";
+  ctx.beginPath();
+  ctx.moveTo(0, yAt(1)); ctx.lineTo(drawWidth, yAt(1));
+  ctx.moveTo(0, yAt(-1)); ctx.lineTo(drawWidth, yAt(-1));
+  for (let s = 1; s < MOD_SCOPE_WINDOW_SEC; s += 1) {
+    const x = leftPad + ((s / MOD_SCOPE_WINDOW_SEC) * usableWidth);
+    ctx.moveTo(x, topPad); ctx.lineTo(x, bottomPad);
+  }
+  ctx.stroke();
+  ctx.strokeStyle = "rgba(233,227,214,0.22)";
+  ctx.beginPath();
+  ctx.moveTo(0, centerY); ctx.lineTo(drawWidth, centerY);
+  ctx.stroke();
+
+  const count = modScopeCount;
+  const start = (modScopeHead - count + MOD_SCOPE_HISTORY) % MOD_SCOPE_HISTORY;
+  const slot = (k) => (start + k) % MOD_SCOPE_HISTORY;
+
+  // Beat grid from the engine's beat position (only while clock is present).
+  if (midiClockPresent && count > 1) {
+    ctx.beginPath();
+    let barPath = null;
+    for (let k = 1; k < count; k += 1) {
+      const a = slot(k - 1);
+      const b = slot(k);
+      const t = modScopeHistT[b];
+      if (nowMs - t > windowMs) continue;
+      const beatA = Math.floor(modScopeHistBeat[a]);
+      const beatB = Math.floor(modScopeHistBeat[b]);
+      if (beatB === beatA) continue;
+      const x = xAt(t);
+      if (beatB % 4 === 0) {
+        barPath = barPath || new Path2D();
+        barPath.moveTo(x, topPad); barPath.lineTo(x, bottomPad);
+      } else {
+        ctx.moveTo(x, topPad); ctx.lineTo(x, bottomPad);
+      }
+    }
+    ctx.strokeStyle = "rgba(207,230,255,0.16)";
+    ctx.stroke();
+    if (barPath) {
+      ctx.strokeStyle = "rgba(207,230,255,0.42)";
+      ctx.stroke(barPath);
+    }
+  }
+
+  const stale = (nowMs - modScopeLastAtMs) > MOD_SCOPE_STALE_MS;
+  const sel = selectedLfoIndex;
+  const traceOrder = [];
+  for (let i = 0; i < LFO_MAX; i += 1) if (i !== sel && lfoIsActive(lfoConfigs[i])) traceOrder.push(i);
+  if (lfoIsActive(lfoConfigs[sel])) traceOrder.push(sel);
+
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+  ctx.font = `${Math.round(9 * dpr)}px ${getComputedStyle(document.body).getPropertyValue("--mono") || "monospace"}`;
+  ctx.textBaseline = "middle";
+  if (!stale) {
+    traceOrder.forEach((i) => {
+      const isSel = i === sel;
+      const depthFrac = lfoDepthFractionSigned(lfoConfigs[i]);
+      const hist = modScopeHist[i];
+      ctx.strokeStyle = isSel ? LFO_PRIMARY_ACCENT : "rgba(207,230,255,0.38)";
+      ctx.lineWidth = Math.max(1, dpr * (isSel ? 2 : 1.2));
+      ctx.shadowBlur = isSel ? dpr * 5 : 0;
+      ctx.shadowColor = isSel ? LFO_PRIMARY_ACCENT : "transparent";
+      ctx.beginPath();
+      let pen = false;
+      let prevT = 0;
+      let lastX = null;
+      let lastY = null;
+      for (let k = 0; k < count; k += 1) {
+        const s = slot(k);
+        const t = modScopeHistT[s];
+        if (nowMs - t > windowMs) continue;
+        const x = xAt(t);
+        const y = yAt(hist[s] * depthFrac);
+        if (!pen || (t - prevT) > MOD_SCOPE_GAP_MS) {
+          ctx.moveTo(x, y);
+          pen = true;
+        } else {
+          ctx.lineTo(x, y);
+        }
+        prevT = t;
+        lastX = x;
+        lastY = y;
+      }
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+      if (lastX !== null) {
+        ctx.fillStyle = isSel ? LFO_PRIMARY_ACCENT : "rgba(207,230,255,0.6)";
+        ctx.textAlign = "right";
+        ctx.fillText(lfoNumberText(i), Math.min(lastX, rightPad) - (3 * dpr), clamp(lastY, topPad + (5 * dpr), bottomPad - (5 * dpr)));
+      }
+    });
+  }
+
+  if (lfoScopeLegendEl) {
+    const c = lfoConfigs[sel];
+    lfoScopeLegendEl.textContent = lfoIsActive(c)
+      ? `LFO ${lfoNumberText(sel)} · ${lfoTargetLabel(c)} · ${lfoRowSummary(c)}`
+      : `LFO ${lfoNumberText(sel)} · ${c.enabled ? (c.target === "none" ? "no target" : "depth 0") : "off"}`;
+  }
+  if (lfoScopeMetaEl) {
+    lfoScopeMetaEl.textContent = stale
+      ? "engine idle"
+      : `${MOD_SCOPE_WINDOW_SEC} s · ±depth · ${traceOrder.length} live`;
+  }
+}
+
+function isModulationScreenActive() {
+  return currentMainScreen === "mods";
+}
+
+function initModulationUi() {
+  buildLfoStrips();
+  lfoEditor = buildLfoEditor();
+  if (lfoScopeToggleEl) {
+    lfoScopeToggleEl.addEventListener("click", () => setLfoScopeVisible(!lfoScopeVisible));
+  }
+  if (lfoEditRunEl) {
+    lfoEditRunEl.addEventListener("click", () => toggleLfoEnabled(selectedLfoIndex));
+  }
+  if (lfoPrevEl) lfoPrevEl.addEventListener("click", () => selectLfo((selectedLfoIndex + LFO_MAX - 1) % LFO_MAX));
+  if (lfoNextEl) lfoNextEl.addEventListener("click", () => selectLfo((selectedLfoIndex + 1) % LFO_MAX));
+  if (lfoScopeBoxEl) lfoScopeBoxEl.hidden = !lfoScopeVisible;
+  if (lfoScopeToggleEl) lfoScopeToggleEl.setAttribute("aria-pressed", String(lfoScopeVisible));
+  if (window.spaluterApi?.onModScope) window.spaluterApi.onModScope(handleModScopeFrame);
+  redrawAllLfoViews();
+  updateLfoHint();
 }
 
 function lfoToIpc(index) {
@@ -3132,10 +3377,7 @@ function lfoToIpc(index) {
 function sendLfo(index) {
   window.spaluterApi.setLfo(index, lfoToIpc(index));
   updateLfoHint();
-  rebuildLfoOverview();
-  refreshLfoImpactMatrix(undefined, true);
   updateEditLfoMarkers();
-  if (isModulationScreenActive()) scheduleLfoCursor();
   // Re-evaluate synthetic scope-preview animation: starts it when a synthetic-view
   // target becomes active, and lets it settle the static scope when it stops.
   scheduleParamModAnim();
@@ -3193,50 +3435,10 @@ function applyLfoState(state) {
   }
   syncMidiClockLockedLfos(performance.now(), true);
   updateLfoHint();
-  rebuildLfoOverview();
-  refreshLfoImpactMatrix(undefined, true);
   updateEditLfoMarkers();
   syncLfosToEngine();
   scheduleParamModAnim();
   if (currentMainScreen === "edit") scheduleWaveformViewsRedraw();
-}
-
-function isModulationScreenActive() {
-  return currentMainScreen === "mods";
-}
-
-function isLfoStripVisible(stripEl) {
-  if (!stripEl || !lfoStripListEl) return false;
-  const viewTop = lfoStripListEl.scrollTop;
-  const viewBottom = viewTop + lfoStripListEl.clientHeight;
-  const top = stripEl.offsetTop;
-  const bottom = top + stripEl.offsetHeight;
-  return bottom >= (viewTop - 8) && top <= (viewBottom + 8);
-}
-
-function lfoCursorTick(timestamp) {
-  lfoCursorRafId = 0;
-  if (!isModulationScreenActive() || !hasAnyRunningLfo()) return;
-  if (timestamp - lfoCursorLast >= 50) {
-    lfoCursorLast = timestamp;
-    const now = performance.now() / 1000;
-    for (let i = 0; i < LFO_MAX; i += 1) {
-      const r = lfoStripEls[i];
-      const c = lfoConfigs[i];
-      if (!r || !isLfoStripVisible(r.strip)) continue;
-      refreshLfoStripImpact(i, now);
-      if (!lfoIsActive(c)) continue;
-      const cursorT = lfoRuntimePhase01(i, c, now);
-      drawLfoThumb(r.canvas, c, i, cursorT);
-    }
-    refreshLfoImpactMatrix(now);
-  }
-  scheduleLfoCursor();
-}
-
-function scheduleLfoCursor() {
-  if (lfoCursorRafId || !isModulationScreenActive() || !hasAnyRunningLfo()) return;
-  lfoCursorRafId = window.requestAnimationFrame(lfoCursorTick);
 }
 
 function handleMainScreenEntered(targetScreen) {
@@ -3249,9 +3451,8 @@ function handleMainScreenEntered(targetScreen) {
     updateEditLfoMarkers();
     scheduleParamModAnim();
   } else if (targetScreen === "mods") {
+    waveformLayoutDirty = true;
     redrawAllLfoViews();
-    refreshLfoImpactMatrix(undefined, true);
-    scheduleLfoCursor();
   } else if (targetScreen === "presets") {
     waveformLayoutDirty = true;
     renderPresetBank();
@@ -3260,14 +3461,6 @@ function handleMainScreenEntered(targetScreen) {
   refreshScopeStreamingState();
 }
 
-function initModulationUi() {
-  buildLfoStrips();
-  ensureLfoImpactMatrixRows();
-  lfoStripEls.forEach((r) => refreshLfoStrip(r.index));
-  refreshLfoImpactMatrix(undefined, true);
-  updateLfoHint();
-  rebuildLfoOverview();
-}
 
 function defaultPresetName(index) {
   return `Preset ${index + 1}`;
@@ -3643,6 +3836,7 @@ function setScopeStreaming(enabled) {
 function refreshScopeStreamingState() {
   const visible = document.visibilityState !== "hidden" && document.hasFocus();
   setScopeStreaming(visible);
+  refreshModScopeStreaming();
 }
 
 window.spaluterApi.onStatus((text) => {
