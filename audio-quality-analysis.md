@@ -98,10 +98,43 @@ Evidence-based audit of why the instrument sounds bad, and what to do about it.
 > 45 s, 62 -> 78 degC, 0 xruns, no crackle by ear, headroom rule removed (ALSA fill back
 > to 556 frames).
 >
-> **Still open from Tier 2/3:** §2.1 always-on graph (wavetables), §3.2 aliasing,
-> §3.3 formant ÷ duty, §3.5 timing jitter, §3.8 sub-sample onsets, §3.9. Integer
-> defaults were not changed: with the edge fade the 2.5/0.5 crossfades no longer
-> click, so that is now a matter of taste.
+> **Step 2 (2026-11-23/24): §2.1, §3.2, §3.3 and §3.5 done.** The graph is now a
+> Group of 4 clock synths, 12 stream synths (voice x formant) and a mixer that pauses
+> the nodes the voice and formant counts do not use; pulsarets and windows are
+> wavetables (10 shapes x 8 band-limited mip levels, 9 windows, built with `Signal.fft`
+> at load, top third of each band tapered with a raised cosine), the mip level is
+> latched per grain, formant frequency no longer divides by duty, and timing jitter
+> is a per-grain `TRand` on the grain onset. Same offline method, old graph against
+> new, all cases 3 s at 48 kHz, click = third-difference event:
+>
+> | Case | Clicks before | Clicks after | Above 16 kHz before | after | Note |
+> | --- | --- | --- | --- | --- | --- |
+> | saw pulsaret, pulse 50 Hz | 329 | 0 | -11.1 dB | -38.6 dB | band-limited tables |
+> | pitch slide 33 -> 588 Hz | 21 | 0 | -25.9 dB | -86.6 dB | |
+> | glisson sweep | 0 | 0 | -28.5 dB | -68.3 dB | |
+> | preset switch (shape, window, duty, formants, drive) | 1 | 0 | -39.1 dB | -58.9 dB | see the K2A note |
+> | formant 1000 Hz, single formant | 0 | 0 | peak 2000 Hz | peak 1000 Hz | §3.3 fixed, level identical (-20.0 dBFS) |
+> | defaults, steady | 0 | 0 | -57.7 dB | -92.9 dB | RMS -22.3 -> -28.8 dBFS (content, see below) |
+> | notes, gate, chord, counts, jitter | 0 | 0 | | | all unchanged at 0 |
+>
+> Found and fixed on the way: a control-rate wavetable offset added to an audio-rate
+> read index is ramped across the block by scsynth, so every pulsaret or window change
+> swept the read head through thousands of frames of the neighbouring tables (a 1.3 ms
+> noise burst, 5 events per morph case). Isolated with four one-synth test defs; the
+> fix is to convert the shape selector to audio rate first and take floor and fraction
+> per sample, which also keeps the crossfade continuous through the integer crossing.
+>
+> CPU: Mac, same load, back to back, old graph 12.6-13.7% at every count setting; new
+> graph 4.3% at 1v/3f, 2.3% at 1v/1f, 4.9% at 2v/2f, 11.9% at 4v/3f. Pi, defaults,
+> screen on, UI idle: scsynth 10.1% average, 13.5% peak (40-44% with step 2a), 0 xruns,
+> 20 s sink-monitor capture with 0 events.
+>
+> Audible changes: formants sit an octave lower than before at duty 0.5 (the §3.3
+> fix; presets will sound different), timing jitter now moves grain onsets instead of
+> adding noise, and the shipped defaults measure about 6 dB quieter because the 20 Hz
+> formant now completes half as many cycles per grain. Still open: §3.8 sub-sample
+> onsets, §3.9. Integer defaults were not changed: with the edge fade the 2.5/0.5
+> crossfades no longer click, so that is now a matter of taste.
 
 ## Method
 

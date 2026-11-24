@@ -2,16 +2,23 @@
 Spaluter-style pulsar synth recreation in SuperCollider.
 
 Run this whole file, then use:
-  ~spaluter = ~spaluterStart.();
-  ~spaluter.set(\voiceCount, 4, \chordType, 4); // Major
+  ~spaluter = ~spaluterStart.();            // returns a Group: 4 voice clocks, 12 grain streams, 1 mixer
+  ~spaluter.set(\voiceCount, 4, \chordType, 4); // Major (set on the group reaches every node)
   ~spaluter.set(\gateMode, 0, \gate, 1);        // MIDI-like held gate
   ~spaluter.set(\gate, 0);                       // release in gate modes 0/2
   ~spaluter.free;
-*/
 
+Graph (performance step 2): the pulsaret and window shapes are wavetables built at
+load time (band-limited pulsarets in 8 mip levels), each voice is a clock synth that
+publishes pulse phase, trigger, envelope and per-grain random values on an audio bus,
+each (voice, formant) pair is its own stream synth, and the mixer synth that sums,
+drives, scopes and outputs also pauses the stream and clock nodes the current voice
+and formant counts do not use. UGen count and CPU now follow the counts instead of
+being the 12-stream, 228-generator worst case at all times.
+*/
 (
 s.waitForBoot {
-    var ratioByVoice;
+    var ratioByVoice, tableSize, tableStride, nLevels, shapeCount, winCount;
 
     // 14 chord types, 4 ratios per chord (mirrors Spaluter layout)
     ratioByVoice = [
@@ -21,229 +28,305 @@ s.waitForBoot {
         [1.0, 8.0, 3.0, 4.0, 2.0, 2.0, 1.887749, 1.781797, 2.0, 1.781797, 2.0, 2.0, 2.996615, 2.519842]  // v3
     ];
 
-    SynthDef(\spaluterSC, {
-        |out=0, amp=0.2, gate=1, trigIn=0,
-        gateMode=1, basePitch=32.7032, voiceCount=1, chordType=0,
-        pulsaret=2.5, window=0.5, duty=0.5, dutyMode=0,
+    // ---------------------------------------------------------------------
+    // Wavetables. 10 pulsaret shapes x 8 mip levels and 9 window shapes, each
+    // tableSize points plus one guard point so BufRd's linear interpolation
+    // never crosses into the next table. Pulsaret level k keeps the first
+    // (512 >> k) harmonics; a stream picks the level whose top harmonic stays
+    // under 20 kHz at its current pulsaret rate, so saw/square/pulse shapes
+    // stop folding back over Nyquist the way the closed-form generators did.
+    // Built once per sclang session; the server keeps the buffers across
+    // Start/Stop, and the SynthDefs below bake the bufnums in as defaults.
+    // ---------------------------------------------------------------------
+    tableSize = 2048;
+    tableStride = tableSize + 1;
+    nLevels = 8;
+    shapeCount = 10;
+    winCount = 9;
+    if(~spaluterTablesReady.isNil) {
+        var cosTable, bandLimit, pulsaretFns, windowFns, pulsaretData, windowData, noise, seedRng;
+        cosTable = Signal.fftCosTable(tableSize);
+        // Keep harmonics up to h: a raised-cosine taper over the top third of the
+        // band and zero above it (and the mirror bins), back to time domain. A flat
+        // cut-off rang at the top harmonic on every saw/square edge (Gibbs); the
+        // taper trades a little brightness for a much quieter edge.
+        bandLimit = { |sig, h|
+            var c = sig.fft(Signal.newClear(tableSize), cosTable), back, h0 = (h * 2 / 3).floor;
+            (1 .. tableSize - 1).do { |k|
+                var m = min(k, tableSize - k), w;
+                w = case
+                    { m <= h0 } { 1.0 }
+                    { m <= h } { 0.5 * (1 + (pi * (m - h0) / (h - h0)).cos) }
+                    { 0.0 };
+                if(w < 1.0) { c.real[k] = c.real[k] * w; c.imag[k] = c.imag[k] * w };
+            };
+            back = c.real.ifft(c.imag, cosTable);
+            back.real;
+        };
+        // Deterministic noise table so every device and every render agree.
+        seedRng = Pseed(20251123, Pwhite(-1.0, 1.0, inf)).asStream;
+        noise = Signal.fill(tableSize, { seedRng.next });
+        pulsaretFns = [
+            { |p| (2pi * p).sin },                                               // 0 sine
+            { |p| (4pi * p).sin },                                               // 1 sine x2
+            { |p| (6pi * p).sin },                                               // 2 sine x3
+            { |p| var sx = (p - 0.5) * 8pi; if(sx.abs < 1e-6) { 1.0 } { sx.sin / sx } }, // 3 sinc
+            { |p| (1 - (4 * (p - 0.5).abs)).clip(-1, 1) },                      // 4 triangle
+            { |p| (p * 2) - 1 },                                                 // 5 saw
+            { |p| if(p < 0.5) { 1.0 } { -1.0 } },                                // 6 square
+            { |p| (6pi * p).sin * (p * -3).exp },                                // 7 formant-ish
+            { |p| ((((p - 0.5) * 20).squared.neg.exp) * 2) - 1 },               // 8 pulse
+            { |p, i| noise[i] }                                                  // 9 noise
+        ];
+        pulsaretData = FloatArray.newClear(shapeCount * nLevels * tableStride);
+        pulsaretFns.do { |fn, shape|
+            var raw = Signal.fill(tableSize, { |i| fn.value(i / tableSize, i) });
+            nLevels.do { |lvl|
+                var h = 512 >> lvl, tab = bandLimit.value(raw, h), base = ((shape * nLevels) + lvl) * tableStride;
+                tableSize.do { |i| pulsaretData[base + i] = tab[i] };
+                pulsaretData[base + tableSize] = tab[0]; // periodic guard point
+            };
+        };
+        windowFns = [
+            { |t| 1.0 },                                                         // 0 rectangular
+            { |t| (((t - 0.5) / 0.3).squared * 0.5).neg.exp },                   // 1 gaussian
+            { |t| 0.5 * (1 - (2pi * t).cos) },                                   // 2 hann
+            { |t| (t * -4).exp },                                                // 3 exp decay
+            { |t| 1 - t },                                                       // 4 linear decay
+            { |t| var a = 0.5; case                                              // 5 tukey alpha 0.5
+                { t < (a * 0.5) } { 0.5 * (1 - (2pi * t / a).cos) }
+                { t > (1 - (a * 0.5)) } { 0.5 * (1 - (2pi * (1 - t) / a).cos) }
+                { 1.0 } },
+            { |t| 0.35875 - (0.48829 * (2pi * t).cos) + (0.14128 * (4pi * t).cos) - (0.01168 * (6pi * t).cos) }, // 6 blackman-harris
+            { |t| ((1 - t) * -4).exp },                                          // 7 reverse exp
+            { |t| (1 - (2 * (t - 0.5).abs)).clip(0, 1) }                        // 8 triangle
+        ];
+        windowData = FloatArray.newClear(winCount * tableStride);
+        windowFns.do { |fn, w|
+            tableStride.do { |i| windowData[(w * tableStride) + i] = fn.value(i / tableSize) }; // t = 0..1 inclusive
+        };
+        ~spaluterPulsaretBuf = Buffer.loadCollection(s, pulsaretData, 1);
+        ~spaluterWindowBuf = Buffer.loadCollection(s, windowData, 1);
+        // Clock bus: 5 audio channels per voice (phase, trig, gain, jitter, pulse
+        // count) plus one control-rate channel per voice for the voice frequency,
+        // so everything derived from it in the streams stays control-rate.
+        // Mix bus: the streams' stereo sum before drive and output.
+        ~spaluterClockBus = Bus.audio(s, 4 * 5);
+        ~spaluterFreqBus = Bus.control(s, 4);
+        ~spaluterMixBus = Bus.audio(s, 2);
+        s.sync;
+        ~spaluterTablesReady = true;
+        ("spaluterSC tables: " ++ pulsaretData.size ++ " + " ++ windowData.size ++ " floats").postln;
+    };
+
+    // ---------------------------------------------------------------------
+    // Voice clock: one per voice. Everything the three formant streams of a
+    // voice must share leaves here on the clock bus, so the streams fire in
+    // step, share one envelope and one amplitude jitter, and stay in step
+    // after being paused and resumed by the mixer.
+    // ---------------------------------------------------------------------
+    SynthDef(\spaluterClock, {
+        |gate=1, trigIn=0, gateMode=1, basePitch=32.7032, voiceCount=1, chordType=0,
+        attackMs=10, releaseMs=200, glideMs=0, ampJitter=0,
+        modBus=0, clockBus=0, freqBus=0, voiceIdx=0|
+        var mod, atk, rel, glid, vc, mode, ctype, bPitch, ratio, freq, pulseFreq, trig, phase;
+        var envASR, envPulse, env, ampJ, vActive, gain, jitR, pulseCount, modeSm;
+        mod = In.kr(modBus, 20);
+        atk = (attackMs + mod[16]).max(0.1) * 0.001;
+        rel = (releaseMs + mod[17]).max(1.0) * 0.001;
+        glid = (glideMs + mod[18]).max(0.0) * 0.001;
+        vc = voiceCount.clip(1, 4);
+        mode = gateMode.clip(0, 2);        // 0=MIDI-like gate, 1=Free Run, 2=CV-like gate
+        ctype = chordType.clip(0, 13);
+        bPitch = basePitch.max(0.1) * mod[15].midiratio;
+        // ratioByVoice is 4 x 14; index voice*14 + chord into the flat table.
+        ratio = Select.kr((voiceIdx.clip(0, 3) * 14) + ctype, ratioByVoice.flat);
+        freq = Lag.kr(bPitch * ratio, glid).max(0.1);
+        pulseFreq = freq.clip(0.1, 14000);
+        trig = Impulse.ar(pulseFreq);
+        // Pulse phase is integrated, not elapsed-time x rate: a rate change
+        // bends the slope and the phase stays continuous (round 2 fix).
+        phase = Phasor.ar(trig, pulseFreq * SampleDur.ir, 0, 1, 0);
+        // Note envelopes at audio rate; the gate-mode switch crossfades over
+        // 10 ms instead of swapping envelopes inside a grain.
+        envASR = EnvGen.ar(Env.asr(atk, 1, rel, -4), Select.kr(mode, [gate, gate, (trigIn > 0)]));
+        envPulse = EnvGen.ar(Env.perc(atk, rel, 1, curve: -4), trig);
+        modeSm = Lag.kr(mode, 0.01);
+        env = SelectX.ar(modeSm, [envASR, envPulse, envASR]);
+        // Per-pulse amplitude jitter only attenuates, like the original.
+        ampJ = 1 - TRand.ar(0, (ampJitter + mod[12]).clip(0, 1), trig);
+        vActive = Lag.ar(K2A.ar(vc > voiceIdx), 0.01);
+        gain = env * ampJ * vActive;
+        // One random value per grain for the streams' onset jitter: real
+        // timing jitter moves each grain inside its period and leaves the
+        // average rate alone (the old LFNoise0 version was pitch FM that
+        // aliased above ~375 Hz).
+        jitR = TRand.ar(-1, 1, trig);
+        pulseCount = PulseCount.ar(trig);
+        Out.ar(clockBus + (voiceIdx * 5), [phase, trig, gain, jitR, pulseCount]);
+        // ReplaceOut: a control bus holds its value between cycles, so a summing
+        // Out.kr would accumulate the frequency without bound.
+        ReplaceOut.kr(freqBus + voiceIdx, freq);
+    }).add;
+
+    // ---------------------------------------------------------------------
+    // Grain stream: one per (voice, formant). Reads its voice clock, renders
+    // one formant's grains from the wavetables and writes a panned pair to
+    // the mix bus. Paused by the mixer while its voice or formant is off.
+    // ---------------------------------------------------------------------
+    SynthDef(\spaluterStream, {
+        |pulsaret=2.5, window=0.5, duty=0.5, dutyMode=0,
         formantCount=3, formant1=20, formant2=200, formant3=400, formantTrack=0,
         maskMode=0, maskAmount=0.5, burstOn=4, burstOff=4, perFormantMask=0,
-        attackMs=10, releaseMs=200, glideMs=0, drive=1.0,
-        pan1=0, pan2=0.5, pan3=(-0.5),
-        ampJitter=0, timingJitter=0, glisson=0,
+        glisson=0, timingJitter=0,
         useSample=0, bufnum=0, sampleRate=1.0,
-        scopeEnabled=1, scopeRate=20,
-        modBus=0|
-
-        var atk, rel, glid, vc, fc, mode, ctype, bPitch;
-        var fHzArr, panArr, voices, sig, mod;
-        var ampSm, driveSm, dutySm, pulsaretSm, windowSm, maskAmountSm, glissonSm, sampleRateSm;
-        var edgeSec = 0.0005, makeup = 2.0;
-        var scopeFrames, scopeBufL, scopeBufR, scopeWritePos, scopeReadPos, scopeValuesL, scopeValuesR, scopeTrig;
-
-        // Internal LFO modulation: read a 20-channel control bus. Each LFO
-        // synth writes to its target channel only while enabled; idle channels
-        // are held at 0 by \modClear, so an all-idle bus is identical to
-        // pre-mod behaviour. Channel order mirrors `modParams` in
-        // sc/runtime.scd. Continuous params add mod[i] before their existing
-        // clip; basePitch modulates multiplicatively in semitones via midiratio.
-        // Envelope times (atk/rel/glid) and sampleRate add their mod channels in
-        // native units (ms / rate) before conversion; EnvGen re-reads atk/rel on
-        // each grain/note retrigger so the modulation is audible per pulse.
+        pan1=0, pan2=0.5, pan3=(-0.5), basePitch=32.7032,
+        modBus=0, clockBus=0, freqBus=0, mixBus=0, voiceIdx=0, formantIdx=0|
+        var pBuf, wBuf, mod, clk, phase, trig, gain, jitR, pulseCount, freq, pulseFreq, bPitch, fc, fi;
+        var invDuty, baseRate, lvlRate, sampleIdxMul;
+        var dutySm, pulsaretSm, windowSm, maskAmountSm, glissonSm, sampleRateSm, trackOn, dutyOn, sampleOn, pfmOn;
+        var fOn, fBase, fTracked, fEff, dutyF, dutyStart, tp, edgeFrac, edgeEnv, tj;
+        var ratioF, glissonAmt, sweepMul, inRegion, regionTrig, wrate, wphase, lvl;
+        var psel, plo, pfrac, pidx, tabA, tabB, synthWave, sampleWave, src;
+        var wsel, wlo, wfrac, widx, winA, winB, win;
+        var randShared, randForm, rsel, maskStoch, total, burstOffset, idx, maskBurst, maskRaw, maskSm, grain, pan;
+        var edgeSec = 0.0005;
+        pBuf = \pulsaretBuf.kr(~spaluterPulsaretBuf.bufnum);
+        wBuf = \windowBuf.kr(~spaluterWindowBuf.bufnum);
         mod = In.kr(modBus, 20);
+        clk = In.ar(clockBus + (voiceIdx * 5), 5);
+        phase = clk[0]; trig = clk[1]; gain = clk[2]; jitR = clk[3]; pulseCount = clk[4];
+        // Voice frequency at control rate: with it, fEff, duty, the pulsaret
+        // base rate and the edge width are all control-rate (one value per
+        // block) instead of audio-rate chains in each of the twelve streams.
+        freq = In.kr(freqBus + voiceIdx, 1).max(0.1);
+        pulseFreq = freq.clip(0.1, 14000);
+        bPitch = basePitch.max(0.1) * mod[15].midiratio;
+        fc = formantCount.clip(1, 3);
+        fi = formantIdx.clip(0, 2);
 
-        // Control smoothing. Every continuous control used to land as a
-        // block-boundary step on each UI drag, MIDI CC, macro sweep or preset
-        // recall (measured as one hard sample jump per message); each now
-        // settles over ~20 ms. Switches (gate, modes, counts) stay instant,
-        // pitch keeps its own glide below, and the LFO bus is already lagged
-        // inside \spaluterLfo.
-        ampSm = Lag.ar(K2A.ar(amp), 0.02);
-        driveSm = Lag.kr(drive, 0.02);
+        // Control smoothing (~20 ms) on every continuous control, 10 ms on the
+        // switches, so a UI drag, CC, macro or preset recall is a ramp, not a step.
         dutySm = Lag.kr(duty, 0.02);
         pulsaretSm = Lag.kr(pulsaret, 0.02);
         windowSm = Lag.kr(window, 0.02);
         maskAmountSm = Lag.kr(maskAmount, 0.02);
         glissonSm = Lag.kr(glisson, 0.02);
         sampleRateSm = Lag.kr(sampleRate, 0.02);
+        trackOn = Lag.kr(formantTrack > 0.5, 0.01);
+        dutyOn = Lag.kr(dutyMode > 0.5, 0.01);
+        sampleOn = Lag.kr(useSample > 0.5, 0.01);
+        pfmOn = Lag.kr(perFormantMask > 0.5, 0.01);
 
-        atk = (attackMs + mod[16]).max(0.1) * 0.001;
-        rel = (releaseMs + mod[17]).max(1.0) * 0.001;
-        glid = (glideMs + mod[18]).max(0.0) * 0.001;
+        fOn = Lag.ar(K2A.ar(fc > fi), 0.01);
+        fBase = Select.kr(fi, [
+            Lag.kr(formant1, 0.02) + mod[5],
+            Lag.kr(formant2, 0.02) + mod[6],
+            Lag.kr(formant3, 0.02) + mod[7]
+        ]).clip(20, 8000);
+        fTracked = fBase * (freq / bPitch);
+        fEff = (fBase + ((fTracked - fBase) * trackOn)).clip(20, 12000);
+        dutyF = ((dutySm + mod[4]).clip(0.01, 1) + (((freq / fEff).clip(0.01, 1) - (dutySm + mod[4]).clip(0.01, 1)) * dutyOn)).max(0.001);
+        invDuty = 1 / dutyF;
+
+        // Grain onset: centred in the period, moved by the voice's per-grain
+        // random value scaled by timingJitter, never past the period's edges.
+        tj = (timingJitter + mod[13]).clip(0, 1);
+        dutyStart = (1 - dutyF) * (0.5 + (jitR * (tj * 0.5)));
+        tp = ((phase - dutyStart) * invDuty).clip(0, 1);
+
+        // Grain edge: smoothstep fade over the first and last ~0.5 ms of the
+        // duty region; exactly zero outside it (replaces the boolean duty gate).
+        edgeFrac = (edgeSec * pulseFreq * invDuty).clip(0.001, 0.5);
+        edgeEnv = (tp * (1 - tp) / (edgeFrac * (1 - edgeFrac))).min(1);
+        edgeEnv = edgeEnv * edgeEnv * (3 - (2 * edgeEnv));
+
+        // Pulsaret phase, integrated and reset where the duty region begins.
+        // Rate is pulseFreq x ratioF (= fEff), so the formant lands where the
+        // UI says: the old form divided by duty and put every formant an
+        // octave high at duty 0.5 (audio-quality-analysis.md 3.3).
+        ratioF = fEff / freq;
+        glissonAmt = (glissonSm + mod[14]).clip(-2, 2);
+        sweepMul = 2.pow(glissonAmt * (tp - 0.5));
+        inRegion = (phase >= dutyStart) * (phase < (dutyStart + dutyF));
+        regionTrig = ((inRegion - Delay1.ar(inRegion)) > 0) + trig;
+        baseRate = pulseFreq * ratioF;
+        wrate = baseRate * sweepMul * (1 + (tp * (glissonAmt * 2.log)));
+        wphase = Phasor.ar(regionTrig, wrate * SampleDur.ir, 0, 1, 0);
+
+        // Pulsaret: two table reads (adjacent shapes) and a crossfade, from the
+        // mip level whose top harmonic (512 >> level) stays under 20 kHz at the
+        // fastest rate the glisson sweep reaches. The level is latched at each
+        // grain start: switching tables mid-grain was a small click.
+        lvlRate = baseRate * (2 ** (glissonAmt.abs * 0.5));
+        lvl = (lvlRate.max(1) * (512 / 20000)).log2.ceil.clip(0, nLevels - 1);
+        lvl = Latch.ar(K2A.ar(lvl), regionTrig);
+        // Shape selection per sample. The server ramps a control-rate value
+        // across the block wherever it meets an audio-rate signal (K2A included),
+        // so a control-rate table offset swept the read index through thousands
+        // of frames of neighbouring tables on every shape change: a 1.3 ms burst
+        // of noise. Converting the selector first and taking floor and fraction
+        // at audio rate gives an exact integer offset at every sample and a
+        // fraction that stays continuous through the crossing.
+        psel = K2A.ar((pulsaretSm + mod[2]).clip(0, shapeCount - 1));
+        plo = psel.floor.min(shapeCount - 2);
+        pfrac = psel - plo;
+        pidx = wphase * tableSize;
+        tabA = BufRd.ar(1, pBuf, (((plo * nLevels) + lvl) * tableStride) + pidx, loop: 0, interpolation: 2);
+        tabB = BufRd.ar(1, pBuf, ((((plo + 1) * nLevels) + lvl) * tableStride) + pidx, loop: 0, interpolation: 2);
+        synthWave = tabA + ((tabB - tabA) * pfrac);
+        // BufRd wraps the index itself (loop: 1), so one multiply positions it.
+        sampleIdxMul = BufFrames.kr(bufnum) * (sampleRateSm + mod[19]).max(0.01);
+        sampleWave = BufRd.ar(1, bufnum, wphase * sampleIdxMul, loop: 1, interpolation: 2);
+        src = synthWave + ((sampleWave - synthWave) * sampleOn);
+
+        // Window: same two-read crossfade over tp (0..1 inclusive).
+        wsel = K2A.ar((windowSm + mod[3]).clip(0, winCount - 1));
+        wlo = wsel.floor.min(winCount - 2);
+        wfrac = wsel - wlo;
+        widx = tp * tableSize;
+        winA = BufRd.ar(1, wBuf, (wlo * tableStride) + widx, loop: 0, interpolation: 2);
+        winB = BufRd.ar(1, wBuf, ((wlo + 1) * tableStride) + widx, loop: 0, interpolation: 2);
+        win = winA + ((winB - winA) * wfrac);
+
+        // Masking. Hasher is -1..1; mapped to 0..1 before the compare.
+        randShared = Hasher.ar(pulseCount + (voiceIdx * 101));
+        randForm = Hasher.ar(pulseCount + (voiceIdx * 101) + (fi * 37));
+        rsel = randShared + ((randForm - randShared) * pfmOn);
+        maskStoch = (((rsel * 0.5) + 0.5) > (maskAmountSm + mod[8]).clip(0, 1));
+        total = (burstOn + burstOff).max(1);
+        burstOffset = Select.kr(perFormantMask > 0.5, [0, fi * (total / 3)]);
+        idx = (pulseCount + burstOffset) % total;
+        maskBurst = (idx < burstOn);
+        maskRaw = Select.ar(maskMode.clip(0, 2), [DC.ar(1), maskStoch, maskBurst]);
+        maskSm = Lag.ar(maskRaw, 0.003);
+
+        grain = src * win * edgeEnv * maskSm * fOn * gain;
+        pan = Select.kr(fi, [Lag.kr(pan1, 0.02) + mod[9], Lag.kr(pan2, 0.02) + mod[10], Lag.kr(pan3, 0.02) + mod[11]]).clip(-1, 1);
+        Out.ar(mixBus, Pan2.ar(grain, pan, 1.0));
+    }).add;
+
+    // ---------------------------------------------------------------------
+    // Mixer: sums the mix bus, normalises by the (lagged) counts, drive,
+    // scope, make-up and output. Keeps the name \spaluterSC because the
+    // runtime waits for that SynthDef before it calls ~spaluterStart. It also
+    // owns the node IDs of the clocks and streams and pauses each one 30 ms
+    // after its voice/formant goes off (after the 10 ms fade inside the node)
+    // and resumes it the instant the count brings it back.
+    // ---------------------------------------------------------------------
+    SynthDef(\spaluterSC, {
+        |out=0, amp=0.2, drive=1.0, voiceCount=1, formantCount=3,
+        scopeEnabled=1, scopeRate=20, modBus=0, mixBus=0,
+        clockIds = #[0, 0, 0, 0], streamIds = #[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]|
+        var mod, sig, vc, fc, ampSm, driveSm, makeup = 2.0, runGate;
+        var scopeFrames, scopeBufL, scopeBufR, scopeWritePos, scopeReadPos, scopeValuesL, scopeValuesR, scopeTrig;
+        mod = In.kr(modBus, 20);
         vc = voiceCount.clip(1, 4);
         fc = formantCount.clip(1, 3);
-        mode = gateMode.clip(0, 2);        // 0=MIDI-like gate, 1=Free Run, 2=CV-like gate
-        ctype = chordType.clip(0, 13);
-        bPitch = basePitch.max(0.1) * mod[15].midiratio;
-
-        fHzArr = [Lag.kr(formant1, 0.02) + mod[5], Lag.kr(formant2, 0.02) + mod[6], Lag.kr(formant3, 0.02) + mod[7]].collect({ |x| x.clip(20, 8000) });
-        panArr = [Lag.kr(pan1, 0.02) + mod[9], Lag.kr(pan2, 0.02) + mod[10], Lag.kr(pan3, 0.02) + mod[11]].collect({ |x| x.clip(-1, 1) });
-
-        voices = Mix.fill(4, { |vi|
-            var vActive, ratio, targetFreq, freq, jitMul, pulseFreq, trig;
-            var envASR, envPulse, env, ampJ, pulseCount, formants, vSig;
-
-            vActive = Lag.ar(K2A.ar(vc > vi), 0.01);
-            ratio = Select.kr(ctype, ratioByVoice[vi]);
-            targetFreq = bPitch * ratio;
-            freq = Lag.kr(targetFreq, glid).max(0.1);
-
-            // Approximate per-pulse timing jitter
-            jitMul = 1 + (LFNoise0.kr(freq.max(0.5)) * (0.2 * (timingJitter + mod[13]).clip(0, 1)));
-            pulseFreq = (freq * jitMul).clip(0.1, 14000);
-            trig = Impulse.ar(pulseFreq);
-
-            // MIDI-like note envelope (modes 0 and 2): a true gated ASR.
-            // Gate up (Note On) plays the attack to the sustain level and
-            // holds; gate down (Note Off) plays the release to silence.
-            // doneAction stays 0 so the persistent voice survives between
-            // notes. (Mode 1/Free Run uses the per-grain percussive env.)
-            // Audio-rate so a 10 ms attack is a ramp, not eight control-block
-            // steps (the stepped version popped on every note-on).
-            envASR = EnvGen.ar(Env.asr(atk, 1, rel, -4), Select.kr(mode, [gate, gate, (trigIn > 0)]));
-            envPulse = EnvGen.ar(Env.perc(atk, rel, 1, curve: -4), trig);
-            env = SelectX.ar(mode, [envASR, envPulse, envASR]);
-
-            // Per-pulse amplitude jitter (only attenuates, like original)
-            ampJ = 1 - TRand.ar(0, (ampJitter + mod[12]).clip(0, 1), trig);
-            pulseCount = PulseCount.ar(trig);
-
-            formants = Mix.fill(3, { |fi|
-                var fOn, fBase, fTracked, fEff, dutyF, dutyStart, phase, edgeFrac, edgeEnv, tp;
-                var ratioF, glissonAmt, sweepMul, inRegion, regionTrig, wrate, wphase, x, pulsaretWaves, winWaves;
-                var synthWave, sampleWave, src, win, randShared, randForm, rsel;
-                var maskStoch, total, burstOffset, idx, maskBurst, maskRaw, maskSm, grain;
-
-                // Formant on/off and the tracking/duty-mode switches fade over
-                // 10 ms instead of stepping mid-grain.
-                fOn = Lag.ar(K2A.ar(fc > fi), 0.01);
-                fBase = fHzArr[fi];
-                fTracked = fBase * (freq / bPitch);
-                fEff = Select.kr(formantTrack > 0.5, [fBase, fTracked]).clip(20, 12000).lag(0.01);
-
-                dutyF = Select.kr(dutyMode > 0.5, [
-                    (dutySm + mod[4]).clip(0.01, 1),
-                    (freq / fEff).clip(0.01, 1)
-                ]).lag(0.01);
-
-                // Pulse phase is integrated (Phasor) rather than computed as
-                // elapsed time x current rate. The old form jumped whenever
-                // pulseFreq changed mid-grain: every legato note, every note
-                // inside the previous note's release, every chord change and
-                // every timing-jitter step was a click. A rate change now only
-                // bends the slope; the phase itself is continuous.
-                phase = Phasor.ar(trig, pulseFreq * SampleDur.ir, 0, 1, 0);
-                dutyStart = (1 - dutyF) * 0.5;
-                tp = ((phase - dutyStart) / dutyF.max(0.001)).clip(0, 1);
-
-                // Grain edge: a smooth fade over the first and last ~0.5 ms of
-                // the duty region. tp is pinned to 0 before the
-                // region and to 1 after it, so this is exactly zero outside the
-                // grain and replaces the old boolean inDuty gate, which cut
-                // windows that do not reach zero (rectangular, exp decay,
-                // reverse exp, and every crossfade between shapes) with a hard
-                // step at both ends of every grain. Grains shorter than 1 ms
-                // get a full bell shape. Built as a clipped ramp pushed through
-                // a smoothstep rather than two cosines: this runs in all twelve
-                // formant streams at audio rate, and on the Pi the cosine
-                // version cost about 5 points of scsynth CPU.
-                edgeFrac = (edgeSec * pulseFreq / dutyF.max(0.001)).clip(0.001, 0.5);
-                edgeEnv = (tp * (1 - tp) / (edgeFrac * (1 - edgeFrac))).min(1);
-                edgeEnv = edgeEnv * edgeEnv * (3 - (2 * edgeEnv));
-
-                ratioF = fEff / freq.max(0.1);
-                glissonAmt = (glissonSm + mod[14]).clip(-2, 2);
-                sweepMul = 2.pow(glissonAmt * (tp - 0.5));
-                // Pulsaret phase, likewise integrated. The closed form was
-                // tp * ratioF * sweepMul, which jumped with every change of
-                // ratioF (pitch or formant) while a grain was sounding. Its
-                // time derivative is integrated instead, reset to zero where
-                // the duty region begins (and at the pulse trigger, which is
-                // the same instant when duty is 1). For constant parameters
-                // this is identical to the old form, including the glisson
-                // sweep; under changing parameters it stays continuous.
-                inRegion = (phase >= dutyStart) * (phase < (dutyStart + dutyF));
-                regionTrig = ((inRegion - Delay1.ar(inRegion)) > 0) + trig;
-                wrate = (pulseFreq / dutyF.max(0.001)) * ratioF * sweepMul * (1 + (tp * glissonAmt * 2.log));
-                wphase = Phasor.ar(regionTrig, wrate * SampleDur.ir, 0, 1, 0);
-                x = (wphase * 2pi);
-
-                pulsaretWaves = [
-                    x.sin,                                  // sine
-                    (x * 2).sin,                            // sine x2
-                    (x * 3).sin,                            // sine x3
-                    {
-                        var sx = (wphase - 0.5) * (8 * pi);
-                        Select.ar(sx.abs < 0.0001, [sx.sin / sx, DC.ar(1.0)]); // sinc
-                    }.value,
-                    (1 - (4 * (wphase - 0.5).abs)).clip(-1, 1),           // triangle
-                    (wphase * 2 - 1),                                      // saw
-                    Select.ar(wphase < 0.5, [DC.ar(1), DC.ar(-1)]),        // square
-                    ((x * 3).sin * ((wphase * 3).neg.exp)),                // formant-ish
-                    ((((wphase - 0.5) * 20).squared.neg.exp) * 2 - 1),     // pulse
-                    // Hasher is already bipolar (-1..1); the old "* 2 - 1" made
-                    // this -3..1: 3x the gain of every other shape with a -1 DC
-                    // offset, which thumped on selection and drove tanh one-sided.
-                    Hasher.ar(wphase * 1234.567)                           // noise
-                ];
-
-                synthWave = SelectX.ar((pulsaretSm + mod[2]).clip(0, 9), pulsaretWaves);
-                sampleWave = BufRd.ar(
-                    1, bufnum,
-                    (wphase * BufFrames.kr(bufnum) * (sampleRateSm + mod[19]).max(0.01)).wrap(0, BufFrames.kr(bufnum).max(2) - 1),
-                    loop: 1, interpolation: 2
-                );
-                src = Select.ar(useSample > 0.5, [synthWave, sampleWave]);
-
-                winWaves = [
-                    DC.ar(1.0),                                                   // rectangular
-                    ((((tp - 0.5) / 0.3).squared * 0.5).neg.exp),                 // gaussian
-                    0.5 * (1 - (2pi * tp).cos),                                   // hann
-                    ((tp * 4).neg.exp),                                            // exp decay
-                    (1 - tp),                                                      // linear decay
-                    { // tukey alpha=0.5
-                        var a = 0.5;
-                        Select.ar(tp < (a * 0.5), [
-                            Select.ar(tp > (1 - (a * 0.5)), [
-                                DC.ar(1.0),
-                                0.5 * (1 - (2pi * (1 - tp) / a).cos)
-                            ]),
-                            0.5 * (1 - (2pi * tp / a).cos)
-                        ])
-                    }.value,
-                    (0.35875 - (0.48829 * (2pi * tp).cos) + (0.14128 * (4pi * tp).cos) - (0.01168 * (6pi * tp).cos)), // blackman-harris
-                    (((1 - tp) * 4).neg.exp),                                      // reverse exp
-                    (1 - (2 * (tp - 0.5).abs)).clip(0, 1)                         // triangle
-                ];
-                win = SelectX.ar((windowSm + mod[3]).clip(0, 8), winWaves);
-
-                randShared = Hasher.ar(pulseCount + (vi * 101));
-                randForm = Hasher.ar(pulseCount + (vi * 101) + (fi * 37));
-                rsel = Select.ar(perFormantMask > 0.5, [randShared, randForm]);
-                // Hasher is -1..1; map it to 0..1 before comparing with the 0..1
-                // mask amount. Before this, amount 0 still dropped about half
-                // the grains and amount 1 dropped them all.
-                maskStoch = (((rsel * 0.5) + 0.5) > (maskAmountSm + mod[8]).clip(0, 1));
-
-                total = (burstOn + burstOff).max(1);
-                burstOffset = Select.kr(perFormantMask > 0.5, [0, fi * (total / 3)]);
-                idx = (pulseCount + burstOffset) % total;
-                maskBurst = (idx < burstOn);
-
-                maskRaw = Select.ar(maskMode.clip(0, 2), [DC.ar(1), maskStoch, maskBurst]);
-                maskSm = Lag.ar(maskRaw, 0.003);
-
-                grain = src * win * edgeEnv * maskSm * fOn;
-                Pan2.ar(grain, panArr[fi], 1.0)
-            });
-
-            // Normalisation divisors follow the count changes over 10 ms so a
-            // voice or formant count change is a fade, not a level step.
-            vSig = LeakDC.ar(formants / Lag.kr(fc, 0.01).max(1));
-            vSig = vSig * env * ampJ * vActive;
-            vSig
-        });
-
-        sig = voices / Lag.kr(vc, 0.01).max(1);
+        ampSm = Lag.ar(K2A.ar(amp), 0.02);
+        driveSm = Lag.kr(drive, 0.02);
+        // Divisors follow the counts over 10 ms so a count change is a fade.
+        sig = LeakDC.ar(In.ar(mixBus, 2)) / Lag.kr(fc, 0.01).max(1) / Lag.kr(vc, 0.01).max(1);
         sig = tanh(sig * (driveSm + mod[1]).clip(0.1, 4.0));
         scopeFrames = 64;
         scopeBufL = LocalBuf(scopeFrames, 1);
@@ -251,19 +334,20 @@ s.waitForBoot {
         scopeWritePos = Phasor.ar(0, 1, 0, scopeFrames, 0);
         BufWr.ar(sig[0] * 0.9, scopeBufL, scopeWritePos, loop: 1);
         BufWr.ar(sig[1] * 0.9, scopeBufR, scopeWritePos, loop: 1);
-        // The scope values are only ever consumed by SendReply.kr, so the 64
-        // readers per channel run at control rate: one read per block instead
-        // of one per sample. Identical output, ~1/64 the DSP cost.
+        // Control-rate readers: one read per block, consumed only by SendReply.
         scopeReadPos = (A2K.kr(scopeWritePos) - Array.series(scopeFrames, scopeFrames - 1, -1)).wrap(0, scopeFrames - 1);
         scopeValuesL = BufRd.kr(1, scopeBufL, scopeReadPos, loop: 1, interpolation: 1);
         scopeValuesR = BufRd.kr(1, scopeBufR, scopeReadPos, loop: 1, interpolation: 1);
         scopeTrig = Impulse.kr(scopeRate.clip(1, 60)) * (scopeEnabled > 0);
         SendReply.kr(scopeTrig, "/spaluter/scope", scopeValuesL ++ scopeValuesR);
-        // +6 dB make-up after the drive stage: with the defaults the output
-        // peaked at -16 dBFS, so users turned up downstream gain instead. The
-        // scope above still reads the pre-make-up signal, and the final
-        // Limiter in \spaluterReverb catches the top of the amp range.
+        // +6 dB make-up after the drive stage; the final Limiter lives in the
+        // reverb synth, the last node before the hardware.
         Out.ar(out, sig * makeup * (ampSm + mod[0]).max(0));
+        // Run gates: 1 while a node is wanted or still fading, 0 once it has
+        // been off for 30 ms. Pause.kr only acts on changes of its gate.
+        runGate = { |active| ((active + (Lag.kr(active, 0.03) > 0.0005)) > 0) };
+        4.do { |vi| Pause.kr(runGate.value(vc > vi), clockIds[vi]) };
+        12.do { |i| Pause.kr(runGate.value((vc > (i div: 3)) * (fc > (i % 3))), streamIds[i]) };
     }).add;
 
     // Zeroes the 16-channel modulation bus each control block so the LFO
@@ -537,25 +621,39 @@ s.waitForBoot {
 
     s.sync;
 
+    // Builds the whole voice: a Group holding 4 clocks, 12 streams and the
+    // mixer, created in one bundle in that order (clocks write the clock bus
+    // before the streams read it; the streams write the mix bus before the
+    // mixer reads it). The Group is what the runtime holds as ~spaluter: set
+    // reaches every node (names a node does not have are ignored by the
+    // server), free frees all of them, and \addAfter the group places the
+    // reverb after the mixer.
     ~spaluterStart = { |out=0, modBus=0, target, addAction=\addToHead|
-        Synth(\spaluterSC, [
+        var group, clocks, streams, mixer, msgs, shared;
+        var defaults = [
+            \amp, 0.25, \gateMode, 1, \voiceCount, 1, \chordType, 0,
+            \pulsaret, 2.5, \window, 0.5, \duty, 0.5,
+            \formantCount, 3, \formant1, 20, \formant2, 200, \formant3, 400,
+            \pan1, 0, \pan2, 0.5, \pan3, -0.5
+        ];
+        group = Group.basicNew(s);
+        clocks = 4.collect { Synth.basicNew(\spaluterClock, s) };
+        streams = 12.collect { Synth.basicNew(\spaluterStream, s) };
+        mixer = Synth.basicNew(\spaluterSC, s);
+        shared = [\modBus, modBus, \clockBus, ~spaluterClockBus.index, \freqBus, ~spaluterFreqBus.index, \mixBus, ~spaluterMixBus.index];
+        msgs = [group.newMsg(target, addAction)];
+        clocks.do { |node, vi| msgs = msgs.add(node.newMsg(group, shared ++ [\voiceIdx, vi], \addToTail)) };
+        streams.do { |node, i| msgs = msgs.add(node.newMsg(group, shared ++ [
+            \voiceIdx, i div: 3, \formantIdx, i % 3,
+            \pulsaretBuf, ~spaluterPulsaretBuf.bufnum, \windowBuf, ~spaluterWindowBuf.bufnum
+        ], \addToTail)) };
+        msgs = msgs.add(mixer.newMsg(group, shared ++ [
             \out, out,
-            \modBus, modBus,
-            \amp, 0.25,
-            \gateMode, 1,
-            \voiceCount, 1,
-            \chordType, 0,
-            \pulsaret, 2.5,
-            \window, 0.5,
-            \duty, 0.5,
-            \formantCount, 3,
-            \formant1, 20,
-            \formant2, 200,
-            \formant3, 400,
-            \pan1, 0,
-            \pan2, 0.5,
-            \pan3, -0.5
-        ], target, addAction);
+            \clockIds, clocks.collect(_.nodeID), \streamIds, streams.collect(_.nodeID)
+        ], \addToTail));
+        msgs = msgs.add(group.setMsg(*defaults));
+        s.listSendBundle(nil, msgs);
+        group
     };
 
     ~spaluterGui = {
