@@ -83,6 +83,10 @@ const MIDI_CLOCK_SMOOTHING_TICKS = 96;
 const MIDI_CLOCK_SYNC_MIN_INTERVAL_MS = 120;
 const MIDI_CLOCK_RATE_EPSILON = 0.0005;
 const DELAY_CLOCK_HZ_EPSILON = 0.0005;
+// MIDI clock readouts redraw at most this often, and the clock is declared
+// lost when no tick has arrived for this long (two beats at 30 BPM).
+const MIDI_CLOCK_READOUT_MIN_INTERVAL_MS = 250;
+const MIDI_CLOCK_LOST_AFTER_MS = 4000;
 const RENDERER_HEARTBEAT_MS = 1000;
 const DSP_CPU_STALE_MS = 3500;
 const DEBUG_FPS = false;
@@ -99,6 +103,9 @@ let midiClockBpm = null;
 let midiClockHz = null;
 const midiClockTickTimesMs = [];
 let midiClockLastSyncAtMs = 0;
+let midiClockReadoutLastAtMs = 0;
+let midiClockLostTimer = null;
+let midiClockPresent = false;
 let lastLoggedMidiGate = -1;
 let synthRunning = false;
 let waveformLayoutDirty = true;
@@ -1685,6 +1692,50 @@ function syncMidiClockLockedLfos(nowMs = performance.now(), force = false) {
   if (currentMainScreen === "edit") scheduleWaveformViewsRedraw();
 }
 
+function midiClockTempoText() {
+  return Number.isFinite(midiClockBpm) ? `${midiClockBpm.toFixed(1)} BPM` : null;
+}
+
+// Both tempo readouts (Mods hint line, VERB/DLY clock line) follow the clock
+// handler directly; they used to redraw only when an LFO was edited, so the
+// number on screen was whatever the tempo had been at the last edit.
+function refreshMidiClockReadouts(force = false, nowMs = performance.now()) {
+  if (!force && (nowMs - midiClockReadoutLastAtMs) < MIDI_CLOCK_READOUT_MIN_INTERVAL_MS) return;
+  midiClockReadoutLastAtMs = nowMs;
+  const tempo = midiClockTempoText();
+  updateLfoHint();
+  const dlyEl = document.getElementById("dlyClockBpm");
+  if (dlyEl) {
+    dlyEl.textContent = midiClockPresent
+      ? (tempo ? `${tempo} (locked)` : "detecting…")
+      : (tempo ? `${tempo} (stopped, last tempo held)` : "none detected");
+  }
+  if (isModulationScreenActive()) {
+    for (let i = 0; i < LFO_MAX; i += 1) {
+      if (lfoConfigs[i]?.useMidiClock && lfoStripEls[i]) refreshLfoStrip(i);
+    }
+  }
+}
+
+function markMidiClockLost() {
+  midiClockLostTimer = null;
+  if (!midiClockPresent) return;
+  midiClockPresent = false;
+  midiClockTickTimesMs.length = 0;
+  appendLog(`[MIDI] Clock stopped${Number.isFinite(midiClockBpm) ? ` (holding ${midiClockBpm.toFixed(1)} BPM)` : ""}.`);
+  refreshMidiClockReadouts(true);
+}
+
+function noteMidiClockPresent() {
+  if (!midiClockPresent) {
+    midiClockPresent = true;
+    appendLog("[MIDI] Clock detected on an input.");
+    refreshMidiClockReadouts(true);
+  }
+  if (midiClockLostTimer) clearTimeout(midiClockLostTimer);
+  midiClockLostTimer = window.setTimeout(markMidiClockLost, MIDI_CLOCK_LOST_AFTER_MS);
+}
+
 function resetMidiClockTracking() {
   midiClockTickTimesMs.length = 0;
   midiClockLastSyncAtMs = 0;
@@ -1692,15 +1743,22 @@ function resetMidiClockTracking() {
   midiClockHz = null;
 }
 
-function handleMidiRealtimeMessage(status) {
+function handleMidiRealtimeMessage(status, eventTimeMs) {
   if (status === MIDI_STATUS_START || status === MIDI_STATUS_CONTINUE || status === MIDI_STATUS_STOP) {
-    resetMidiClockTracking();
-    syncDelayClockParam(true);
+    // Transport messages only restart the tick window. The last tempo is kept:
+    // clearing it sent the delay back to Base Time for the eight ticks the
+    // estimate needs, an audible warble on every Start, and left the synced
+    // LFOs at their old rate anyway.
+    midiClockTickTimesMs.length = 0;
+    midiClockLastSyncAtMs = 0;
     return;
   }
   if (status !== MIDI_STATUS_CLOCK) return;
 
-  const nowMs = performance.now();
+  // Web MIDI stamps each event when it arrived at the port; using that instead
+  // of the handler's run time keeps UI load out of the tempo estimate.
+  const nowMs = Number.isFinite(eventTimeMs) ? eventTimeMs : performance.now();
+  noteMidiClockPresent();
   midiClockTickTimesMs.push(nowMs);
   if (midiClockTickTimesMs.length > MIDI_CLOCK_SMOOTHING_TICKS) midiClockTickTimesMs.shift();
   if (midiClockTickTimesMs.length < 8) return;
@@ -1720,6 +1778,7 @@ function handleMidiRealtimeMessage(status) {
   midiClockHz = bpm / 60;
   syncMidiClockLockedLfos(nowMs);
   syncDelayClockParam();
+  refreshMidiClockReadouts(false, nowMs);
 }
 
 function releaseActiveMidiNote(noteNumber) {
@@ -1947,7 +2006,7 @@ function handleMidiMessage(event) {
   scheduleMidiRawReport();
   const status = data[0] | 0;
   if (status >= MIDI_STATUS_CLOCK) {
-    handleMidiRealtimeMessage(status);
+    handleMidiRealtimeMessage(status, event.timeStamp);
     return;
   }
   if (data.length < 3) return;
@@ -2971,7 +3030,8 @@ function updateLfoHint() {
   const active = lfoActiveCount();
   if (lfoActiveCountEl) lfoActiveCountEl.textContent = String(active);
   if (lfoCountHintEl) {
-    const tempoText = Number.isFinite(midiClockBpm) ? ` · MIDI ${midiClockBpm.toFixed(1)} BPM` : "";
+    const tempo = midiClockTempoText();
+    const tempoText = tempo ? ` · MIDI ${tempo}${midiClockPresent ? "" : " (clock stopped)"}` : "";
     lfoCountHintEl.textContent = `${active} running · tap controls to edit shape, depth, and target${tempoText}`;
   }
 }

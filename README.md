@@ -75,7 +75,7 @@ To make modulation audibility easier to verify, the UI now includes:
 - **Per-LFO target delta panel** (inside each LFO card): shows `Base → Live` target value plus instantaneous `ΔLFO` and summed `Σ` modulation.
 - **Impact matrix** (above LFO cards): compact row-per-LFO view showing current target and signed modulation amount.
 - **Edit-screen live markers**: when an LFO targets a parameter with a slider, a live marker overlays that slider to show the effective modulated value in real time while preserving the base setting.
-- **Exponential rate fader**: in free-run mode (MIDI clock off), the LFO rate fader follows an exponential curve so the lower, more musical rates get most of the slider travel (≈ the bottom three-quarters covers up to ~3 Hz); the full range is still 0.01–20 Hz. In MIDI clock mode the rate is derived from the incoming clock × the div/mult ratio instead, and the fader is locked.
+- **Exponential rate fader**: in free-run mode (MIDI clock off), the LFO rate fader follows an exponential curve so the lower, more musical rates get most of the slider travel (≈ the bottom three-quarters covers up to ~3 Hz); the full range is still 0.01–20 Hz. In MIDI clock mode the rate is derived from the incoming clock × the div/mult ratio instead, and the fader is locked. The hint line under the LFO cards and the clock line on the VERB/DLY screen show the incoming tempo live ("clock stopped" / "last tempo held" once ticks stop for 4 s), and the log gets a line when clock is first detected and when it stops. Start, Continue and Stop restart the tempo estimate without discarding the last value, so a synced delay does not jump back to Base Time at every transport start.
 
 ## The VERB/DLY screen
 
