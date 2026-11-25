@@ -222,10 +222,22 @@ input.edit-slider{ height:30px; border:none; background:transparent; }
 .synth-section .ctl{ flex:0 0 auto; grid-template-columns:118px 44px minmax(0,1fr) 44px 70px; gap:8px; min-height:48px; border-bottom:1px solid var(--line); }
 .synth-section .ctl:last-child{ border-bottom:none; }
 .synth-section .ctl.sel{ grid-template-columns:118px minmax(0,1fr); }
-.synth-section .ctl.sel .opts{ grid-column:2 / -1; }
-.synth-section .ctl.sel .opt{ min-height:44px; font-size:12px; }
-.synth-section .ctl.chips .opts{ flex-wrap:wrap; padding:4px 0; }
-.synth-section .ctl.chips .opt{ flex:0 0 calc((100% - 31px) / 7); }
+/* Segmented buttons: the <button> stays a 44 px touch target, but the visible
+   button is a ::before inset inside it, so the drawn face is 34 px tall with
+   air around it. State colours go on the face, not the hit area. */
+.synth-section .ctl.sel .opts{ grid-column:2 / -1; gap:0; }
+.synth-section .ctl.sel .opt{ position:relative; min-height:44px; padding:5px 10px; font-size:11.5px;
+  background:transparent !important; border-color:transparent !important; color:var(--mute-2); z-index:0; }
+.synth-section .ctl.sel .opt::before{ content:""; position:absolute; inset:5px 4px; z-index:-1;
+  background:transparent; border:1px solid var(--line-2); }
+.synth-section .ctl.sel .opt:hover::before{ border-color:var(--mute-2); }
+.synth-section .ctl.sel .opt.on{ color:#0a0a0a; }
+.synth-section .ctl.sel .opts[data-accent="shock"] .opt.on::before{ background:var(--shock); border-color:var(--shock); }
+.synth-section .ctl.sel .opts[data-accent="acid"] .opt.on::before{ background:var(--acid); border-color:var(--acid); }
+.synth-section .ctl.sel .opts[data-accent="ice"] .opt.on::before{ background:var(--ice); border-color:var(--ice); }
+.synth-section .ctl.sel .opts[data-accent="ok"] .opt.on::before{ background:var(--ok); border-color:var(--ok); }
+.synth-section .ctl.chips .opts{ flex-wrap:wrap; }
+.synth-section .ctl.chips .opt{ flex:0 0 calc(100% / 7); }
 .synth-section .ctl[hidden]{ display:none; }
 .synth-section .ctl .nm{ font-size:12px; display:flex; flex-direction:column; justify-content:center; gap:2px; min-height:40px; white-space:normal; line-height:1.1; cursor:default; }
 .synth-section .ctl .nm .synth-cc{ display:none; font-family:var(--mono); font-size:9px; font-weight:400; letter-spacing:.05em; text-transform:none;
@@ -240,9 +252,11 @@ input.edit-slider{ height:30px; border:none; background:transparent; }
 .synth-lfo.on{ display:inline-block; }
 .synth-section .ctl .val{ font-size:13px; font-family:var(--din); font-weight:700; }
 .synth-section .ctl.ctl-disabled .val{ color:var(--mute); }
-.synth-nudge{ min-height:40px; height:40px; padding:0; font-family:var(--dinc); font-size:22px; line-height:1; background:transparent;
-  border:1px solid var(--line-2); color:var(--paper-2); }
-.synth-nudge:active{ background:var(--ink-3); border-color:var(--shock); }
+/* Nudge buttons: 44 px hit area, 30 px drawn face. */
+.synth-nudge{ position:relative; min-height:44px; height:44px; padding:0; font-family:var(--dinc); font-size:20px; line-height:1;
+  background:transparent; border:none; color:var(--paper-2); z-index:0; }
+.synth-nudge::before{ content:""; position:absolute; inset:7px; z-index:-1; border:1px solid var(--line-2); background:transparent; }
+.synth-nudge:active::before{ background:var(--ink-3); border-color:var(--shock); }
 .synth-section .ctl.ctl-disabled .synth-nudge{ pointer-events:none; opacity:.6; }
 .synth-section .edit-slider-wrap{ height:44px; }
 .synth-section input.edit-slider{ height:44px; }
