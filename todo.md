@@ -1,4 +1,3 @@
-1. create a mode where formants are quantized to consonant values of the value of formant 1
 1. fix delay tap
 1. fix the sound of the reverb
 1. if BPM detected, show it across all screens
