@@ -174,9 +174,14 @@ s.waitForBoot {
     // one formant's grains from the wavetables and writes a panned pair to
     // the mix bus. Paused by the mixer while its voice or formant is off.
     // ---------------------------------------------------------------------
+    // Consonant interval table for quantized formants (just intonation), shared
+    // with the renderer's FORMANT_RATIOS: index 2 is unison, 6 the fifth, 8 the octave.
+    ~spaluterFormantRatios = [1/2, 3/4, 1, 6/5, 5/4, 4/3, 3/2, 5/3, 2, 5/2, 3, 4, 5, 6];
+
     SynthDef(\spaluterStream, {
         |pulsaret=2.5, window=0.5, duty=0.5, dutyMode=0,
         formantCount=3, formant1=20, formant2=200, formant3=400, formantTrack=0,
+        formantQuant=0, formantInterval2=6, formantInterval3=8,
         maskMode=0, maskAmount=0.5, burstOn=4, burstOff=4, perFormantMask=0,
         glisson=0, timingJitter=0,
         useSample=0, bufnum=0, sampleRate=1.0,
@@ -186,6 +191,7 @@ s.waitForBoot {
         var invDuty, baseRate, lvlRate, sampleIdxMul;
         var dutySm, pulsaretSm, windowSm, maskAmountSm, glissonSm, sampleRateSm, trackOn, dutyOn, sampleOn, pfmOn;
         var fOn, fBase, fTracked, fEff, dutyF, dutyStart, tp, edgeFrac, edgeEnv, tj;
+        var f1Sm, quantOn, ratio2, ratio3, f2Free, f3Free;
         var ratioF, glissonAmt, sweepMul, inRegion, regionTrig, wrate, wphase, lvl;
         var psel, plo, pfrac, pidx, tabA, tabB, synthWave, sampleWave, src;
         var wsel, wlo, wfrac, widx, winA, winB, win;
@@ -219,10 +225,20 @@ s.waitForBoot {
         pfmOn = Lag.kr(perFormantMask > 0.5, 0.01);
 
         fOn = Lag.ar(K2A.ar(fc > fi), 0.01);
+        // Quantized formants: with formantQuant on, formants 2 and 3 sit at a
+        // just-intonation ratio of formant 1 (indices into ~spaluterFormantRatios)
+        // instead of their own Hz; their LFO offsets still add, as a detune.
+        // The ratio and the switch are lagged so a change is a 20 ms glide.
+        f1Sm = Lag.kr(formant1, 0.02);
+        quantOn = Lag.kr(formantQuant > 0.5, 0.02);
+        ratio2 = Lag.kr(Select.kr(formantInterval2.clip(0, ~spaluterFormantRatios.size - 1), ~spaluterFormantRatios), 0.02);
+        ratio3 = Lag.kr(Select.kr(formantInterval3.clip(0, ~spaluterFormantRatios.size - 1), ~spaluterFormantRatios), 0.02);
+        f2Free = Lag.kr(formant2, 0.02);
+        f3Free = Lag.kr(formant3, 0.02);
         fBase = Select.kr(fi, [
-            Lag.kr(formant1, 0.02) + mod[5],
-            Lag.kr(formant2, 0.02) + mod[6],
-            Lag.kr(formant3, 0.02) + mod[7]
+            f1Sm + mod[5],
+            f2Free + (((f1Sm * ratio2) - f2Free) * quantOn) + mod[6],
+            f3Free + (((f1Sm * ratio3) - f3Free) * quantOn) + mod[7]
         ]).clip(20, 8000);
         fTracked = fBase * (freq / bPitch);
         fEff = (fBase + ((fTracked - fBase) * trackOn)).clip(20, 12000);
@@ -672,6 +688,7 @@ s.waitForBoot {
             \amp, 0.25, \gateMode, 1, \voiceCount, 1, \chordType, 0,
             \pulsaret, 2.5, \window, 0.5, \duty, 0.5,
             \formantCount, 3, \formant1, 20, \formant2, 200, \formant3, 400,
+            \formantQuant, 0, \formantInterval2, 6, \formantInterval3, 8,
             \pan1, 0, \pan2, 0.5, \pan3, -0.5
         ];
         group = Group.basicNew(s);

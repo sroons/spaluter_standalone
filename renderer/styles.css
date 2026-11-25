@@ -236,6 +236,17 @@ input.edit-slider{ height:30px; border:none; background:transparent; }
 .synth-section .ctl.sel .opts[data-accent="acid"] .opt.on::before{ background:var(--acid); border-color:var(--acid); }
 .synth-section .ctl.sel .opts[data-accent="ice"] .opt.on::before{ background:var(--ice); border-color:var(--ice); }
 .synth-section .ctl.sel .opts[data-accent="ok"] .opt.on::before{ background:var(--ok); border-color:var(--ok); }
+/* Two segmented controls in one 48 px row (Track Pitch | Quantize). */
+.synth-section .ctl.sel.dual{ grid-template-columns:1fr 1fr; gap:16px; }
+.synth-section .ctl.sel.dual .sub{ display:grid; grid-template-columns:118px minmax(0,1fr); align-items:center; gap:8px; min-height:48px; }
+.synth-section .ctl.sel.dual .sub .opts{ grid-column:2; }
+.synth-section .ctl.sel.dual .sub.ctl-disabled{ opacity:.45; }
+.synth-section .ctl.sel.dual .sub.ctl-disabled .opt{ pointer-events:none; }
+.synth-section .ctl.sel.dual .sub[hidden]{ display:none; }
+/* Interval rows: 14 ratio chips across one 48 px row. */
+.synth-section .ctl.chips14 .opt{ padding:5px 2px; font-size:11px; letter-spacing:0; }
+.synth-section .ctl.chips14 .opt::before{ inset:5px 2px; }
+.synth-hz{ font-family:var(--mono); font-size:9px; letter-spacing:.04em; color:var(--mute-2); text-transform:none; font-weight:400; }
 .synth-section .ctl.chips .opts{ flex-wrap:wrap; }
 .synth-section .ctl.chips .opt{ flex:0 0 calc(100% / 7); }
 .synth-section .ctl[hidden]{ display:none; }

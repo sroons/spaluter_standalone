@@ -33,6 +33,7 @@ The Synth screen (internally still screen id `edit`) holds every engine paramete
 - **Section rail (left).** Four tabs, Engine, Formants, Grain (mask + texture) and Voice, each with a live two-to-three-line summary of its key values, so the state of the whole patch can be read without opening each section. The selected section is remembered between sessions.
 - **One section at a time (right)** as full-width rows: parameter name · `−` · slider · `+` · value. Rows are 48 px, sliders about 520 px long, segmented buttons 44 px. The `−`/`+` buttons step by the control's own step, or by 1 below 200 and 10 above for the wide Hz/ms ranges, and repeat while held. Double-tap a parameter name to reset it to its default (the row flashes). Chord is a two-row grid of chips instead of a dropdown.
 - **Dependent controls follow the engine.** Burst On/Off only appear in Burst mask mode; Mask Amount is greyed unless the mask is Stochastic and Per-Formant unless a mask is on; Formant 2/3 and Pan 2/3 grey out beyond the formant count; Duty greys out in Formant duty mode; Chord greys out with one voice.
+- **Quantized formants.** The **Quantize** switch in the Formants section (next to Track Pitch) locks Formants 2 and 3 to a consonant interval of Formant 1. Their Hz sliders are replaced by Interval rows of 14 just-intonation ratios (`1/2 · 3/4 · 1/1 · 6/5 · 5/4 · 4/3 · 3/2 · 5/3 · 2/1 · 5/2 · 3/1 · 4/1 · 5/1 · 6/1`), each row showing the Hz that results. Formant 1 then carries the other two with it, whether moved by its slider, an LFO, MIDI or a preset, and pitch tracking applies to the result. Tapping Quantize on snaps each interval to the ratio nearest the formant's current Hz; tapping it off writes the quantized Hz back into the sliders, so the switch never jumps the sound (presets and MIDI set the switch without snapping). LFOs on Formant 2 or 3 still apply in quantized mode, as a detune around the interval. The Interval rows have no CC of their own: the controller bound to Formant 2 (default CC 27) moves its Hz when free and steps through its ratios when quantized, and MIDI learn on an Interval row binds the formant's CC. The engine clips every formant at 8 kHz, so a high ratio on a high Formant 1 flattens there.
 - **Previews.** The Engine section carries the pulsaret, window and duty previews across its top. Each reflects the current parameter values and, while an LFO drives one of them, animates with the modulation.
 - **LFO badges.** A parameter that an LFO is driving shows an orange `LFO` tag under its name and a live marker on its slider at the modulated value. Tapping the tag opens the Mods screen with that LFO selected.
 - **MIDI learn.** The **MIDI learn** button in the section header shows each row's CC assignment as a tag. Tap a parameter name (it reads "waiting for CC…"), move a controller on MIDI channel 1, and that CC is bound to the parameter; a CC that was bound to another parameter moves. Tap a `CC n ×` tag to clear it. Assignments persist in local storage and apply to every parameter, including the segmented ones (a CC sweeps through their options).
@@ -116,6 +117,9 @@ Effect params are sent over the same `/spaluter/set` path as every other paramet
 | dutyMode | 23 |
 | formantCount | 24 |
 | formantTrack | 25 |
+| formantQuant | 63 |
+| formantInterval2 | shares formant2's CC |
+| formantInterval3 | shares formant3's CC |
 | formant1 | 26 |
 | formant2 | 27 |
 | formant3 | 28 |

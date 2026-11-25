@@ -139,7 +139,7 @@ const PARAM_PAGE_DEFINITIONS = Object.freeze([
   },
   {
     title: "Formants",
-    params: ["formantCount", "formantTrack", "formant1", "formant2", "formant3", "pan1", "pan2", "pan3"]
+    params: ["formantCount", "formantTrack", "formantQuant", "formant1", "formant2", "formantInterval2", "formant3", "formantInterval3", "pan1", "pan2", "pan3"]
   },
   {
     title: "Mask",
@@ -229,6 +229,7 @@ const PREFERRED_MIDI_CC_BY_PARAM = Object.freeze({
   dutyMode: 23,
   formantCount: 24,
   formantTrack: 25,
+  formantQuant: 63,
   formant1: 26,
   formant2: 27,
   formant3: 28,
@@ -321,7 +322,7 @@ const SYNTH_SUMMARY_DEBOUNCE_MS = 120;
 const SYNTH_HINT_DEFAULT = "double-tap a name to reset it";
 const SYNTH_HINT_LEARN = "tap a name, then move a controller · tap a CC tag to clear it";
 // Which rows depend on another control, keyed by the row's data-depends value.
-const SYNTH_DEPENDENCY_DRIVERS = new Set(["dutyMode", "maskMode", "formantCount", "voiceCount"]);
+const SYNTH_DEPENDENCY_DRIVERS = new Set(["dutyMode", "maskMode", "formantCount", "voiceCount", "formantQuant"]);
 
 const synthLayoutEl = document.querySelector(".synth-layout");
 const synthRailEl = document.getElementById("synthRail");
@@ -438,20 +439,103 @@ function refreshSynthDependencies() {
   const maskMode = Math.round(currentParamValue("maskMode", 0));
   const formantCount = Math.round(currentParamValue("formantCount", 3));
   const voiceCount = Math.round(currentParamValue("voiceCount", 1));
+  const quantOn = currentParamValue("formantQuant", 0) > 0.5;
   const rules = {
     duty: { disabled: dutyMode >= 1 },
     formant2: { disabled: formantCount < 2 },
     formant3: { disabled: formantCount < 3 },
+    formant2free: { hidden: quantOn, disabled: formantCount < 2 },
+    formant3free: { hidden: quantOn, disabled: formantCount < 3 },
+    interval2: { hidden: !quantOn, disabled: formantCount < 2 },
+    interval3: { hidden: !quantOn, disabled: formantCount < 3 },
     maskOn: { disabled: maskMode === 0 },
     maskStochastic: { disabled: maskMode !== 1 },
     maskBurst: { hidden: maskMode !== 2 },
     chord: { disabled: voiceCount < 2 }
   };
-  document.querySelectorAll(".synth-section .ctl[data-depends]").forEach((row) => {
+  document.querySelectorAll(".synth-section .ctl[data-depends], .synth-section .ctl .sub[data-depends]").forEach((row) => {
     const rule = rules[row.dataset.depends] || {};
     row.hidden = Boolean(rule.hidden);
     row.classList.toggle("ctl-disabled", Boolean(rule.disabled) && !rule.hidden);
   });
+  refreshSynthIntervalHz();
+}
+
+// ── quantized formants ──────────────────────────────────────────────────────
+// Must match ~spaluterFormantRatios in spaluter_supercollider.scd.
+const FORMANT_RATIOS = [1 / 2, 3 / 4, 1, 6 / 5, 5 / 4, 4 / 3, 3 / 2, 5 / 3, 2, 5 / 2, 3, 4, 5, 6];
+// The interval rows share the MIDI CC of the formant they replace: one
+// controller moves Formant 2's Hz when free and steps through its ratios
+// when quantized. midiMappings never holds an entry for the interval params.
+const MIDI_CC_ALIAS = { formantInterval2: "formant2", formantInterval3: "formant3" };
+const MIDI_CC_QUANT_REDIRECT = { formant2: "formantInterval2", formant3: "formantInterval3" };
+function midiMappingOwner(param) { return MIDI_CC_ALIAS[param] || param; }
+// Where a CC bound to `param` should land right now.
+function midiCcTargetParam(param) {
+  const redirect = MIDI_CC_QUANT_REDIRECT[param];
+  return redirect && formantQuantOn() ? redirect : param;
+}
+const FORMANT_QUANT_PARAMS = new Set(["formant1", "formant2", "formant3", "formantQuant", "formantInterval2", "formantInterval3", "formantCount"]);
+
+function formantQuantOn() {
+  return currentParamValue("formantQuant", 0) > 0.5;
+}
+
+function formantRatioForIndex(idx) {
+  return FORMANT_RATIOS[clamp(Math.round(Number(idx) || 0), 0, FORMANT_RATIOS.length - 1)];
+}
+
+function nearestFormantRatioIndex(ratio) {
+  const r = Math.max(Number(ratio) || 1, 1e-6);
+  let best = 0;
+  let bestDist = Infinity;
+  FORMANT_RATIOS.forEach((cand, i) => {
+    const d = Math.abs(Math.log(r / cand));
+    if (d < bestDist) { bestDist = d; best = i; }
+  });
+  return best;
+}
+
+// Quantized Hz for formant 2 or 3 (before LFO offsets), from formant 1 and the interval.
+function quantizedFormantHz(n) {
+  const f1 = currentParamValue("formant1", 20);
+  return clamp(f1 * formantRatioForIndex(currentParamValue(`formantInterval${n}`, n === 2 ? 6 : 8)), 20, 8000);
+}
+
+function refreshSynthIntervalHz() {
+  [2, 3].forEach((n) => {
+    const refs = synthRowByParam.get(`formantInterval${n}`);
+    if (!refs || !refs.hzEl) return;
+    refs.hzEl.textContent = formantQuantOn() ? `${Math.round(quantizedFormantHz(n))} Hz` : "";
+  });
+}
+
+// User tap on the Quantize switch (not presets or MIDI): keep the sound where
+// it is. Turning on picks the nearest ratio to each free formant; turning off
+// writes the quantized Hz back into the sliders.
+function snapFormantsForQuantToggle(turningOn) {
+  const f1 = Math.max(currentParamValue("formant1", 20), 1e-6);
+  [2, 3].forEach((n) => {
+    if (turningOn) {
+      setParamValue(`formantInterval${n}`, nearestFormantRatioIndex(currentParamValue(`formant${n}`, f1) / f1), true);
+    } else {
+      const meta = getControlMeta(`formant${n}`);
+      const hz = quantizedFormantHz(n);
+      setParamValue(`formant${n}`, clamp(Math.round(hz), meta ? meta.min : 20, meta ? meta.max : 3000), true);
+    }
+  });
+}
+
+function initFormantQuantToggle() {
+  const row = document.getElementById("formantQuantRow");
+  if (!row) return;
+  row.addEventListener("click", (event) => {
+    const btn = event.target.closest(".opt");
+    if (!btn) return;
+    const next = Number(btn.dataset.value);
+    if (!Number.isFinite(next) || next === Math.round(currentParamValue("formantQuant", 0))) return;
+    snapFormantsForQuantToggle(next > 0.5);
+  }, true);
 }
 
 // ── rail summaries ──────────────────────────────────────────────────────────
@@ -473,10 +557,13 @@ function synthSummaryLines(key) {
   }
   if (key === "formants") {
     const n = clamp(Math.round(v("formantCount", 3)), 1, 3);
-    const hz = [1, 2, 3].slice(0, n).map((i) => Math.round(v(`formant${i}`))).join(" / ");
+    const quant = formantQuantOn();
+    const hzLine = quant
+      ? [V(`${Math.round(v("formant1"))}`), K(" Hz"), ...[2, 3].slice(0, Math.max(0, n - 1)).flatMap((i) => [K(" · "), V(f(`formantInterval${i}`))])]
+      : [V([1, 2, 3].slice(0, n).map((i) => Math.round(v(`formant${i}`))).join(" / ")), K(" Hz")];
     return [
-      [H(`${n} formant${n > 1 ? "s" : ""}`)],
-      [V(hz), K(" Hz")],
+      [H(`${n} formant${n > 1 ? "s" : ""}`), K(quant ? " · quantized" : "")],
+      hzLine,
       [K(Math.round(v("formantTrack")) ? "tracking pitch" : "static")]
     ];
   }
@@ -533,6 +620,7 @@ function scheduleSynthSummaries() {
 function onSynthParamChanged(param) {
   if (synthRowByParam.size === 0) return;
   if (SYNTH_DEPENDENCY_DRIVERS.has(param)) refreshSynthDependencies();
+  else if (FORMANT_QUANT_PARAMS.has(param)) refreshSynthIntervalHz();
   scheduleSynthSummaries();
 }
 
@@ -560,12 +648,14 @@ function setMidiLearnActive(on) {
   refreshSynthCcChips();
 }
 
-function armMidiLearn(param) {
+function armMidiLearn(paramRaw) {
+  const param = midiMappingOwner(paramRaw);
   midiLearnArmedParam = midiLearnArmedParam === param ? null : param;
   refreshSynthCcChips();
 }
 
-function clearMidiMapping(param) {
+function clearMidiMapping(paramRaw) {
+  const param = midiMappingOwner(paramRaw);
   midiMappings[param] = null;
   rebuildMidiCcLookup();
   persistMidiMappings();
@@ -593,7 +683,8 @@ function handleMidiLearnCc(cc) {
 }
 
 function refreshSynthCcChips() {
-  synthRowByParam.forEach((refs, param) => {
+  synthRowByParam.forEach((refs, paramRaw) => {
+    const param = midiMappingOwner(paramRaw);
     const cc = midiMappings[param];
     const mapped = Number.isInteger(cc);
     const armed = midiLearnArmedParam === param;
@@ -624,7 +715,12 @@ function initSynthUi() {
     el.addEventListener("click", () => setSynthSection(el.dataset.section));
   });
 
-  document.querySelectorAll(".synth-section .ctl").forEach((row) => {
+  const units = [];
+  document.querySelectorAll(".synth-section .ctl").forEach((ctl) => {
+    if (ctl.classList.contains("dual")) ctl.querySelectorAll(".sub").forEach((sub) => units.push(sub));
+    else units.push(ctl);
+  });
+  units.forEach((row) => {
     const slider = row.querySelector("input.edit-slider[data-param]");
     const select = row.querySelector("select.edit-select[data-param]");
     const param = slider?.dataset.param || select?.dataset.param;
@@ -644,6 +740,12 @@ function initSynthUi() {
     const ccEl = document.createElement("span");
     ccEl.className = "synth-cc";
     tags.append(lfoEl, ccEl);
+    let hzEl = null;
+    if (param === "formantInterval2" || param === "formantInterval3") {
+      hzEl = document.createElement("span");
+      hzEl.className = "synth-hz";
+      tags.prepend(hzEl);
+    }
     nameEl.append(title, tags);
 
     if (slider) {
@@ -677,14 +779,16 @@ function initSynthUi() {
     ccEl.addEventListener("click", (event) => {
       event.stopPropagation();
       if (!midiLearnActive) return;
-      if (Number.isInteger(midiMappings[param]) && midiLearnArmedParam !== param) clearMidiMapping(param);
+      const owner = midiMappingOwner(param);
+      if (Number.isInteger(midiMappings[owner]) && midiLearnArmedParam !== owner) clearMidiMapping(param);
       else armMidiLearn(param);
     });
 
-    synthRowByParam.set(param, { row, nameEl, lfoEl, ccEl, slider, select });
+    synthRowByParam.set(param, { row, nameEl, lfoEl, ccEl, hzEl, slider, select });
   });
 
   if (synthMidiLearnEl) synthMidiLearnEl.addEventListener("click", () => setMidiLearnActive(!midiLearnActive));
+  initFormantQuantToggle();
   refreshSynthScreen();
 }
 
@@ -1317,8 +1421,8 @@ function computeWaveformValues(nowSec) {
     burstOff: Math.max(0, Math.round(currentParamValue("burstOff", 0))),
     formantHzValues: [
       clamp(currentParamValue("formant1", 20) + lfoModOffset("formant1", nowSec), 20, 8000),
-      clamp(currentParamValue("formant2", 200) + lfoModOffset("formant2", nowSec), 20, 8000),
-      clamp(currentParamValue("formant3", 400) + lfoModOffset("formant3", nowSec), 20, 8000)
+      clamp((formantQuantOn() ? quantizedFormantHz(2) : currentParamValue("formant2", 200)) + lfoModOffset("formant2", nowSec), 20, 8000),
+      clamp((formantQuantOn() ? quantizedFormantHz(3) : currentParamValue("formant3", 400)) + lfoModOffset("formant3", nowSec), 20, 8000)
     ]
   };
 }
@@ -1431,6 +1535,7 @@ function defaultMidiMappingsForCurrentParams() {
 
   let nextCc = 16;
   allParamNames.forEach((param) => {
+    if (MIDI_CC_ALIAS[param]) { mappings[param] = null; return; }
     if (Number.isInteger(mappings[param])) return;
     while (nextCc <= 127 && used.has(nextCc)) nextCc += 1;
     if (nextCc <= 127) {
@@ -1452,6 +1557,7 @@ function loadMidiMappings() {
     if (!parsed || typeof parsed !== "object") return defaults;
     const sanitized = { ...defaults };
     allParamNames.forEach((param) => {
+      if (MIDI_CC_ALIAS[param]) { sanitized[param] = null; return; }
       if (!Object.prototype.hasOwnProperty.call(parsed, param)) return;
       if (parsed[param] === null) {
         sanitized[param] = null;
@@ -2096,7 +2202,7 @@ function handleMidiMessage(event) {
     // per frame. No CC value is dropped; the value at frame boundary is
     // whatever the controller sent most recently for that CC.
     for (let i = 0; i < mappedParams.length; i += 1) {
-      const param = mappedParams[i];
+      const param = midiCcTargetParam(mappedParams[i]);
       const value = valueFromMidiCc(param, ccValue);
       if (value === null) continue;
       stagePendingParam(param, value);
@@ -2251,6 +2357,9 @@ function setParamValue(param, rawValue, send = true) {
     || param === "formant1"
     || param === "formant2"
     || param === "formant3"
+    || param === "formantQuant"
+    || param === "formantInterval2"
+    || param === "formantInterval3"
     || param === "maskMode"
     || param === "perFormantMask"
     || param === "maskAmount"
@@ -4246,6 +4355,9 @@ function buildSegmentedSelect(select, accent) {
     buttons.forEach((b) => b.classList.toggle("on", b.dataset.value === select.value));
   };
   select.addEventListener("change", sync);
+  // setParamValue (CC, presets, MIDI learn, quantize snap) sets the select
+  // directly and fires this instead of "change", so the chips must follow it too.
+  select.addEventListener("spaluter:param-sync", sync);
   select.style.display = "none";
   select.insertAdjacentElement("afterend", opts);
   sync();
@@ -4281,11 +4393,10 @@ function initEditCards() {
         refreshSliderFill(slider);
         return;
       }
-      const select = ctl.querySelector("select.edit-select[data-param]");
-      if (select) {
+      ctl.querySelectorAll("select.edit-select[data-param]").forEach((select) => {
         select.dataset.accent = accent;
         if (select.dataset.seg === "1") buildSegmentedSelect(select, accent);
-      }
+      });
     });
   });
   updateEditLfoMarkers();
