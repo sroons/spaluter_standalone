@@ -303,6 +303,391 @@ const MIDI_STATUS_START = 0xFA;
 const MIDI_STATUS_CONTINUE = 0xFB;
 const MIDI_STATUS_STOP = 0xFC;
 const MIDI_INPUT_CHANNEL_ZERO_BASED = 0; // MIDI channel 1
+// ─────────────────────────── Synth screen ──────────────────────────────────
+// Screen id stays "edit" internally. A rail of four section tabs (each with a
+// live two-line summary) on the left; the selected section on the right as
+// full-width 48 px rows: name · [−] slider [+] · value. Nothing scrolls at
+// 1024x600. Extras per row: double-tap the name to reset the parameter to its
+// default, an "LFO" badge when an LFO drives it (tap: jump to that LFO on the
+// Mods screen), and in MIDI-learn mode a CC tag (tap the name, move a
+// controller; tap the tag to clear).
+const SYNTH_SECTIONS = ["engine", "formants", "grain", "voice"];
+const SYNTH_SECTION_TITLES = { engine: "Engine", formants: "Formants", grain: "Grain", voice: "Voice" };
+const SYNTH_SECTION_STORAGE_KEY = "spaluter.synth.section";
+const SYNTH_NUDGE_REPEAT_DELAY_MS = 420;
+const SYNTH_NUDGE_REPEAT_MS = 70;
+const SYNTH_DOUBLE_TAP_MS = 350;
+const SYNTH_SUMMARY_DEBOUNCE_MS = 120;
+const SYNTH_HINT_DEFAULT = "double-tap a name to reset it";
+const SYNTH_HINT_LEARN = "tap a name, then move a controller · tap a CC tag to clear it";
+// Which rows depend on another control, keyed by the row's data-depends value.
+const SYNTH_DEPENDENCY_DRIVERS = new Set(["dutyMode", "maskMode", "formantCount", "voiceCount"]);
+
+const synthLayoutEl = document.querySelector(".synth-layout");
+const synthRailEl = document.getElementById("synthRail");
+const synthSectionTitleEl = document.getElementById("synthSectionTitle");
+const synthSectionHintEl = document.getElementById("synthSectionHint");
+const synthMidiLearnEl = document.getElementById("synthMidiLearn");
+const synthSectionEls = new Map();
+const synthTabEls = new Map();
+const synthSummaryEls = new Map();
+const synthRowByParam = new Map();
+let synthSection = loadSynthSection();
+let midiLearnActive = false;
+let midiLearnArmedParam = null;
+let synthSummaryTimer = 0;
+
+function loadSynthSection() {
+  try {
+    const raw = localStorage.getItem(SYNTH_SECTION_STORAGE_KEY);
+    return SYNTH_SECTIONS.includes(raw) ? raw : SYNTH_SECTIONS[0];
+  } catch (_err) {
+    return SYNTH_SECTIONS[0];
+  }
+}
+
+function setSynthSection(key, persist = true) {
+  const next = SYNTH_SECTIONS.includes(key) ? key : SYNTH_SECTIONS[0];
+  synthSection = next;
+  synthSectionEls.forEach((el, k) => { el.hidden = k !== next; });
+  synthTabEls.forEach((el, k) => el.setAttribute("aria-pressed", String(k === next)));
+  if (synthSectionTitleEl) synthSectionTitleEl.textContent = SYNTH_SECTION_TITLES[next];
+  const bodyEl = document.querySelector(".synth-body");
+  const tabEl = synthTabEls.get(next);
+  if (bodyEl && tabEl) bodyEl.dataset.accent = tabEl.dataset.accent;
+  if (persist) {
+    try { localStorage.setItem(SYNTH_SECTION_STORAGE_KEY, next); } catch (_err) { /* ignore */ }
+  }
+  // The previews live in the Engine section; their canvases measure 0 while hidden.
+  waveformLayoutDirty = true;
+  if (next === "engine") updateWaveformViews();
+  updateEditLfoMarkers();
+}
+
+// Coarser steps for the wide Hz/ms ranges: 1 below 200, 10 above; otherwise
+// the control's own step.
+function synthNudgeStep(meta, current, direction) {
+  const span = Number(meta.max) - Number(meta.min);
+  if (span >= 500) {
+    const coarse = (direction > 0 ? current >= 200 : current > 200) ? 10 : 1;
+    return Math.max(Number(meta.step) || 1, coarse);
+  }
+  return Number(meta.step) || 0.01;
+}
+
+function synthNudge(param, direction) {
+  const meta = getControlMeta(param);
+  if (!meta || meta.type !== "continuous") return;
+  const current = currentParamValue(param, meta.min);
+  const step = synthNudgeStep(meta, current, direction);
+  setParamValue(param, clamp(current + (direction * step), meta.min, meta.max), true);
+}
+
+function makeSynthNudgeButton(param, direction) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "synth-nudge";
+  btn.textContent = direction > 0 ? "+" : "−";
+  btn.setAttribute("aria-label", `${direction > 0 ? "Increase" : "Decrease"} ${param}`);
+  let holdTimer = 0;
+  let repeatTimer = 0;
+  const stop = () => {
+    if (holdTimer) { clearTimeout(holdTimer); holdTimer = 0; }
+    if (repeatTimer) { clearInterval(repeatTimer); repeatTimer = 0; }
+  };
+  btn.addEventListener("pointerdown", (event) => {
+    event.preventDefault();
+    stop();
+    synthNudge(param, direction);
+    holdTimer = window.setTimeout(() => {
+      repeatTimer = window.setInterval(() => synthNudge(param, direction), SYNTH_NUDGE_REPEAT_MS);
+    }, SYNTH_NUDGE_REPEAT_DELAY_MS);
+  });
+  ["pointerup", "pointercancel", "pointerleave"].forEach((type) => btn.addEventListener(type, stop));
+  btn.addEventListener("click", (event) => event.preventDefault());
+  return btn;
+}
+
+function synthDefaultValue(param) {
+  const slider = paramSliderByParam.get(param);
+  if (slider && slider.classList.contains("edit-slider")) return Number(slider.defaultValue);
+  const select = selectByParam.get(param);
+  if (select) {
+    const def = Array.from(select.options).find((o) => o.defaultSelected) || select.options[0];
+    return def ? Number(def.value) : null;
+  }
+  return null;
+}
+
+function synthResetParam(param) {
+  const def = synthDefaultValue(param);
+  if (def === null || !Number.isFinite(def)) return;
+  setParamValue(param, def, true);
+  const refs = synthRowByParam.get(param);
+  if (refs) {
+    refs.row.classList.remove("synth-reset-flash");
+    void refs.row.offsetWidth; // restart the animation
+    refs.row.classList.add("synth-reset-flash");
+  }
+  appendLog(`[SYNTH] ${param} reset to ${formatParamValue(param, def)}`);
+}
+
+// ── dependencies ────────────────────────────────────────────────────────────
+function refreshSynthDependencies() {
+  const dutyMode = Math.round(currentParamValue("dutyMode", 0));
+  const maskMode = Math.round(currentParamValue("maskMode", 0));
+  const formantCount = Math.round(currentParamValue("formantCount", 3));
+  const voiceCount = Math.round(currentParamValue("voiceCount", 1));
+  const rules = {
+    duty: { disabled: dutyMode >= 1 },
+    formant2: { disabled: formantCount < 2 },
+    formant3: { disabled: formantCount < 3 },
+    maskOn: { disabled: maskMode === 0 },
+    maskStochastic: { disabled: maskMode !== 1 },
+    maskBurst: { hidden: maskMode !== 2 },
+    chord: { disabled: voiceCount < 2 }
+  };
+  document.querySelectorAll(".synth-section .ctl[data-depends]").forEach((row) => {
+    const rule = rules[row.dataset.depends] || {};
+    row.hidden = Boolean(rule.hidden);
+    row.classList.toggle("ctl-disabled", Boolean(rule.disabled) && !rule.hidden);
+  });
+}
+
+// ── rail summaries ──────────────────────────────────────────────────────────
+// Summary lines for a rail tab: arrays of lines, each an array of segments
+// [class, text] with class "k" (label), "v" (value) or "h" (headline value).
+function synthSummaryLines(key) {
+  const v = (p, d = 0) => currentParamValue(p, d);
+  const f = (p) => formatParamValue(p, v(p));
+  const K = (t) => ["k", t];
+  const V = (t) => ["v", t];
+  const H = (t) => ["h", t];
+  if (key === "engine") {
+    const duty = Math.round(v("dutyMode")) >= 1 ? [K("formant duty")] : [K("duty "), V(f("duty"))];
+    return [
+      [K("amp "), H(f("amp")), K(" · drive "), V(f("drive"))],
+      [K("puls "), V(f("pulsaret")), K(" · win "), V(f("window"))],
+      duty
+    ];
+  }
+  if (key === "formants") {
+    const n = clamp(Math.round(v("formantCount", 3)), 1, 3);
+    const hz = [1, 2, 3].slice(0, n).map((i) => Math.round(v(`formant${i}`))).join(" / ");
+    return [
+      [H(`${n} formant${n > 1 ? "s" : ""}`)],
+      [V(hz), K(" Hz")],
+      [K(Math.round(v("formantTrack")) ? "tracking pitch" : "static")]
+    ];
+  }
+  if (key === "grain") {
+    const m = Math.round(v("maskMode"));
+    const mask = m === 0 ? [H("mask off")]
+      : m === 1 ? [H("stochastic"), K(" "), V(f("maskAmount"))]
+        : [H("burst"), K(" "), V(`${f("burstOn")} / ${f("burstOff")}`)];
+    return [
+      mask,
+      [K("jitter "), V(`${f("ampJitter")} / ${f("timingJitter")}`)],
+      [K("gliss "), V(f("glisson"))]
+    ];
+  }
+  if (key === "voice") {
+    const gm = ["MIDI-like", "free run", "CV-like"][Math.round(v("gateMode", 1))] || "—";
+    const vc = clamp(Math.round(v("voiceCount", 1)), 1, 4);
+    const chordSel = selectByParam.get("chordType");
+    const chord = vc > 1 && chordSel ? chordSel.options[chordSel.selectedIndex]?.textContent || "" : "";
+    return [
+      [H(`${vc} voice${vc > 1 ? "s" : ""}`), K(chord ? " · " : ""), V(chord)],
+      [K(gm), K(" · "), V(f("basePitch")), K(" Hz")],
+      [K("A "), V(f("attackMs")), K(" · R "), V(f("releaseMs")), K(" ms")]
+    ];
+  }
+  return [];
+}
+
+function refreshSynthSummaries() {
+  synthSummaryEls.forEach((el, key) => {
+    el.textContent = "";
+    synthSummaryLines(key).forEach((line, i) => {
+      if (i > 0) el.append("\n");
+      line.forEach(([cls, text]) => {
+        if (!text) return;
+        const span = document.createElement("span");
+        span.className = cls;
+        span.textContent = text;
+        el.append(span);
+      });
+    });
+  });
+}
+
+function scheduleSynthSummaries() {
+  if (synthSummaryTimer) return;
+  synthSummaryTimer = window.setTimeout(() => {
+    synthSummaryTimer = 0;
+    refreshSynthSummaries();
+  }, SYNTH_SUMMARY_DEBOUNCE_MS);
+}
+
+// Called from setParamValue for every parameter change (local, preset, MIDI).
+function onSynthParamChanged(param) {
+  if (synthRowByParam.size === 0) return;
+  if (SYNTH_DEPENDENCY_DRIVERS.has(param)) refreshSynthDependencies();
+  scheduleSynthSummaries();
+}
+
+// ── LFO badges ──────────────────────────────────────────────────────────────
+function firstLfoIndexForTarget(param) {
+  for (let i = 0; i < LFO_MAX; i += 1) {
+    if (lfoIsActive(lfoConfigs[i]) && lfoConfigs[i].target === param) return i;
+  }
+  return -1;
+}
+
+function refreshSynthLfoBadges() {
+  synthRowByParam.forEach((refs, param) => {
+    if (refs.lfoEl) refs.lfoEl.classList.toggle("on", firstLfoIndexForTarget(param) >= 0);
+  });
+}
+
+// ── MIDI learn ──────────────────────────────────────────────────────────────
+function setMidiLearnActive(on) {
+  midiLearnActive = Boolean(on);
+  midiLearnArmedParam = null;
+  if (synthLayoutEl) synthLayoutEl.classList.toggle("learn", midiLearnActive);
+  if (synthMidiLearnEl) synthMidiLearnEl.setAttribute("aria-pressed", String(midiLearnActive));
+  if (synthSectionHintEl) synthSectionHintEl.textContent = midiLearnActive ? SYNTH_HINT_LEARN : SYNTH_HINT_DEFAULT;
+  refreshSynthCcChips();
+}
+
+function armMidiLearn(param) {
+  midiLearnArmedParam = midiLearnArmedParam === param ? null : param;
+  refreshSynthCcChips();
+}
+
+function clearMidiMapping(param) {
+  midiMappings[param] = null;
+  rebuildMidiCcLookup();
+  persistMidiMappings();
+  appendLog(`[MIDI] ${param} mapping cleared`);
+  if (midiLearnArmedParam === param) midiLearnArmedParam = null;
+  refreshSynthCcChips();
+}
+
+// Next CC on the input channel while a row is armed becomes its mapping.
+// Returns true when the CC was consumed by learn.
+function handleMidiLearnCc(cc) {
+  if (!midiLearnActive || midiLearnArmedParam === null) return false;
+  const param = midiLearnArmedParam;
+  // One parameter per CC: a CC already bound elsewhere moves to this row.
+  Object.keys(midiMappings).forEach((other) => {
+    if (other !== param && midiMappings[other] === cc) midiMappings[other] = null;
+  });
+  midiMappings[param] = cc;
+  rebuildMidiCcLookup();
+  persistMidiMappings();
+  appendLog(`[MIDI] ${param} mapped to CC ${cc} (learn)`);
+  midiLearnArmedParam = null;
+  refreshSynthCcChips();
+  return true;
+}
+
+function refreshSynthCcChips() {
+  synthRowByParam.forEach((refs, param) => {
+    const cc = midiMappings[param];
+    const mapped = Number.isInteger(cc);
+    const armed = midiLearnArmedParam === param;
+    refs.row.classList.toggle("armed", armed);
+    if (!refs.ccEl) return;
+    refs.ccEl.textContent = armed ? "waiting for CC…" : (mapped ? `CC ${cc} ×` : "no CC");
+    refs.ccEl.classList.toggle("mapped", mapped && !armed);
+    refs.ccEl.title = mapped ? "Tap to clear this mapping" : "Tap the name to assign a controller";
+  });
+}
+
+// ── build ───────────────────────────────────────────────────────────────────
+function refreshSynthScreen() {
+  setSynthSection(synthSection, false);
+  refreshSynthDependencies();
+  refreshSynthSummaries();
+  refreshSynthLfoBadges();
+  refreshSynthCcChips();
+}
+
+function initSynthUi() {
+  if (!synthLayoutEl) return;
+  document.querySelectorAll(".synth-section").forEach((el) => synthSectionEls.set(el.dataset.section, el));
+  document.querySelectorAll(".synth-tab").forEach((el) => {
+    synthTabEls.set(el.dataset.section, el);
+    const sum = el.querySelector("[data-summary]");
+    if (sum) synthSummaryEls.set(el.dataset.section, sum);
+    el.addEventListener("click", () => setSynthSection(el.dataset.section));
+  });
+
+  document.querySelectorAll(".synth-section .ctl").forEach((row) => {
+    const slider = row.querySelector("input.edit-slider[data-param]");
+    const select = row.querySelector("select.edit-select[data-param]");
+    const param = slider?.dataset.param || select?.dataset.param;
+    if (!param) return;
+    const nameEl = row.querySelector(".nm");
+    if (!nameEl) return;
+    const nameText = nameEl.textContent;
+    nameEl.textContent = "";
+    const title = document.createElement("span");
+    title.textContent = nameText;
+    const tags = document.createElement("span");
+    tags.className = "synth-tags";
+    const lfoEl = document.createElement("span");
+    lfoEl.className = "synth-lfo";
+    lfoEl.textContent = "LFO";
+    lfoEl.title = "Driven by an LFO · tap to open it on the Mods screen";
+    const ccEl = document.createElement("span");
+    ccEl.className = "synth-cc";
+    tags.append(lfoEl, ccEl);
+    nameEl.append(title, tags);
+
+    if (slider) {
+      const wrap = slider.closest(".edit-slider-wrap") || slider;
+      wrap.insertAdjacentElement("beforebegin", makeSynthNudgeButton(param, -1));
+      wrap.insertAdjacentElement("afterend", makeSynthNudgeButton(param, 1));
+    }
+
+    let lastTapAt = 0;
+    nameEl.addEventListener("click", (event) => {
+      if (event.target === lfoEl || event.target === ccEl) return;
+      if (midiLearnActive) {
+        armMidiLearn(param);
+        return;
+      }
+      const now = performance.now();
+      if (now - lastTapAt < SYNTH_DOUBLE_TAP_MS) {
+        lastTapAt = 0;
+        synthResetParam(param);
+      } else {
+        lastTapAt = now;
+      }
+    });
+    lfoEl.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const idx = firstLfoIndexForTarget(param);
+      if (idx < 0) return;
+      selectLfo(idx);
+      setScreen("mods");
+    });
+    ccEl.addEventListener("click", (event) => {
+      event.stopPropagation();
+      if (!midiLearnActive) return;
+      if (Number.isInteger(midiMappings[param]) && midiLearnArmedParam !== param) clearMidiMapping(param);
+      else armMidiLearn(param);
+    });
+
+    synthRowByParam.set(param, { row, nameEl, lfoEl, ccEl, slider, select });
+  });
+
+  if (synthMidiLearnEl) synthMidiLearnEl.addEventListener("click", () => setMidiLearnActive(!midiLearnActive));
+  refreshSynthScreen();
+}
+
 function appendLogLine(line) {
   if (!logEl) return;
   logEl.appendChild(document.createTextNode(`${line}\n`));
@@ -1704,6 +2089,7 @@ function handleMidiMessage(event) {
   if (messageType === MIDI_STATUS_CC) {
     const cc = data1;
     const ccValue = data2;
+    if (handleMidiLearnCc(cc)) return;
     const mappedParams = midiParamsByCc.get(cc);
     if (!Array.isArray(mappedParams) || mappedParams.length === 0) return;
     // Phase 1.3: stage latest-value-per-param; rAF drain applies them once
@@ -1884,6 +2270,7 @@ function setParamValue(param, rawValue, send = true) {
   }
 
   updateRealtimeParamValue(param, value);
+  onSynthParamChanged(param);
   if (currentMainScreen === "edit" && editLfoMarkerByParam.has(param)) {
     updateEditLfoMarkers();
   }
@@ -3026,6 +3413,7 @@ function sendLfo(index) {
   window.spaluterApi.setLfo(index, lfoToIpc(index));
   updateLfoHint();
   updateEditLfoMarkers();
+  refreshSynthLfoBadges();
   // Re-evaluate synthetic scope-preview animation: starts it when a synthetic-view
   // target becomes active, and lets it settle the static scope when it stops.
   scheduleParamModAnim();
@@ -3084,6 +3472,7 @@ function applyLfoState(state) {
   syncMidiClockLockedLfos(performance.now(), true);
   updateLfoHint();
   updateEditLfoMarkers();
+  refreshSynthLfoBadges();
   syncLfosToEngine();
   scheduleParamModAnim();
   if (currentMainScreen === "edit") scheduleWaveformViewsRedraw();
@@ -3092,6 +3481,7 @@ function applyLfoState(state) {
 function handleMainScreenEntered(targetScreen) {
   if (targetScreen === "edit") {
     scheduleWaveformResizeRefresh();
+    refreshSynthScreen();
     updateEditLfoMarkers();
     scheduleParamModAnim();
   } else if (targetScreen === "mods") {
@@ -3618,6 +4008,7 @@ selectInputs.forEach((el) => {
 
 rebuildControlMetaCache();
 initEditCards();
+initSynthUi();
 
 if (paramPagePrevBtn) {
   paramPagePrevBtn.addEventListener("click", () => {
@@ -3818,7 +4209,7 @@ function refreshSliderFill(slider, accentHex) {
   const frac = max > min ? clamp((val - min) / (max - min), 0, 1) : 0;
   const accent = accentHex || sliderAccentHex(slider.dataset.accent);
   const pct = `${(frac * 100).toFixed(1)}%`;
-  const trackHeight = slider.classList.contains("lfo-range") ? "14px" : "10px";
+  const trackHeight = (slider.classList.contains("lfo-range") || slider.closest(".synth-section")) ? "14px" : "10px";
   const fillGradient =
     `linear-gradient(to right, ${accent} 0%, ${accent} ${pct}, rgba(255,255,255,0.09) ${pct}, rgba(255,255,255,0.09) 100%) no-repeat center / 100% ${trackHeight}`;
   if (slider.dataset.bipolar === "1" && min < 0 && max > 0) {

@@ -33,79 +33,83 @@
     <!-- ─── Screen stage ─── -->
     <div id="mainScreenStage" class="main-screen-stage">
 
-      <!-- ===== EDIT ===== -->
-      <section class="main-screen" data-screen="edit" aria-label="Edit screen">
-        <div class="edit-grid">
+      <!-- ===== SYNTH (internal screen id: edit) ===== -->
+      <section class="main-screen" data-screen="edit" aria-label="Synth screen">
+        <div class="synth-layout">
 
-          <!-- CORE ENGINE -->
-          <div class="edit-card" data-accent="shock">
-            <div class="ph"><span class="t">Core Engine</span><span class="num">01</span></div>
-            <div class="edit-waves">
-              <div class="wavebox"><span class="lab" id="pulsaretWaveLabel">PULSARET</span><canvas id="pulsaretWaveView" width="320" height="60"></canvas></div>
-              <div class="wavebox"><span class="lab r" id="windowWaveLabel">WINDOW</span><canvas id="windowWaveView" width="320" height="60"></canvas></div>
-              <div class="wavebox"><span class="lab" id="dutyWaveLabel">DUTY</span><canvas id="dutyWaveView" width="320" height="60"></canvas></div>
+          <!-- Section rail: one tab per section, each with a live summary -->
+          <nav class="synth-rail" id="synthRail" aria-label="Synth sections">
+            <button class="synth-tab" type="button" data-section="engine" data-accent="shock" aria-pressed="true"><span class="t">Engine</span><span class="s" data-summary="engine">—</span></button>
+            <button class="synth-tab" type="button" data-section="formants" data-accent="ice" aria-pressed="false"><span class="t">Formants</span><span class="s" data-summary="formants">—</span></button>
+            <button class="synth-tab" type="button" data-section="grain" data-accent="acid" aria-pressed="false"><span class="t">Grain</span><span class="s" data-summary="grain">—</span></button>
+            <button class="synth-tab" type="button" data-section="voice" data-accent="ok" aria-pressed="false"><span class="t">Voice</span><span class="s" data-summary="voice">—</span></button>
+          </nav>
+
+          <div class="panel synth-body">
+            <div class="ph synth-head">
+              <span class="mods-ph-title"><span class="t" id="synthSectionTitle">Engine</span><span class="m" id="synthSectionHint">double-tap a name to reset it</span></span>
+              <button class="mods-toggle synth-learn" id="synthMidiLearn" type="button" aria-pressed="false">MIDI learn</button>
             </div>
-            <div class="ctl-list">
-              <div class="ctl"><span class="nm">Amplitude</span><input class="edit-slider" data-param="amp" type="range" min="0" max="1" step="0.01" value="0.25" /><span class="val"></span></div>
-              <div class="ctl"><span class="nm">Drive Gain</span><input class="edit-slider" data-param="drive" type="range" min="0.1" max="4" step="0.01" value="1.0" /><span class="val"></span></div>
-              <div class="ctl"><span class="nm">Pulsaret</span><input class="edit-slider" data-param="pulsaret" type="range" min="0" max="9" step="0.1" value="2.5" /><span class="val"></span></div>
-              <div class="ctl"><span class="nm">Window</span><input class="edit-slider" data-param="window" type="range" min="0" max="8" step="0.1" value="0.5" /><span class="val"></span></div>
-              <div class="ctl"><span class="nm">Duty</span><input class="edit-slider" data-param="duty" type="range" min="0.01" max="1" step="0.01" value="0.5" /><span class="val"></span></div>
-              <div class="ctl sel"><span class="nm">Duty Mode</span><select class="edit-select" data-seg="1" data-param="dutyMode"><option value="0" selected>Manual</option><option value="1">Formant</option></select></div>
+
+            <!-- ENGINE -->
+            <div class="edit-card synth-section" data-section="engine" data-accent="shock">
+              <div class="edit-waves synth-waves">
+                <div class="wavebox"><span class="lab" id="pulsaretWaveLabel">PULSARET</span><canvas id="pulsaretWaveView" width="320" height="90"></canvas></div>
+                <div class="wavebox"><span class="lab" id="windowWaveLabel">WINDOW</span><canvas id="windowWaveView" width="320" height="90"></canvas></div>
+                <div class="wavebox"><span class="lab" id="dutyWaveLabel">DUTY</span><canvas id="dutyWaveView" width="320" height="90"></canvas></div>
+              </div>
+              <div class="ctl-list">
+                <div class="ctl"><span class="nm">Amplitude</span><input class="edit-slider" data-param="amp" type="range" min="0" max="1" step="0.01" value="0.25" /><span class="val"></span></div>
+                <div class="ctl"><span class="nm">Drive Gain</span><input class="edit-slider" data-param="drive" type="range" min="0.1" max="4" step="0.01" value="1.0" /><span class="val"></span></div>
+                <div class="ctl"><span class="nm">Pulsaret</span><input class="edit-slider" data-param="pulsaret" type="range" min="0" max="9" step="0.1" value="2.5" /><span class="val"></span></div>
+                <div class="ctl"><span class="nm">Window</span><input class="edit-slider" data-param="window" type="range" min="0" max="8" step="0.1" value="0.5" /><span class="val"></span></div>
+                <div class="ctl sel"><span class="nm">Duty Mode</span><select class="edit-select" data-seg="1" data-param="dutyMode"><option value="0" selected>Manual</option><option value="1">Formant</option></select></div>
+                <div class="ctl" data-depends="duty"><span class="nm">Duty</span><input class="edit-slider" data-param="duty" type="range" min="0.01" max="1" step="0.01" value="0.5" /><span class="val"></span></div>
+              </div>
             </div>
+
+            <!-- FORMANTS -->
+            <div class="edit-card synth-section" data-section="formants" data-accent="ice" hidden>
+              <div class="ctl-list">
+                <div class="ctl sel"><span class="nm">Count</span><select class="edit-select" data-seg="1" data-param="formantCount"><option value="1">1</option><option value="2">2</option><option value="3" selected>3</option></select></div>
+                <div class="ctl sel"><span class="nm">Track Pitch</span><select class="edit-select" data-seg="1" data-param="formantTrack"><option value="0" selected>Off</option><option value="1">On</option></select></div>
+                <div class="ctl"><span class="nm">Formant 1</span><input class="edit-slider" data-param="formant1" type="range" min="20" max="3000" step="1" value="20" /><span class="val" data-unit="Hz"></span></div>
+                <div class="ctl" data-depends="formant2"><span class="nm">Formant 2</span><input class="edit-slider" data-param="formant2" type="range" min="20" max="3000" step="1" value="200" /><span class="val" data-unit="Hz"></span></div>
+                <div class="ctl" data-depends="formant3"><span class="nm">Formant 3</span><input class="edit-slider" data-param="formant3" type="range" min="20" max="3000" step="1" value="400" /><span class="val" data-unit="Hz"></span></div>
+                <div class="ctl"><span class="nm">Pan 1</span><input class="edit-slider" data-param="pan1" type="range" min="-1" max="1" step="0.01" value="0" /><span class="val"></span></div>
+                <div class="ctl" data-depends="formant2"><span class="nm">Pan 2</span><input class="edit-slider" data-param="pan2" type="range" min="-1" max="1" step="0.01" value="0.5" /><span class="val"></span></div>
+                <div class="ctl" data-depends="formant3"><span class="nm">Pan 3</span><input class="edit-slider" data-param="pan3" type="range" min="-1" max="1" step="0.01" value="-0.5" /><span class="val"></span></div>
+              </div>
+            </div>
+
+            <!-- GRAIN (mask + texture) -->
+            <div class="edit-card synth-section" data-section="grain" data-accent="acid" hidden>
+              <div class="ctl-list">
+                <div class="ctl sel"><span class="nm">Mask Mode</span><select class="edit-select" data-seg="1" data-param="maskMode"><option value="0" selected>Off</option><option value="1">Stochastic</option><option value="2">Burst</option></select></div>
+                <div class="ctl sel" data-depends="maskOn"><span class="nm">Per-Formant</span><select class="edit-select" data-seg="1" data-param="perFormantMask"><option value="0" selected>Off</option><option value="1">On</option></select></div>
+                <div class="ctl" data-depends="maskStochastic"><span class="nm">Mask Amount</span><input class="edit-slider" data-param="maskAmount" type="range" min="0" max="1" step="0.01" value="0.5" /><span class="val"></span></div>
+                <div class="ctl" data-depends="maskBurst"><span class="nm">Burst On</span><input class="edit-slider" data-param="burstOn" type="range" min="1" max="16" step="1" value="4" /><span class="val"></span></div>
+                <div class="ctl" data-depends="maskBurst"><span class="nm">Burst Off</span><input class="edit-slider" data-param="burstOff" type="range" min="0" max="16" step="1" value="0" /><span class="val"></span></div>
+                <div class="ctl"><span class="nm">Amp Jitter</span><input class="edit-slider" data-param="ampJitter" type="range" min="0" max="1" step="0.01" value="0" /><span class="val"></span></div>
+                <div class="ctl"><span class="nm">Timing Jitter</span><input class="edit-slider" data-param="timingJitter" type="range" min="0" max="1" step="0.01" value="0" /><span class="val"></span></div>
+                <div class="ctl"><span class="nm">Glisson</span><input class="edit-slider" data-param="glisson" type="range" min="-2" max="2" step="0.01" value="0" /><span class="val"></span></div>
+              </div>
+            </div>
+
+            <!-- VOICE -->
+            <div class="edit-card synth-section" data-section="voice" data-accent="ok" hidden>
+              <div class="ctl-list">
+                <div class="ctl sel"><span class="nm">Gate Mode</span><select class="edit-select" data-seg="1" data-param="gateMode"><option value="0">MIDI-like</option><option value="1" selected>Free Run</option><option value="2">CV-like</option></select></div>
+                <div class="ctl sel"><span class="nm">Voices</span><select class="edit-select" data-seg="1" data-param="voiceCount"><option value="1" selected>1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option></select></div>
+                <div class="ctl sel chips" data-depends="chord"><span class="nm">Chord</span><select class="edit-select" data-seg="1" data-param="chordType"><option value="0" selected>Unison</option><option value="1">Octaves</option><option value="2">Fifths</option><option value="3">Sub+Oct</option><option value="4">Major</option><option value="5">Minor</option><option value="6">Maj7</option><option value="7">Min7</option><option value="8">Sus4</option><option value="9">Dom7</option><option value="10">Dim</option><option value="11">Aug</option><option value="12">Power</option><option value="13">Open5th</option></select></div>
+                <div class="ctl"><span class="nm">Base Pitch</span><input class="edit-slider" data-param="basePitch" type="range" min="20" max="1000" step="1" value="33" /><span class="val" data-unit="Hz"></span></div>
+                <div class="ctl"><span class="nm">Attack</span><input class="edit-slider" data-param="attackMs" type="range" min="0.1" max="2000" step="0.1" value="10" /><span class="val" data-unit="ms"></span></div>
+                <div class="ctl"><span class="nm">Release</span><input class="edit-slider" data-param="releaseMs" type="range" min="1" max="3200" step="1" value="200" /><span class="val" data-unit="ms"></span></div>
+                <div class="ctl"><span class="nm">Glide</span><input class="edit-slider" data-param="glideMs" type="range" min="0" max="2000" step="1" value="0" /><span class="val" data-unit="ms"></span></div>
+              </div>
+            </div>
+
           </div>
-
-          <!-- FORMANT SYSTEM -->
-          <div class="edit-card" data-accent="ice">
-            <div class="ph"><span class="t">Formant System</span><span class="num">02</span></div>
-            <div class="ctl-list">
-              <div class="ctl sel"><span class="nm">Count</span><select class="edit-select" data-seg="1" data-param="formantCount"><option value="1">1</option><option value="2">2</option><option value="3" selected>3</option></select></div>
-              <div class="ctl sel"><span class="nm">Track Pitch</span><select class="edit-select" data-seg="1" data-param="formantTrack"><option value="0" selected>Off</option><option value="1">On</option></select></div>
-              <div class="ctl"><span class="nm">Formant 1</span><input class="edit-slider" data-param="formant1" type="range" min="20" max="3000" step="1" value="20" /><span class="val" data-unit="Hz"></span></div>
-              <div class="ctl"><span class="nm">Formant 2</span><input class="edit-slider" data-param="formant2" type="range" min="20" max="3000" step="1" value="200" /><span class="val" data-unit="Hz"></span></div>
-              <div class="ctl"><span class="nm">Formant 3</span><input class="edit-slider" data-param="formant3" type="range" min="20" max="3000" step="1" value="400" /><span class="val" data-unit="Hz"></span></div>
-              <div class="ctl"><span class="nm">Pan 1</span><input class="edit-slider" data-param="pan1" type="range" min="-1" max="1" step="0.01" value="0" /><span class="val"></span></div>
-              <div class="ctl"><span class="nm">Pan 2</span><input class="edit-slider" data-param="pan2" type="range" min="-1" max="1" step="0.01" value="0.5" /><span class="val"></span></div>
-              <div class="ctl"><span class="nm">Pan 3</span><input class="edit-slider" data-param="pan3" type="range" min="-1" max="1" step="0.01" value="-0.5" /><span class="val"></span></div>
-            </div>
-          </div>
-
-          <!-- MASK -->
-          <div class="edit-card" data-accent="acid">
-            <div class="ph"><span class="t">Mask</span><span class="num">03</span></div>
-            <div class="ctl-list">
-              <div class="ctl sel"><span class="nm">Mask Mode</span><select class="edit-select" data-seg="1" data-param="maskMode"><option value="0" selected>Off</option><option value="1">Stochastic</option><option value="2">Burst</option></select></div>
-              <div class="ctl sel"><span class="nm">Per-Formant</span><select class="edit-select" data-seg="1" data-param="perFormantMask"><option value="0" selected>Off</option><option value="1">On</option></select></div>
-              <div class="ctl"><span class="nm">Mask Amount</span><input class="edit-slider" data-param="maskAmount" type="range" min="0" max="1" step="0.01" value="0.5" /><span class="val"></span></div>
-              <div class="ctl"><span class="nm">Burst On</span><input class="edit-slider" data-param="burstOn" type="range" min="1" max="16" step="1" value="4" /><span class="val"></span></div>
-              <div class="ctl"><span class="nm">Burst Off</span><input class="edit-slider" data-param="burstOff" type="range" min="0" max="16" step="1" value="0" /><span class="val"></span></div>
-            </div>
-          </div>
-
-          <!-- TEXTURE -->
-          <div class="edit-card" data-accent="ok">
-            <div class="ph"><span class="t">Texture</span><span class="num">04</span></div>
-            <div class="ctl-list">
-              <div class="ctl"><span class="nm">Amp Jitter</span><input class="edit-slider" data-param="ampJitter" type="range" min="0" max="1" step="0.01" value="0" /><span class="val"></span></div>
-              <div class="ctl"><span class="nm">Timing Jitter</span><input class="edit-slider" data-param="timingJitter" type="range" min="0" max="1" step="0.01" value="0" /><span class="val"></span></div>
-              <div class="ctl"><span class="nm">Glisson</span><input class="edit-slider" data-param="glisson" type="range" min="-2" max="2" step="0.01" value="0" /><span class="val"></span></div>
-            </div>
-          </div>
-
-          <!-- VOICE -->
-          <div class="edit-card" data-accent="shock">
-            <div class="ph"><span class="t">Voice · Envelope</span><span class="num">05</span></div>
-            <div class="ctl-list">
-              <div class="ctl sel"><span class="nm">Gate Mode</span><select class="edit-select" data-seg="1" data-param="gateMode"><option value="0">MIDI-like</option><option value="1" selected>Free Run</option><option value="2">CV-like</option></select></div>
-              <div class="ctl sel"><span class="nm">Voices</span><select class="edit-select" data-seg="1" data-param="voiceCount"><option value="1" selected>1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option></select></div>
-              <div class="ctl sel"><span class="nm">Chord</span><select class="edit-select" data-param="chordType"><option value="0" selected>Unison</option><option value="1">Octaves</option><option value="2">Fifths</option><option value="3">Sub+Oct</option><option value="4">Major</option><option value="5">Minor</option><option value="6">Maj7</option><option value="7">Min7</option><option value="8">Sus4</option><option value="9">Dom7</option><option value="10">Dim</option><option value="11">Aug</option><option value="12">Power</option><option value="13">Open5th</option></select></div>
-              <div class="ctl"><span class="nm">Base Pitch</span><input class="edit-slider" data-param="basePitch" type="range" min="20" max="1000" step="1" value="33" /><span class="val" data-unit="Hz"></span></div>
-              <div class="ctl"><span class="nm">Attack</span><input class="edit-slider" data-param="attackMs" type="range" min="0.1" max="2000" step="0.1" value="10" /><span class="val" data-unit="ms"></span></div>
-              <div class="ctl"><span class="nm">Release</span><input class="edit-slider" data-param="releaseMs" type="range" min="1" max="3200" step="1" value="200" /><span class="val" data-unit="ms"></span></div>
-              <div class="ctl"><span class="nm">Glide</span><input class="edit-slider" data-param="glideMs" type="range" min="0" max="2000" step="1" value="0" /><span class="val" data-unit="ms"></span></div>
-            </div>
-          </div>
-
         </div>
       </section>
 
@@ -252,7 +256,7 @@
 
     <!-- ─── Bottom nav ─── -->
     <div class="main-screen-switch" id="mainScreenSwitch" role="tablist" aria-label="Main screens">
-      <button class="nav-btn active" data-screen="edit" type="button" aria-pressed="true"><span class="ix">[01]</span><span class="nm">Edit</span></button>
+      <button class="nav-btn active" data-screen="edit" type="button" aria-pressed="true"><span class="ix">[01]</span><span class="nm">Synth</span></button>
       <button class="nav-btn" data-screen="mods" type="button" aria-pressed="false"><span class="ix">[02]</span><span class="nm">Mods</span></button>
       <button class="nav-btn" data-screen="reverb" type="button" aria-pressed="false"><span class="ix">[03]</span><span class="nm">EFFECTS</span></button>
       <button class="nav-btn" data-screen="presets" type="button" aria-pressed="false"><span class="ix">[04]</span><span class="nm">Presets</span></button>

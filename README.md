@@ -16,7 +16,7 @@ Cross-platform desktop wrapper for the `spaluter_supercollider.scd` patch.
 
 ## The screens
 
-The app opens on the Edit screen. The bottom bar `[01] Edit · [02] Mods · [03] Effects · [04] Presets` switches between the four screens; the button on the far right starts the synth, or stops it when it is running. (An earlier Perform screen with a live output scope, peak meter and five macro faders was removed: it was not used, and drawing the scope at 20 Hz cost the Pi most of a CPU core. The engine still has the scope stream, `/spaluter/scope`, but the app starts it disabled and never requests it.)
+The app opens on the Synth screen. The bottom bar `[01] Synth · [02] Mods · [03] Effects · [04] Presets` switches between the four screens; the button on the far right starts the synth, or stops it when it is running. (An earlier Perform screen with a live output scope, peak meter and five macro faders was removed: it was not used, and drawing the scope at 20 Hz cost the Pi most of a CPU core. The engine still has the scope stream, `/spaluter/scope`, but the app starts it disabled and never requests it.)
 
 ### Header (top row)
 
@@ -26,15 +26,16 @@ The app opens on the Edit screen. The bottom bar `[01] Edit · [02] Mods · [03]
 - **DSP** — scsynth's reported load, with the label on top and the value (bold) beneath.
 - **Reset / Log / About** — utility buttons.
 
-## The Edit screen
+## The Synth screen
 
-The Edit screen exposes the full synthesis engine as grouped cards — **Core Engine** (01), **Formant System** (02), **Mask** (03), **Texture** (04), and **Voice · Envelope** (05).
+The Synth screen (internally still screen id `edit`) holds every engine parameter. It is built so that nothing scrolls on the 1024×600 display and every control is finger-sized:
 
-The **Core Engine** card carries three live preview scopes that redraw in real time as you move sliders or while LFOs sweep the parameters:
-
-- **Pulsaret** — the current pulsaret waveform, morphing across the wavetable as `pulsaret` changes.
-- **Window** — the grain window/envelope shape selected by `window`.
-- **Duty** — the active (gated) portion of each grain cycle, centred in the window, with the grain-window envelope overlaid on the active region. Reflects both `duty` and `dutyMode`.
+- **Section rail (left).** Four tabs, Engine, Formants, Grain (mask + texture) and Voice, each with a live two-to-three-line summary of its key values, so the state of the whole patch can be read without opening each section. The selected section is remembered between sessions.
+- **One section at a time (right)** as full-width rows: parameter name · `−` · slider · `+` · value. Rows are 48 px, sliders about 520 px long, segmented buttons 44 px. The `−`/`+` buttons step by the control's own step, or by 1 below 200 and 10 above for the wide Hz/ms ranges, and repeat while held. Double-tap a parameter name to reset it to its default (the row flashes). Chord is a two-row grid of chips instead of a dropdown.
+- **Dependent controls follow the engine.** Burst On/Off only appear in Burst mask mode; Mask Amount is greyed unless the mask is Stochastic and Per-Formant unless a mask is on; Formant 2/3 and Pan 2/3 grey out beyond the formant count; Duty greys out in Formant duty mode; Chord greys out with one voice.
+- **Previews.** The Engine section carries the pulsaret, window and duty previews across its top. Each reflects the current parameter values and, while an LFO drives one of them, animates with the modulation.
+- **LFO badges.** A parameter that an LFO is driving shows an orange `LFO` tag under its name and a live marker on its slider at the modulated value. Tapping the tag opens the Mods screen with that LFO selected.
+- **MIDI learn.** The **MIDI learn** button in the section header shows each row's CC assignment as a tag. Tap a parameter name (it reads "waiting for CC…"), move a controller on MIDI channel 1, and that CC is bound to the parameter; a CC that was bound to another parameter moves. Tap a `CC n ×` tag to clear it. Assignments persist in local storage and apply to every parameter, including the segmented ones (a CC sweeps through their options).
 
 ## The Mods screen
 
@@ -47,14 +48,14 @@ Everything live on this screen comes from the engine, not from a client-side imi
 
 Further behaviour:
 
-- **Edit-screen live markers**: when an LFO targets a parameter with a slider, a live marker overlays that slider to show the effective modulated value in real time while preserving the base setting.
+- **Synth-screen live markers**: when an LFO targets a parameter with a slider, a live marker overlays that slider to show the effective modulated value in real time while preserving the base setting.
 - **Exponential rate fader**: in free-run mode (MIDI clock off), the LFO rate fader follows an exponential curve so the lower, more musical rates get most of the slider travel (≈ the bottom three-quarters covers up to ~3 Hz); the full range is still 0.01–20 Hz. In MIDI clock mode the LFO is phase-locked to the clock: the engine keeps a beat position (beats since the last MIDI Start) that the renderer resyncs from the counted ticks every sixteenth, and the LFO's phase is that position × the div/mult ratio, so `/4` completes one cycle every four beats and sits on the same beat every bar, `x2` runs two cycles per beat. MIDI Start snaps the position to zero (the downbeat); Continue resumes it; the Phase control offsets it. The S&H shape steps on the cycle boundary, so its steps land on the grid. Until a tempo has been estimated (8 ticks) a synced LFO free-runs at its last rate. The Monitor header and the clock line on the VERB/DLY screen show the incoming tempo live ("stopped" / "last tempo held" once ticks stop for 4 s), and the log gets a line when clock is first detected and when it stops. Start, Continue and Stop restart the tempo estimate without discarding the last value, so a synced delay does not jump back to Base Time at every transport start.
 
 ## The VERB/DLY screen
 
 The VERB/DLY screen hosts a Mutable Instruments *Clouds*-style reverb plus a lightweight 4-tap rhythmic delay. Both run in a dedicated, persistent effect synth (`\spaluterReverb`) placed **after** the engine in the SuperCollider node order, so the tail keeps ringing while voices are gated/released. The Mods-screen monitor stream and the engine's output scope stream are pre-effect (they read the engine, not the effect output).
 
-The controls are plain faders, styled like the Edit screen:
+The controls are plain faders in the older two-column card layout (not yet converted to the Synth screen's rail layout):
 
 | Control | Param | Range | Default | What it does |
 | --- | --- | --- | ---: | --- |

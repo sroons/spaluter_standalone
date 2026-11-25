@@ -180,6 +180,82 @@ input.edit-slider{ height:30px; border:none; background:transparent; }
 .ctl.sel .opts[data-accent="ice"] .opt.on{ background:var(--ice); border-color:var(--ice); color:#0a0a0a; }
 .ctl.sel .opts[data-accent="ok"] .opt.on{ background:var(--ok); border-color:var(--ok); color:#0a0a0a; }
 
+/* ── SYNTH (screen id "edit") ── */
+/* Rail of section tabs on the left; one section at a time on the right, full-width 48 px rows. */
+.synth-layout{ flex:1; min-height:0; display:grid; grid-template-columns:150px minmax(0,1fr); gap:10px; }
+.synth-rail{ display:flex; flex-direction:column; gap:6px; min-height:0; }
+.synth-tab{ flex:1; min-height:84px; padding:10px 10px 10px 12px; display:flex; flex-direction:column; justify-content:center; gap:5px;
+  background:var(--ink-2); border:1px solid var(--line-2); border-left:4px solid var(--line-2); text-align:left; color:var(--mute-2); }
+.synth-tab .t{ font-family:var(--din); font-weight:700; font-size:15px; letter-spacing:.04em; text-transform:uppercase; color:var(--tab-accent); }
+.synth-tab .s{ font-family:var(--mono); font-size:9px; line-height:1.35; color:var(--mute-2); text-transform:none; letter-spacing:.02em;
+  overflow:hidden; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:3; }
+/* Each section owns an accent (the same one its sliders use); the rail and the body header carry it. */
+[data-accent="shock"]{ --tab-accent:var(--shock); --tab-accent-rgb:255,111,36; }
+[data-accent="ice"]{ --tab-accent:var(--ice); --tab-accent-rgb:207,230,255; }
+[data-accent="acid"]{ --tab-accent:var(--acid); --tab-accent-rgb:31,139,255; }
+[data-accent="ok"]{ --tab-accent:var(--ok); --tab-accent-rgb:143,227,155; }
+.synth-tab{ background:linear-gradient(90deg, rgba(var(--tab-accent-rgb),.10), rgba(var(--tab-accent-rgb),.04)), var(--ink-2);
+  border-color:rgba(var(--tab-accent-rgb),.22); border-left-color:var(--tab-accent); }
+.synth-tab:hover{ background:linear-gradient(90deg, rgba(var(--tab-accent-rgb),.16), rgba(var(--tab-accent-rgb),.06)), var(--ink-2); }
+.synth-tab[aria-pressed="true"]{ background:linear-gradient(90deg, rgba(var(--tab-accent-rgb),.30), rgba(var(--tab-accent-rgb),.14)), var(--ink-2);
+  border-color:rgba(var(--tab-accent-rgb),.55); border-left-color:var(--tab-accent); }
+.synth-tab[aria-pressed="true"] .t{ color:var(--paper); }
+.synth-tab[aria-pressed="true"] .s{ color:var(--paper-2); }
+/* Summary lines: labels muted, values in paper, the headline value in the accent. */
+.synth-tab .s .k{ color:var(--mute-2); }
+.synth-tab .s .v{ color:var(--paper-2); }
+.synth-tab .s .h{ color:var(--tab-accent); font-weight:700; }
+.synth-tab[aria-pressed="true"] .s .k{ color:rgba(233,227,214,.62); }
+.synth-tab[aria-pressed="true"] .s .v{ color:var(--paper); }
+.synth-body{ min-height:0; border-top:3px solid var(--tab-accent); }
+.synth-head .t{ color:var(--tab-accent); }
+.synth-head{ align-items:center; gap:10px; padding:4px 8px 4px 12px; min-height:48px; }
+.synth-head .m{ text-transform:none; letter-spacing:.03em; font-size:9px; }
+.synth-learn{ min-width:120px; }
+.synth-learn[aria-pressed="true"]{ background:var(--shock); color:#0a0a0a; border-color:var(--shock); }
+.synth-learn[aria-pressed="true"]::before{ color:#0a0a0a; }
+.synth-section{ flex:1; min-height:0; overflow-y:auto; overflow-x:hidden; border:none; background:transparent; }
+.synth-section[hidden]{ display:none; }
+.synth-waves{ padding:8px 10px 0; }
+.synth-waves .wavebox canvas{ height:84px; }
+.synth-section .ctl-list{ gap:0; padding:4px 10px 8px; }
+.synth-section .ctl{ flex:0 0 auto; grid-template-columns:118px 44px minmax(0,1fr) 44px 70px; gap:8px; min-height:48px; border-bottom:1px solid var(--line); }
+.synth-section .ctl:last-child{ border-bottom:none; }
+.synth-section .ctl.sel{ grid-template-columns:118px minmax(0,1fr); }
+.synth-section .ctl.sel .opts{ grid-column:2 / -1; }
+.synth-section .ctl.sel .opt{ min-height:44px; font-size:12px; }
+.synth-section .ctl.chips .opts{ flex-wrap:wrap; padding:4px 0; }
+.synth-section .ctl.chips .opt{ flex:0 0 calc((100% - 31px) / 7); }
+.synth-section .ctl[hidden]{ display:none; }
+.synth-section .ctl .nm{ font-size:12px; display:flex; flex-direction:column; justify-content:center; gap:2px; min-height:40px; white-space:normal; line-height:1.1; cursor:default; }
+.synth-section .ctl .nm .synth-cc{ display:none; font-family:var(--mono); font-size:9px; font-weight:400; letter-spacing:.05em; text-transform:none;
+  color:var(--mute-2); padding:1px 5px; border:1px solid var(--line-2); align-self:flex-start; }
+.synth-layout.learn .ctl .nm{ cursor:pointer; }
+.synth-layout.learn .ctl .nm .synth-cc{ display:inline-block; }
+.synth-layout.learn .synth-cc.mapped{ color:var(--ok); border-color:rgba(143,227,155,.5); }
+.synth-layout.learn .ctl.armed{ background:rgba(255,111,36,.10); box-shadow:inset 3px 0 0 var(--shock); }
+.synth-layout.learn .ctl.armed .synth-cc{ color:var(--shock); border-color:var(--shock); }
+.synth-lfo{ font-family:var(--mono); font-size:8.5px; letter-spacing:.06em; padding:1px 5px; border:1px solid var(--shock); color:var(--shock);
+  background:rgba(255,111,36,.08); align-self:flex-start; cursor:pointer; display:none; }
+.synth-lfo.on{ display:inline-block; }
+.synth-section .ctl .val{ font-size:13px; font-family:var(--din); font-weight:700; }
+.synth-section .ctl.ctl-disabled .val{ color:var(--mute); }
+.synth-nudge{ min-height:40px; height:40px; padding:0; font-family:var(--dinc); font-size:22px; line-height:1; background:transparent;
+  border:1px solid var(--line-2); color:var(--paper-2); }
+.synth-nudge:active{ background:var(--ink-3); border-color:var(--shock); }
+.synth-section .ctl.ctl-disabled .synth-nudge{ pointer-events:none; opacity:.6; }
+.synth-section .edit-slider-wrap{ height:44px; }
+.synth-section input.edit-slider{ height:44px; }
+.synth-section input.edit-slider::-webkit-slider-runnable-track{ height:44px; }
+.synth-section input.edit-slider::-webkit-slider-thumb{ width:22px; height:38px; margin-top:3px; }
+.synth-section .lfo-live-marker{ height:30px; }
+.synth-tags{ display:flex; gap:4px; flex-wrap:wrap; }
+.synth-tab .s{ white-space:pre-line; }
+.synth-section, .synth-rail{ touch-action:manipulation; }
+.ctl.ctl-disabled .opt{ pointer-events:none; }
+.synth-reset-flash{ animation:synthResetFlash 500ms ease-out; }
+@keyframes synthResetFlash{ 0%{ background:rgba(255,111,36,.25); } 100%{ background:transparent; } }
+
 /* ── MODS ── */
 /* Two panes: MONITOR (rows + optional scope + live readout) | EDITOR (selected LFO). */
 .mods-layout{ flex:1; min-height:0; display:grid; grid-template-columns:1.08fr 1fr; gap:10px; }
