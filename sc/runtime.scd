@@ -265,7 +265,10 @@ s.doWhenBooted({
 
     // Free + respawn LFO synth `idx` from its stored config. Retarget/param
     // changes route through here (cheap, human-rate).
-    spawnLfo = { |idx|
+    // startOnBeat (0/1) is a per-spawn flag, never stored: it only applies to
+    // the respawn that turns a clock-locked LFO on (see applyLfo), not to
+    // rebuilds, retargets or note retriggers of an LFO that is already running.
+    spawnLfo = { |idx, startOnBeat = 0|
         var cfg, tIdx;
         releaseLfo.value(idx);
         cfg = lfoConfigs[idx];
@@ -285,7 +288,8 @@ s.doWhenBooted({
                 \clockBus, clockBus.index,
                 \useClock, cfg[\useClock],
                 \ratio, cfg[\ratio],
-                \scopeOut, lfoOutBus.index + idx
+                \scopeOut, lfoOutBus.index + idx,
+                \startOnBeat, (startOnBeat ? 0).asInteger.clip(0, 1)
             ], lfoGroup, \addToTail);
         };
     };
@@ -324,8 +328,13 @@ s.doWhenBooted({
     //
     // Respawn (spawnLfo) is reserved for changes that genuinely require a new
     // node: retargeting, toggling enable, or an explicit phase retrigger.
-    applyLfo = { |idx, name, rate, depth, shape, enabled, phase, useClock = 0, ratio = 1|
-        var i, tgt, cap, en, cfg, ph, live, structural, oldTgt, oldEn, oldPhase;
+    //
+    // startOnBeat 1 asks the engine to hold the LFO's output until the next
+    // whole beat; it is only passed on when this call turns the LFO on (the
+    // renderer sends it for the Run button of a clock-locked LFO while MIDI
+    // clock is ticking).
+    applyLfo = { |idx, name, rate, depth, shape, enabled, phase, useClock = 0, ratio = 1, startOnBeat = 0|
+        var i, tgt, cap, en, cfg, ph, live, structural, oldTgt, oldEn, oldPhase, waitBeat;
         i = idx.asInteger;
         if((i < 0) or: { i >= maxLfo }) {
             lfoWarn.value("idx out of range: " ++ idx.asString);
@@ -361,11 +370,12 @@ s.doWhenBooted({
 
             live = lfoSynths[i];
             structural = (oldTgt != tgt) or: { oldEn != en } or: { oldPhase != ph };
+            waitBeat = if((oldEn == 0) and: { en > 0 }) { (startOnBeat ? 0).asInteger.clip(0, 1) } { 0 };
             if(live.notNil and: { structural.not }) {
                 live.set(\rate, cfg[\rate], \depth, cfg[\depth], \shape, cfg[\shape],
                     \useClock, cfg[\useClock], \ratio, cfg[\ratio]);
             } {
-                spawnLfo.value(i);
+                spawnLfo.value(i, waitBeat);
             };
         };
     };
@@ -677,16 +687,16 @@ s.doWhenBooted({
     }, "/spaluter/lfo/count");
 
     OSCdef(\spaluterLfoSet, { |msg|
-        // [idx, targetName, rate, depth, shape, enabled, phase, useClock, ratio]
-        applyLfo.value(msg[1], msg[2], msg[3], msg[4], msg[5], msg[6], msg[7], msg[8], msg[9]);
+        // [idx, targetName, rate, depth, shape, enabled, phase, useClock, ratio, startOnBeat]
+        applyLfo.value(msg[1], msg[2], msg[3], msg[4], msg[5], msg[6], msg[7], msg[8], msg[9], msg[10]);
     }, "/spaluter/lfo/set");
 
     OSCdef(\spaluterLfoSetMany, { |msg|
-        // 9 args per LFO entry, packed after the address.
-        var entries = (msg.size - 1) div: 9;
+        // 10 args per LFO entry, packed after the address.
+        var entries = (msg.size - 1) div: 10;
         entries.do { |k|
-            var b = 1 + (k * 9);
-            applyLfo.value(msg[b], msg[b+1], msg[b+2], msg[b+3], msg[b+4], msg[b+5], msg[b+6], msg[b+7], msg[b+8]);
+            var b = 1 + (k * 10);
+            applyLfo.value(msg[b], msg[b+1], msg[b+2], msg[b+3], msg[b+4], msg[b+5], msg[b+6], msg[b+7], msg[b+8], msg[b+9]);
         };
     }, "/spaluter/lfo/set-many");
 

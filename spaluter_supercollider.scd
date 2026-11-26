@@ -399,10 +399,18 @@ s.waitForBoot {
     // scopeOut: index of this LFO's channel on the 16-channel LFO output bus.
     // The normalised (-1..1, depth-free) value is published there for the
     // Mods screen monitor; the main synth never reads it.
-    SynthDef(\spaluterLfo, { |modBus=0, targetIdx=0, rate=1, depth=0, shape=0, phase=0, enabled=1, lag=0.02, clockBus=0, useClock=0, ratio=1, scopeOut=0|
-        var freePh, clockPh, ph, wrapTrig, sine, tri, sawU, sawD, sqr, sh, rnd, osc, sig, norm;
+    // startOnBeat 1 (only honoured with useClock 1): the output is held at zero
+    // until the beat position next crosses a whole beat, so an LFO started by
+    // hand comes in on the beat. The runtime passes it only on the respawn that
+    // turns an LFO on; a MIDI Start, which snaps the position to 0, counts as a
+    // beat crossing, so a waiting LFO also starts on the downbeat.
+    SynthDef(\spaluterLfo, { |modBus=0, targetIdx=0, rate=1, depth=0, shape=0, phase=0, enabled=1, lag=0.02, clockBus=0, useClock=0, ratio=1, scopeOut=0, startOnBeat=0|
+        var beat, freePh, clockPh, ph, wrapTrig, sine, tri, sawU, sawD, sqr, sh, rnd, osc, sig, norm, beatGate, gate;
+        beat = In.kr(clockBus, 1);
         freePh = LFSaw.kr(rate, 0).range(0, 1);
-        clockPh = (In.kr(clockBus, 1) * ratio).wrap(0, 1);
+        clockPh = (beat * ratio).wrap(0, 1);
+        beatGate = SetResetFF.kr(Changed.kr(beat.floor), 0);
+        gate = Select.kr(((startOnBeat > 0) * (useClock > 0)).clip(0, 1), [1, beatGate]);
         ph = (Select.kr(useClock.clip(0, 1), [freePh, clockPh]) + phase).wrap(0, 1);
         wrapTrig = (ph - Delay1.kr(ph)) < -0.5;
         sine = (2pi * ph).sin;
@@ -413,7 +421,7 @@ s.waitForBoot {
         sh   = TRand.kr(-1, 1, wrapTrig);
         rnd  = LFNoise2.kr(rate);
         osc  = Select.kr(shape.clip(0, 6), [sine, tri, sawU, sawD, sqr, sh, rnd]);
-        norm = Lag.kr(osc * enabled, lag);
+        norm = Lag.kr(osc * enabled * gate, lag);
         sig  = norm * depth;
         Out.kr(modBus + targetIdx, sig);
         ReplaceOut.kr(scopeOut, norm);

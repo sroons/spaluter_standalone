@@ -1056,7 +1056,8 @@ function registerIpcHandlers() {
       cfg.enabled ? 1 : 0,
       Number(cfg.phase) || 0,
       cfg.useClock ? 1 : 0,
-      Number(cfg.clockRatio) || 1
+      Number(cfg.clockRatio) || 1,
+      cfg.startOnBeat ? 1 : 0
     ]);
   });
 
@@ -1077,7 +1078,8 @@ function registerIpcHandlers() {
         cfg.enabled ? 1 : 0,
         Number(cfg.phase) || 0,
         cfg.useClock ? 1 : 0,
-        Number(cfg.clockRatio) || 1
+        Number(cfg.clockRatio) || 1,
+        cfg.startOnBeat ? 1 : 0
       );
     }
     if (args.length > 0) sendOsc("/spaluter/lfo/set-many", args);

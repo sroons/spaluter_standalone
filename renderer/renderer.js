@@ -1877,6 +1877,7 @@ function markMidiClockLost() {
   if (!midiClockPresent) return;
   midiClockPresent = false;
   midiClockTickTimesMs.length = 0;
+  clearLfoBeatStartPending();
   appendLog(`[MIDI] Clock stopped${Number.isFinite(midiClockBpm) ? ` (holding ${midiClockBpm.toFixed(1)} BPM)` : ""}.`);
   refreshMidiClockReadouts(true);
 }
@@ -1928,6 +1929,7 @@ function handleMidiRealtimeMessage(status, eventTimeMs) {
   const nowMs = Number.isFinite(eventTimeMs) ? eventTimeMs : performance.now();
   noteMidiClockPresent();
   if (midiClockTickCount % MIDI_CLOCK_SYNC_EVERY_TICKS === 0) sendClockSync(false);
+  if (midiClockTickCount % MIDI_CLOCK_TICKS_PER_QUARTER === 0) clearLfoBeatStartPending();
   midiClockTickCount += 1;
   midiClockTickTimesMs.push(nowMs);
   if (midiClockTickTimesMs.length > MIDI_CLOCK_SMOOTHING_TICKS) midiClockTickTimesMs.shift();
@@ -2465,6 +2467,11 @@ function defaultLfoConfig() {
 
 let lfoConfigs = Array.from({ length: LFO_MAX }, defaultLfoConfig);
 const lfoRetriggerEpochSec = Array.from({ length: LFO_MAX }, () => 0);
+// LFOs whose Run was pressed in MIDI clock mode and that the engine is holding
+// silent until the next whole beat (startOnBeat). Only a display state: the
+// engine does the waiting; this clears on the beat tick so the row can stop
+// showing "armed".
+const lfoBeatStartPending = new Set();
 // All 16 LFOs are always presented and always live on the engine; each one's
 // `enabled` flag (not the count) decides whether it actually runs.
 let lfoCount = LFO_MAX;
@@ -2953,6 +2960,7 @@ function refreshLfoRow(index) {
   r.strip.classList.toggle("is-selected", index === selectedLfoIndex);
   r.strip.setAttribute("aria-pressed", String(index === selectedLfoIndex));
   r.runBtn.classList.toggle("on", cfg.enabled);
+  r.runBtn.classList.toggle("armed", cfg.enabled && lfoBeatStartPending.has(index));
   r.runBtn.setAttribute("aria-pressed", String(cfg.enabled));
   r.targetEl.textContent = cfg.target === "none" ? "unassigned" : lfoTargetLabel(cfg);
   r.targetEl.classList.toggle("is-empty", cfg.target === "none");
@@ -2968,13 +2976,32 @@ function refreshLfoStrip(index) {
   if (index === selectedLfoIndex) refreshLfoEditor();
 }
 
+// Run pressed on a clock-locked LFO while MIDI clock is ticking: ask the engine
+// to hold its output until the next whole beat instead of starting mid-beat.
+// With no clock ticking (or in free-run mode) the LFO starts at once as before.
+function lfoShouldStartOnBeat(cfg) {
+  return Boolean(cfg.useMidiClock) && Number.isFinite(midiClockHz) && midiClockPresent;
+}
+
 function toggleLfoEnabled(index) {
   const cfg = lfoConfigs[index];
   cfg.enabled = !cfg.enabled;
+  const startOnBeat = cfg.enabled && lfoShouldStartOnBeat(cfg);
+  if (startOnBeat) lfoBeatStartPending.add(index); else lfoBeatStartPending.delete(index);
   refreshLfoStrip(index);
   updateLfoHint();
-  sendLfo(index);
+  sendLfo(index, startOnBeat);
   drawLfoScope();
+}
+
+// The engine releases a waiting LFO when its beat position crosses a whole
+// beat, which is the tick the renderer counts as a multiple of 24; clear the
+// armed display on that tick (and when the clock disappears).
+function clearLfoBeatStartPending() {
+  if (lfoBeatStartPending.size === 0) return;
+  const indices = Array.from(lfoBeatStartPending);
+  lfoBeatStartPending.clear();
+  indices.forEach((idx) => refreshLfoStrip(idx));
 }
 
 function selectLfo(index) {
@@ -3174,8 +3201,10 @@ function refreshLfoEditor() {
       : `${lfoTargetLabel(c)} · ${lfoRateText(c)}`;
   }
   if (lfoEditRunEl) {
-    lfoEditRunEl.textContent = c.enabled ? "Running" : "Off";
+    const armed = c.enabled && lfoBeatStartPending.has(i);
+    lfoEditRunEl.textContent = c.enabled ? (armed ? "On next beat" : "Running") : "Off";
     lfoEditRunEl.classList.toggle("on", c.enabled);
+    lfoEditRunEl.classList.toggle("armed", armed);
     lfoEditRunEl.setAttribute("aria-pressed", String(c.enabled));
   }
 
@@ -3502,7 +3531,7 @@ function initModulationUi() {
   updateLfoHint();
 }
 
-function lfoToIpc(index) {
+function lfoToIpc(index, startOnBeat = false) {
   const c = lfoConfigs[index];
   return {
     idx: index,
@@ -3514,12 +3543,15 @@ function lfoToIpc(index) {
     phase: c.phase,
     // Phase lock only once a tempo exists; until then the LFO free-runs at rate.
     useClock: Boolean(c.useMidiClock) && Number.isFinite(midiClockHz),
-    clockRatio: lfoClockRatioValue(c)
+    clockRatio: lfoClockRatioValue(c),
+    // Hold the output until the next whole beat; the runtime only honours it
+    // on the message that turns the LFO on (Run button, clock mode, clock present).
+    startOnBeat: Boolean(startOnBeat)
   };
 }
 
-function sendLfo(index) {
-  window.spaluterApi.setLfo(index, lfoToIpc(index));
+function sendLfo(index, startOnBeat = false) {
+  window.spaluterApi.setLfo(index, lfoToIpc(index, startOnBeat));
   updateLfoHint();
   updateEditLfoMarkers();
   refreshSynthLfoBadges();

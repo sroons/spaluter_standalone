@@ -324,6 +324,8 @@ input.edit-slider{ height:30px; border:none; background:transparent; }
   background:transparent; font-family:var(--dinc); font-weight:700; font-size:20px; color:var(--mute); }
 .lfo-row-run:hover{ background:rgba(255,255,255,.04); border-color:var(--line); }
 .lfo-row-run.on{ background:var(--shock); color:#0a0a0a; }
+.lfo-row-run.on.armed{ background:rgba(255,111,36,.28); color:var(--paper); box-shadow:inset 0 0 0 2px var(--shock); animation:lfo-armed 0.6s ease-in-out infinite alternate; }
+@keyframes lfo-armed{ from{ background:rgba(255,111,36,.18); } to{ background:rgba(255,111,36,.42); } }
 .lfo-row.lfo-running .lfo-row-run.on{ box-shadow:inset 0 0 0 1px rgba(255,255,255,.25); }
 .lfo-row-main{ display:flex; flex-direction:column; min-width:0; gap:1px; }
 .lfo-row-target{ font-family:var(--din); font-weight:700; font-size:13px; letter-spacing:.02em;
@@ -383,6 +385,7 @@ input.edit-slider{ height:30px; border:none; background:transparent; }
 .lfo-run{ font-family:var(--mono); font-size:11px; min-height:44px; padding:8px 12px;
   background:transparent; border:1px solid var(--line-2); color:var(--mute-2); letter-spacing:.08em; text-transform:uppercase; }
 .lfo-run.on{ background:var(--shock); border-color:var(--shock); color:#fff; }
+.lfo-run.on.armed{ background:rgba(255,111,36,.28); color:var(--paper); animation:lfo-armed 0.6s ease-in-out infinite alternate; }
 .lfo-target-sel{
   width:100%; min-height:44px; padding:0 34px 0 10px;
   border:1px solid var(--line-2); background-color:#070708;
