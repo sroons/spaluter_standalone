@@ -1,5 +1,11 @@
 # Spaluter Desktop (Electron + SuperCollider)
 
+> ## [Read the documentation →](https://sroons.github.io/spaluter_standalone/documentation.html)
+>
+> The player's manual: every screen, modulation, effects, presets, MIDI, installing and troubleshooting.
+>
+> Also on the site: [Overview](https://sroons.github.io/spaluter_standalone/) · [Pulsar synthesis explained](https://sroons.github.io/spaluter_standalone/pulsar-synthesis.html) · [Hardware](https://sroons.github.io/spaluter_standalone/hardware.html)
+
 Cross-platform desktop wrapper for the `spaluter_supercollider.scd` patch.
 
 ## What it does
