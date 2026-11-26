@@ -19,7 +19,7 @@ Boots local scsynth, loads patch file, and exposes OSC control:
     var clockBus, clockMasterSynth, clockHz, clockPos, applyClockSync;
     var lfoOutBus, modScopeSynth, modScopeEnabled, modScopeRate, forwardModScope, applyModScopeConfig;
     var modParams, modParamIndex, modDepthCap, setupModulation, spawnLfo, releaseLfo, setLfoCount, applyLfo, rebuildLfos, retriggerLfos, lfoWarn, lfoWarnLast, lfoWarnCount;
-    var reverbDefaults, reverbState, reverbParamSet, reverbSynthDef, reverbDefForState, applyReverbState, spawnReverb, setReverbParam, resetReverbParams, updateReverbBypass;
+    var reverbDefaults, reverbState, reverbParamSet, reverbSynthDef, reverbDefForState, applyReverbState, spawnReverb, setReverbParam, resetReverbParams, updateReverbBypass, fxMixModulated;
     var setupMidi, midiNoteOn, midiNoteOff, midiNoteToBasePitch, midiSoundingNote, midiVoiceActive, currentGateMode, midiInitialized, midiChannel;
     var cpuReportPeriod;
 
@@ -157,7 +157,11 @@ s.doWhenBooted({
         \formant1, \formant2, \formant3, \maskAmount,
         \pan1, \pan2, \pan3,
         \ampJitter, \timingJitter, \glisson, \basePitch,
-        \attackMs, \releaseMs, \glideMs, \sampleRate
+        \attackMs, \releaseMs, \glideMs, \sampleRate,
+        // 20-24 are read by the FX synth, 25-28 are stepped selectors
+        // (offset in option steps, rounded by the engine).
+        \revWet, \revTime, \dlyWet, \dlyFeedback, \dlyClockRatio,
+        \chordType, \maskMode, \formantInterval2, \formantInterval3
     ];
     modParamIndex = IdentityDictionary.new;
     modParams.do { |name, i| modParamIndex[name] = i };
@@ -167,7 +171,9 @@ s.doWhenBooted({
         \formant1, 1000, \formant2, 1000, \formant3, 1000, \maskAmount, 0.5,
         \pan1, 1.0, \pan2, 1.0, \pan3, 1.0,
         \ampJitter, 0.5, \timingJitter, 0.5, \glisson, 0.5, \basePitch, 12,
-        \attackMs, 500, \releaseMs, 800, \glideMs, 500, \sampleRate, 0.25
+        \attackMs, 500, \releaseMs, 800, \glideMs, 500, \sampleRate, 0.25,
+        \revWet, 0.5, \revTime, 0.5, \dlyWet, 0.5, \dlyFeedback, 0.5, \dlyClockRatio, 19,
+        \chordType, 13, \maskMode, 2, \formantInterval2, 13, \formantInterval3, 13
     ]);
     lfoConfigs = Array.fill(maxLfo, {
         (target: \none, rate: 1.0, depth: 0.0, shape: 0, enabled: 0, phase: 0.0, useClock: 0, ratio: 1.0)
@@ -205,7 +211,7 @@ s.doWhenBooted({
     // restarts). The group holds \modClear (head) then the LFO synths; the
     // main synth is created \addAfter this group so it reads summed mod values.
     setupModulation = {
-        if(modBus.isNil) { modBus = Bus.control(s, 20); };
+        if(modBus.isNil) { modBus = Bus.control(s, modParams.size); };
         if(clockBus.isNil) { clockBus = Bus.control(s, 1); };
         if(lfoOutBus.isNil) { lfoOutBus = Bus.control(s, 16); };
         if(lfoGroup.isNil) {
@@ -377,6 +383,9 @@ s.doWhenBooted({
             } {
                 spawnLfo.value(i, waitBeat);
             };
+            // An LFO arriving on or leaving the FX mix targets changes whether
+            // the (otherwise dry, paused) FX synth has to run.
+            if([tgt, oldTgt].includesAny([\revWet, \dlyWet])) { updateReverbBypass.value };
         };
     };
 
@@ -411,12 +420,20 @@ s.doWhenBooted({
 
     // CPU bypass: when both reverb and delay are fully dry, pause the FX synth
     // so its delay networks stop costing DSP. Paused => no ReplaceOut, so
-    // \spaluterSC's dry output passes straight through.
+    // \spaluterSC's dry output passes straight through. A running LFO on
+    // revWet or dlyWet counts as "not dry": its offset can open the mix from 0.
+    fxMixModulated = {
+        lfoConfigs.any { |cfg|
+            (cfg[\enabled] > 0) and: { cfg[\depth] != 0 }
+            and: { (cfg[\target] == \revWet) or: { cfg[\target] == \dlyWet } }
+        };
+    };
     updateReverbBypass = {
         if(~spaluterReverb.notNil) {
             ~spaluterReverb.run(
                 ((reverbState[\revWet] ? 0) > 0.0001)
                 or: { (reverbState[\dlyWet] ? 0) > 0.0001 }
+                or: { fxMixModulated.value }
             );
         };
     };
@@ -429,7 +446,11 @@ s.doWhenBooted({
                 ~spaluterReverb.free;
                 ~spaluterReverb = nil;
             };
-            ~spaluterReverb = Synth(defName, [\out, 0], ~spaluter, \addAfter);
+            // The FX synth reads the same mod bus as the synth (revWet, revTime,
+            // dlyWet, dlyFeedback, dlyClockRatio targets).
+            ~spaluterReverb = Synth(defName,
+                [\out, 0] ++ if(modBus.notNil) { [\modBus, modBus.index] } { [] },
+                ~spaluter, \addAfter);
             reverbSynthDef = defName;
             applyReverbState.value;
             updateReverbBypass.value;

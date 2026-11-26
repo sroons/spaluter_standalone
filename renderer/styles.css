@@ -158,6 +158,13 @@ input.edit-slider{ height:30px; border:none; background:transparent; }
   opacity:0; pointer-events:none; z-index:1;
 }
 .lfo-live-marker.on{ opacity:.92; }
+/* Live value of a stepped LFO target (select rows): tag beside the name, outlined chip. */
+.lfo-live-step{ display:none; margin-left:8px; font-family:var(--mono); font-size:9px; letter-spacing:.04em;
+  color:var(--shock); text-transform:none; font-weight:400; }
+.lfo-live-step.on{ display:inline; }
+.ctl.sel .opt.live{ box-shadow:inset 0 0 0 1px var(--shock); }
+.synth-section .ctl.sel .opt.live{ box-shadow:none; }
+.synth-section .ctl.sel .opt.live::before{ border-color:var(--shock); box-shadow:inset 0 0 0 1px var(--shock); }
 .edit-slider.lfo-targeted::-webkit-slider-thumb{ border-color:var(--shock); }
 .ctl input.edit-slider::-webkit-slider-runnable-track{ height:30px; background:transparent; border:none; }
 .ctl input.edit-slider::-webkit-slider-thumb{ -webkit-appearance:none; appearance:none;

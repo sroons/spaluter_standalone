@@ -119,6 +119,15 @@ s.waitForBoot {
         ("spaluterSC tables: " ++ pulsaretData.size ++ " + " ++ windowData.size ++ " floats").postln;
     };
 
+    // Width of the modulation bus: one channel per modulatable parameter, in
+    // the order of modParams in sc/runtime.scd (and MOD_BUS_INDEX in the
+    // renderer). Channels 0-19 are the original continuous targets; 20-28 were
+    // added for the FX synth (revWet, revTime, dlyWet, dlyFeedback,
+    // dlyClockRatio) and the stepped selectors (chordType, maskMode,
+    // formantInterval2, formantInterval3). A stepped target takes its offset in
+    // option steps: the engine rounds base + offset and clips it to the list.
+    ~spaluterModChannels = 29;
+
     // ---------------------------------------------------------------------
     // Voice clock: one per voice. Everything the three formant streams of a
     // voice must share leaves here on the clock bus, so the streams fire in
@@ -131,13 +140,14 @@ s.waitForBoot {
         modBus=0, clockBus=0, freqBus=0, voiceIdx=0|
         var mod, atk, rel, glid, vc, mode, ctype, bPitch, ratio, freq, pulseFreq, trig, phase;
         var envASR, envPulse, env, ampJ, vActive, gain, jitR, pulseCount, modeSm;
-        mod = In.kr(modBus, 20);
+        mod = In.kr(modBus, ~spaluterModChannels);
         atk = (attackMs + mod[16]).max(0.1) * 0.001;
         rel = (releaseMs + mod[17]).max(1.0) * 0.001;
         glid = (glideMs + mod[18]).max(0.0) * 0.001;
         vc = voiceCount.clip(1, 4);
         mode = gateMode.clip(0, 2);        // 0=MIDI-like gate, 1=Free Run, 2=CV-like gate
-        ctype = chordType.clip(0, 13);
+        // mod[25] steps through the chord list (rounded), the glide lag smooths the jump.
+        ctype = (chordType + mod[25]).round.clip(0, 13);
         bPitch = basePitch.max(0.1) * mod[15].midiratio;
         // ratioByVoice is 4 x 14; index voice*14 + chord into the flat table.
         ratio = Select.kr((voiceIdx.clip(0, 3) * 14) + ctype, ratioByVoice.flat);
@@ -199,7 +209,7 @@ s.waitForBoot {
         var edgeSec = 0.0005;
         pBuf = \pulsaretBuf.kr(~spaluterPulsaretBuf.bufnum);
         wBuf = \windowBuf.kr(~spaluterWindowBuf.bufnum);
-        mod = In.kr(modBus, 20);
+        mod = In.kr(modBus, ~spaluterModChannels);
         clk = In.ar(clockBus + (voiceIdx * 5), 5);
         phase = clk[0]; trig = clk[1]; gain = clk[2]; jitR = clk[3]; pulseCount = clk[4];
         // Voice frequency at control rate: with it, fEff, duty, the pulsaret
@@ -231,8 +241,9 @@ s.waitForBoot {
         // The ratio and the switch are lagged so a change is a 20 ms glide.
         f1Sm = Lag.kr(formant1, 0.02);
         quantOn = Lag.kr(formantQuant > 0.5, 0.02);
-        ratio2 = Lag.kr(Select.kr(formantInterval2.clip(0, ~spaluterFormantRatios.size - 1), ~spaluterFormantRatios), 0.02);
-        ratio3 = Lag.kr(Select.kr(formantInterval3.clip(0, ~spaluterFormantRatios.size - 1), ~spaluterFormantRatios), 0.02);
+        // mod[27]/mod[28] step through the ratio list (rounded to whole steps).
+        ratio2 = Lag.kr(Select.kr((formantInterval2 + mod[27]).round.clip(0, ~spaluterFormantRatios.size - 1), ~spaluterFormantRatios), 0.02);
+        ratio3 = Lag.kr(Select.kr((formantInterval3 + mod[28]).round.clip(0, ~spaluterFormantRatios.size - 1), ~spaluterFormantRatios), 0.02);
         f2Free = Lag.kr(formant2, 0.02);
         f3Free = Lag.kr(formant3, 0.02);
         fBase = Select.kr(fi, [
@@ -314,7 +325,8 @@ s.waitForBoot {
         burstOffset = Select.kr(perFormantMask > 0.5, [0, fi * (total / 3)]);
         idx = (pulseCount + burstOffset) % total;
         maskBurst = (idx < burstOn);
-        maskRaw = Select.ar(maskMode.clip(0, 2), [DC.ar(1), maskStoch, maskBurst]);
+        // mod[26] steps the mask mode (Off / Stochastic / Burst), rounded.
+        maskRaw = Select.ar((maskMode + mod[26]).round.clip(0, 2), [DC.ar(1), maskStoch, maskBurst]);
         maskSm = Lag.ar(maskRaw, 0.003);
 
         grain = src * win * edgeEnv * maskSm * fOn * gain;
@@ -336,7 +348,7 @@ s.waitForBoot {
         clockIds = #[0, 0, 0, 0], streamIds = #[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]|
         var mod, sig, vc, fc, ampSm, driveSm, makeup = 2.0, runGate;
         var scopeFrames, scopeBufL, scopeBufR, scopeWritePos, scopeReadPos, scopeValuesL, scopeValuesR, scopeTrig;
-        mod = In.kr(modBus, 20);
+        mod = In.kr(modBus, ~spaluterModChannels);
         vc = voiceCount.clip(1, 4);
         fc = formantCount.clip(1, 3);
         ampSm = Lag.ar(K2A.ar(amp), 0.02);
@@ -366,11 +378,11 @@ s.waitForBoot {
         12.do { |i| Pause.kr(runGate.value((vc > (i div: 3)) * (fc > (i % 3))), streamIds[i]) };
     }).add;
 
-    // Zeroes the 16-channel modulation bus each control block so the LFO
-    // synths (which use additive Out.kr) sum cleanly. Runs at the head of the
-    // LFO group, before any LFO and before the main synth reads the bus.
+    // Zeroes the modulation bus each control block so the LFO synths (which
+    // use additive Out.kr) sum cleanly. Runs at the head of the LFO group,
+    // before any LFO and before the main and FX synths read the bus.
     SynthDef(\modClear, { |modBus=0|
-        ReplaceOut.kr(modBus, DC.kr(0) ! 20);
+        ReplaceOut.kr(modBus, DC.kr(0) ! ~spaluterModChannels);
     }).add;
 
     // One internal LFO. Writes its bipolar output * depth additively into one
@@ -435,7 +447,7 @@ s.waitForBoot {
     // than a client-side re-synthesis of the LFO shapes.
     SynthDef(\spaluterModScope, { |lfoBus=0, modBus=0, clockBus=0, rate=30, enabled=0|
         var trig = Impulse.kr(rate.clip(1, 60)) * (enabled > 0);
-        SendReply.kr(trig, "/spaluter/modscope", In.kr(lfoBus, 16) ++ In.kr(modBus, 20) ++ In.kr(clockBus, 1));
+        SendReply.kr(trig, "/spaluter/modscope", In.kr(lfoBus, 16) ++ In.kr(modBus, ~spaluterModChannels) ++ In.kr(clockBus, 1));
     }).add;
 
     // Mutable Instruments Clouds-style reverb core with an added octave shimmer
@@ -461,6 +473,19 @@ s.waitForBoot {
     // the 70 Hz / 6.8 kHz band-limit each time round, so they darken like tape.
     // Replaces the previous four parallel CombN filters, each of which was its
     // own feedback echo and smeared the taps together.
+    // The 39 Clock Ratio options in ascending order (same values as the
+    // renderer's dlyClockRatio select): /16 .. /3, /2.5, /2, /1.75, /1.5, /1.3,
+    // x1, x1.3, x1.5, x1.75, x2, x2.5, x3 .. x16. An LFO on dlyClockRatio works
+    // in steps through this list, so a modulated clocked delay stays on the grid.
+    ~spaluterDelayClockRatios = (16..3).collect(_.reciprocal) ++ [1/2.5, 1/2, 1/1.75, 1/1.5, 1/1.3, 1, 1.3, 1.5, 1.75, 2, 2.5] ++ (3..16);
+    ~spaluterDelayClockRatioMod = { |ratio, steps|
+        var table = ~spaluterDelayClockRatios, idx;
+        // index of the table entry at or just below the incoming ratio (the
+        // renderer sends the table's own values, so this is the chosen option)
+        idx = table.collect { |r| ratio >= (r * 0.999) }.sum - 1;
+        Select.kr((idx + steps).round.clip(0, table.size - 1), table)
+    };
+
     ~spaluterDelayStage = { |in, sig, dlyWet, dlyFeedback, dlyTimeMs, dlySpread, dlySyncMode, dlyClockHz, dlyClockRatio|
         var dlyMix, dlyFeedbackAmt, dlyBaseMs, dlyBaseSec, dlyClockMs, dlySpreadAmt, dlyClockOn;
         var dlyTapMul, dlyTapBase, dlyDetuneR, dlyTapTimesL, dlyTapTimesR, dlyGains;
@@ -517,13 +542,16 @@ s.waitForBoot {
         |out=0, revWet=0, revTime=0.6, revDamp=0.5, revDiff=0.7, revMod=0.3,
         revShimmer=0, revPreDelay=0, revLowCut=20,
         dlyWet=0, dlyFeedback=0.35, dlyTimeMs=320, dlySpread=0.45,
-        dlySyncMode=0, dlyClockHz=0, dlyClockRatio=1|
+        dlySyncMode=0, dlyClockHz=0, dlyClockRatio=1, modBus=0|
 
-        var in, pre, diff, diffCoef, local, inL, inR, fb;
+        var in, mod, pre, diff, diffCoef, local, inL, inR, fb;
         var modDepth, modL, modR, lpFreq, earlyL, earlyR;
         var tankL, tankR, wet, mix, sig, shimmerAmt, shimmerMono, shimmerL, shimmerR;
 
         in = In.ar(out, 2);
+        // Same modulation bus as the synth (summed LFO offsets, cleared each
+        // block at the head of the LFO group, which runs before this node).
+        mod = In.kr(modBus, ~spaluterModChannels);
 
         // Pre-delay (up to 250 ms) before any reverberation.
         pre = DelayN.ar(in, 0.25, (revPreDelay * 0.001).clip(0, 0.25));
@@ -547,7 +575,7 @@ s.waitForBoot {
 
         // Late feedback tank: cross-coupled modulated delays + staged allpass
         // diffusion + loop filtering.
-        fb = revTime.clip(0, 0.95);
+        fb = (revTime + mod[21]).clip(0, 0.95);
         modDepth = revMod.clip(0, 1) * 0.0012;  // up to 1.2 ms wobble
         modL = LFNoise2.kr(0.11).range(modDepth.neg, modDepth);
         modR = LFNoise2.kr(0.15).range(modDepth.neg, modDepth);
@@ -584,10 +612,11 @@ s.waitForBoot {
         wet = [tankL, tankR] + ([shimmerL, shimmerR] * (shimmerAmt * 0.35));
         wet = HPF.ar(wet, revLowCut.clip(20, 1000));
 
-        mix = Lag.kr(revWet.clip(0, 1), 0.05);
+        mix = Lag.kr((revWet + mod[20]).clip(0, 1), 0.05);
         sig = (in * (1 - mix)) + (wet * mix);
         // 4-tap delay with one feedback loop (see ~spaluterDelayStage above).
-        sig = ~spaluterDelayStage.(in, sig, dlyWet, dlyFeedback, dlyTimeMs, dlySpread, dlySyncMode, dlyClockHz, dlyClockRatio);
+        sig = ~spaluterDelayStage.(in, sig, dlyWet + mod[22], dlyFeedback + mod[23], dlyTimeMs, dlySpread, dlySyncMode, dlyClockHz,
+            ~spaluterDelayClockRatioMod.(dlyClockRatio, mod[24]));
         // Final bus: block any DC the drive stage or FX leave behind and catch
         // peaks with a 2 ms look-ahead brickwall, so the hotter master level
         // never clips the DAC. This is the last node before the hardware.
@@ -601,13 +630,16 @@ s.waitForBoot {
         |out=0, revWet=0, revTime=0.6, revDamp=0.5, revDiff=0.7, revMod=0.3,
         revPreDelay=0, revLowCut=20,
         dlyWet=0, dlyFeedback=0.35, dlyTimeMs=320, dlySpread=0.45,
-        dlySyncMode=0, dlyClockHz=0, dlyClockRatio=1|
+        dlySyncMode=0, dlyClockHz=0, dlyClockRatio=1, modBus=0|
 
-        var in, pre, diff, diffCoef, local, inL, inR, fb;
+        var in, mod, pre, diff, diffCoef, local, inL, inR, fb;
         var modDepth, modL, modR, lpFreq, earlyL, earlyR;
         var tankL, tankR, wet, mix, sig;
 
         in = In.ar(out, 2);
+        // Same modulation bus as the synth (summed LFO offsets, cleared each
+        // block at the head of the LFO group, which runs before this node).
+        mod = In.kr(modBus, ~spaluterModChannels);
 
         // Pre-delay (up to 250 ms) before any reverberation.
         pre = DelayN.ar(in, 0.25, (revPreDelay * 0.001).clip(0, 0.25));
@@ -631,7 +663,7 @@ s.waitForBoot {
 
         // Late feedback tank: cross-coupled modulated delays + staged allpass
         // diffusion + loop filtering.
-        fb = revTime.clip(0, 0.95);
+        fb = (revTime + mod[21]).clip(0, 0.95);
         modDepth = revMod.clip(0, 1) * 0.0012;  // up to 1.2 ms wobble
         modL = LFNoise2.kr(0.11).range(modDepth.neg, modDepth);
         modR = LFNoise2.kr(0.15).range(modDepth.neg, modDepth);
@@ -658,10 +690,11 @@ s.waitForBoot {
         wet = [tankL, tankR];
         wet = HPF.ar(wet, revLowCut.clip(20, 1000));
 
-        mix = Lag.kr(revWet.clip(0, 1), 0.05);
+        mix = Lag.kr((revWet + mod[20]).clip(0, 1), 0.05);
         sig = (in * (1 - mix)) + (wet * mix);
         // 4-tap delay with one feedback loop (see ~spaluterDelayStage above).
-        sig = ~spaluterDelayStage.(in, sig, dlyWet, dlyFeedback, dlyTimeMs, dlySpread, dlySyncMode, dlyClockHz, dlyClockRatio);
+        sig = ~spaluterDelayStage.(in, sig, dlyWet + mod[22], dlyFeedback + mod[23], dlyTimeMs, dlySpread, dlySyncMode, dlyClockHz,
+            ~spaluterDelayClockRatioMod.(dlyClockRatio, mod[24]));
         // Final bus: block any DC the drive stage or FX leave behind and catch
         // peaks with a 2 ms look-ahead brickwall, so the hotter master level
         // never clips the DAC. This is the last node before the hardware.

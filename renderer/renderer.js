@@ -126,6 +126,10 @@ const controlMetaByParam = new Map();
 const paramValueElByParam = new Map();
 const paramSliderByParam = new Map();
 const editLfoMarkerByParam = new Map();
+// Stepped LFO targets shown as a select (Chord, Mask Mode, Interval 2/3,
+// Clock Ratio): a live tag beside the name shows the option the modulation
+// lands on, and the matching chip is outlined. param -> { tag, select, opts }.
+const liveStepTagByParam = new Map();
 const canvasMetricsByElement = new WeakMap();
 const allParamNames = Array.from(new Set([
   ...knobByParam.keys(),
@@ -2382,7 +2386,7 @@ function setParamValue(param, rawValue, send = true) {
 
   updateRealtimeParamValue(param, value);
   onSynthParamChanged(param);
-  if (currentMainScreen === "edit" && editLfoMarkerByParam.has(param)) {
+  if (lfoMarkerScreenActive() && (editLfoMarkerByParam.has(param) || liveStepTagByParam.has(param))) {
     updateEditLfoMarkers();
   }
   if (send) {
@@ -2448,9 +2452,42 @@ const LFO_TARGETS = [
   { name: "attackMs", label: "Attack (ms)", cap: 500 },
   { name: "releaseMs", label: "Release (ms)", cap: 800 },
   { name: "glideMs", label: "Glide (ms)", cap: 500 },
-  { name: "sampleRate", label: "Sample Rate", cap: 0.25 }
+  { name: "sampleRate", label: "Sample Rate", cap: 0.25 },
+  // FX synth targets (the engine's FX node reads the same mod bus).
+  { name: "revWet", label: "Reverb Mix", cap: 0.5 },
+  { name: "revTime", label: "Reverb Decay", cap: 0.5 },
+  { name: "dlyWet", label: "Delay Mix", cap: 0.5 },
+  { name: "dlyFeedback", label: "Delay Feedback", cap: 0.5 },
+  // Stepped selectors: depth is in option steps (±cap steps at ±100%); the
+  // engine rounds base + offset and clips it to the option list.
+  { name: "dlyClockRatio", label: "Delay Clock Ratio", cap: 19, steps: true },
+  { name: "chordType", label: "Chord", cap: 13, steps: true },
+  { name: "maskMode", label: "Mask Mode", cap: 2, steps: true },
+  { name: "formantInterval2", label: "Interval 2", cap: 13, steps: true },
+  { name: "formantInterval3", label: "Interval 3", cap: 13, steps: true }
 ];
 const LFO_TARGET_BY_NAME = new Map(LFO_TARGETS.map((t) => [t.name, t]));
+
+function lfoTargetIsStepped(targetName) {
+  return Boolean(LFO_TARGET_BY_NAME.get(targetName)?.steps);
+}
+
+// Value a stepped (select) target lands on when the engine adds `offset`
+// option steps to `base`: the option list is walked by index, so this also
+// covers dlyClockRatio, whose option values are ratios rather than indices.
+function steppedParamValue(param, base, offset) {
+  const select = selectByParam.get(param);
+  if (!select || select.options.length === 0) return Math.round(base + offset);
+  const values = Array.from(select.options).map((o) => Number(o.value));
+  let idx = 0;
+  let best = Number.POSITIVE_INFINITY;
+  values.forEach((v, i) => {
+    const d = Math.abs(v - base);
+    if (d < best) { best = d; idx = i; }
+  });
+  const next = clamp(Math.round(idx + offset), 0, values.length - 1);
+  return values[next];
+}
 
 function defaultLfoConfig() {
   return {
@@ -2593,7 +2630,7 @@ function retriggerLfosForMidiNote(nowSec = performance.now() / 1000) {
   if (retriggered === 0) return;
 
   window.spaluterApi.retriggerLfos();
-  if (currentMainScreen === "edit") updateEditLfoMarkers(nowSec);
+  if (lfoMarkerScreenActive()) updateEditLfoMarkers(nowSec);
 }
 
 function clampToParamMeta(param, value) {
@@ -2605,6 +2642,10 @@ function clampToParamMeta(param, value) {
 function formatParamDelta(param, value) {
   const v = Number(value);
   if (!Number.isFinite(v)) return "0";
+  if (lfoTargetIsStepped(param)) {
+    const n = Math.round(v);
+    return `${n} step${Math.abs(n) === 1 ? "" : "s"}`;
+  }
   const meta = getControlMeta(param);
   if (meta?.type === "continuous") {
     return v.toFixed(decimalsFromStep(meta.step, 2));
@@ -2628,6 +2669,22 @@ function updateEditLfoMarkers(nowSec = performance.now() / 1000) {
     const active = hasRunningLfoTarget(param);
     marker.classList.toggle("on", active);
     slider.classList.toggle("lfo-targeted", active);
+  });
+  liveStepTagByParam.forEach((refs, param) => {
+    const active = hasRunningLfoTarget(param);
+    let live = null;
+    if (active) {
+      const base = currentParamValue(param, Number(refs.select.value));
+      live = steppedParamValue(param, base, lfoModOffset(param, nowSec));
+      const option = Array.from(refs.select.options).find((o) => Number(o.value) === live);
+      refs.tag.textContent = `→ ${option ? option.textContent.trim() : live}`;
+    }
+    refs.tag.classList.toggle("on", active);
+    if (refs.opts) {
+      refs.opts.querySelectorAll(".opt").forEach((b) => {
+        b.classList.toggle("live", active && Number(b.dataset.value) === live);
+      });
+    }
   });
 }
 
@@ -2685,9 +2742,16 @@ function redrawModulatedParamViews(nowSec = performance.now() / 1000) {
 // redraw) otherwise.
 let paramModActive = false;
 
+// Screens whose sliders/selects carry live LFO markers: the Synth screen and
+// the Effects screen (reverb/delay targets).
+const LFO_MARKER_SCREENS = new Set(["edit", "reverb"]);
+function lfoMarkerScreenActive() {
+  return LFO_MARKER_SCREENS.has(currentMainScreen);
+}
+
 function paramModNeedsAnim() {
-  return currentMainScreen === "edit"
-    && (anyActiveLfoTargetsSynthView() || anyActiveLfoTargets(LFO_EDIT_MARKER_TARGETS));
+  return (currentMainScreen === "edit" && anyActiveLfoTargetsSynthView())
+    || (lfoMarkerScreenActive() && anyActiveLfoTargets(LFO_EDIT_MARKER_TARGETS));
 }
 
 function desiredParamAnimTickMs() {
@@ -2722,7 +2786,7 @@ window.spaluterApi.onParamAnimTick(() => {
     return;
   }
   const nowSec = performance.now() / 1000;
-  if (anyActiveLfoTargetsSynthView()) redrawModulatedParamViews(nowSec);
+  if (currentMainScreen === "edit" && anyActiveLfoTargetsSynthView()) redrawModulatedParamViews(nowSec);
   updateEditLfoMarkers(nowSec);
 });
 
@@ -2738,7 +2802,7 @@ window.spaluterApi.onParamAnimTick(() => {
 
 const LFO_PRIMARY_ACCENT = "#ff6f24";
 const MOD_SCOPE_LFO_COUNT = 16;
-const MOD_SCOPE_MOD_COUNT = 20;
+const MOD_SCOPE_MOD_COUNT = 29;
 const MOD_SCOPE_HISTORY = 512;
 const MOD_SCOPE_WINDOW_SEC = 4;
 const MOD_SCOPE_RATE_SCOPE_HZ = 30;
@@ -2755,7 +2819,9 @@ const MOD_BUS_INDEX = new Map([
   "formant1", "formant2", "formant3", "maskAmount",
   "pan1", "pan2", "pan3",
   "ampJitter", "timingJitter", "glisson", "basePitch",
-  "attackMs", "releaseMs", "glideMs", "sampleRate"
+  "attackMs", "releaseMs", "glideMs", "sampleRate",
+  "revWet", "revTime", "dlyWet", "dlyFeedback", "dlyClockRatio",
+  "chordType", "maskMode", "formantInterval2", "formantInterval3"
 ].map((name, i) => [name, i]));
 const LFO_SHAPE_SHORT = ["Sine", "Tri", "Saw ↑", "Saw ↓", "Square", "S&H", "Rnd"];
 // 24x14 glyph polylines for the shape chooser.
@@ -3314,7 +3380,9 @@ function refreshLfoLiveReadout(force = false, nowMs = performance.now()) {
   const base = currentParamValue(c.target, 0);
   const total = busIdx === undefined ? 0 : modBusLive[busIdx];
   const own = lfoLiveContribution(i);
-  const live = clampToParamMeta(c.target, base + total);
+  const live = lfoTargetIsStepped(c.target)
+    ? steppedParamValue(c.target, base, total)
+    : clampToParamMeta(c.target, base + total);
   const sign = (v) => (v >= 0 ? "+" : "");
   lfoLiveLineEl.textContent =
     `${lfoTargetLabel(c)} ${formatParamValue(c.target, base)} → ${formatParamValue(c.target, live)}`
@@ -3623,6 +3691,10 @@ function handleMainScreenEntered(targetScreen) {
   if (targetScreen === "edit") {
     scheduleWaveformResizeRefresh();
     refreshSynthScreen();
+    updateEditLfoMarkers();
+    scheduleParamModAnim();
+  } else if (targetScreen === "reverb") {
+    // Effects sliders carry the same live LFO markers as the Synth screen.
     updateEditLfoMarkers();
     scheduleParamModAnim();
   } else if (targetScreen === "mods") {
@@ -4428,6 +4500,17 @@ function initEditCards() {
       ctl.querySelectorAll("select.edit-select[data-param]").forEach((select) => {
         select.dataset.accent = accent;
         if (select.dataset.seg === "1") buildSegmentedSelect(select, accent);
+        const param = select.dataset.param;
+        if (lfoTargetIsStepped(param)) {
+          const nm = select.closest(".sub, .ctl")?.querySelector(".nm");
+          if (nm) {
+            const tag = document.createElement("span");
+            tag.className = "lfo-live-step";
+            nm.appendChild(tag);
+            const opts = select.nextElementSibling?.classList.contains("opts") ? select.nextElementSibling : null;
+            liveStepTagByParam.set(param, { tag, select, opts });
+          }
+        }
       });
     });
   });
