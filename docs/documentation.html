@@ -261,15 +261,64 @@
             </ul>
             <h3>Knobs and faders</h3>
             <p>Controllers are read on <strong>MIDI channel 1</strong>. Every control has a controller number (CC) assigned out of the box, listed below. Change any of them with <a href="#synth">MIDI learn</a>.</p>
-            <div class="cc-grid">
-            <div class="cc-group" data-accent="shock"><h4>Engine</h4><dl><dt>Amplitude</dt><dd>CC 7</dd><dt>Drive Gain</dt><dd>CC 71</dd><dt>Pulsaret</dt><dd>CC 20</dd><dt>Window</dt><dd>CC 21</dd><dt>Duty</dt><dd>CC 22</dd><dt>Duty Mode</dt><dd>CC 23</dd></dl></div>
-            <div class="cc-group" data-accent="ice"><h4>Formants</h4><dl><dt>Count</dt><dd>CC 24</dd><dt>Track Pitch</dt><dd>CC 25</dd><dt>Quantize</dt><dd>CC 63</dd><dt>Formant 1</dt><dd>CC 26</dd><dt>Formant 2 / Interval 2</dt><dd>CC 27</dd><dt>Formant 3 / Interval 3</dt><dd>CC 28</dd><dt>Pan 1</dt><dd>CC 29</dd><dt>Pan 2</dt><dd>CC 30</dd><dt>Pan 3</dt><dd>CC 31</dd></dl></div>
-            <div class="cc-group" data-accent="acid"><h4>Grain</h4><dl><dt>Mask Mode</dt><dd>CC 32</dd><dt>Per-Formant</dt><dd>CC 33</dd><dt>Mask Amount</dt><dd>CC 34</dd><dt>Amp Jitter</dt><dd>CC 35</dd><dt>Timing Jitter</dt><dd>CC 36</dd><dt>Glisson</dt><dd>CC 37</dd><dt>Burst On</dt><dd>CC 38</dd><dt>Burst Off</dt><dd>CC 39</dd></dl></div>
-            <div class="cc-group" data-accent="ok"><h4>Voice</h4><dl><dt>Gate Mode</dt><dd>CC 40</dd><dt>Voices</dt><dd>CC 41</dd><dt>Chord</dt><dd>CC 42</dd><dt>Base Pitch</dt><dd>CC 43</dd><dt>Attack</dt><dd>CC 44</dd><dt>Release</dt><dd>CC 45</dd><dt>Glide</dt><dd>CC 46</dd></dl></div>
-            <div class="cc-group" data-accent="shock"><h4>Sample</h4><dl><dt>Use Sample</dt><dd>CC 47</dd><dt>Sample Rate</dt><dd>CC 48</dd></dl></div>
-            <div class="cc-group" data-accent="ice"><h4>Reverb</h4><dl><dt>Mix</dt><dd>CC 49</dd><dt>Decay</dt><dd>CC 50</dd><dt>Damping</dt><dd>CC 51</dd><dt>Diffusion</dt><dd>CC 52</dd><dt>Movement</dt><dd>CC 53</dd><dt>Pre-delay</dt><dd>CC 54</dd><dt>Low Cut</dt><dd>CC 55</dd><dt>Shimmer</dt><dd>CC 56</dd></dl></div>
-            <div class="cc-group" data-accent="acid"><h4>Delay</h4><dl><dt>Mix</dt><dd>CC 57</dd><dt>Feedback</dt><dd>CC 58</dd><dt>Tap Spread</dt><dd>CC 59</dd><dt>Base Time</dt><dd>CC 60</dd><dt>Sync</dt><dd>CC 61</dd><dt>Clock Ratio</dt><dd>CC 62</dd></dl></div>
-            </div>
+            <div class="tbl-wrap"><table class="cc-table">
+              <thead><tr><th>Control</th><th>CC</th><th>What it does</th></tr></thead>
+              <tbody>
+                <tr class="grp" data-accent="shock"><th colspan="3" scope="colgroup">Engine</th></tr>
+                <tr><td>Amplitude</td><td class="n">7</td><td>Overall volume.</td></tr>
+                <tr><td>Drive Gain</td><td class="n">71</td><td>Pushes the sound harder for grit and saturation.</td></tr>
+                <tr><td>Pulsaret</td><td class="n">20</td><td>Blends through the ten particle waveforms.</td></tr>
+                <tr><td>Window</td><td class="n">21</td><td>Blends through the nine particle envelopes, soft to sharp.</td></tr>
+                <tr><td>Duty</td><td class="n">22</td><td>How much of each pulse is sound, how much silence.</td></tr>
+                <tr><td>Duty Mode</td><td class="n">23</td><td>Manual duty, or let the formant set it.</td></tr>
+                <tr class="grp" data-accent="ice"><th colspan="3" scope="colgroup">Formants</th></tr>
+                <tr><td>Count</td><td class="n">24</td><td>One, two or three formants.</td></tr>
+                <tr><td>Track Pitch</td><td class="n">25</td><td>Formants follow the notes you play, on or off.</td></tr>
+                <tr><td>Quantize</td><td class="n">63</td><td>Lock formants 2 and 3 to intervals of formant 1.</td></tr>
+                <tr><td>Formant 1</td><td class="n">26</td><td>Frequency of the first resonance.</td></tr>
+                <tr><td>Formant 2 / Interval 2</td><td class="n">27</td><td>Second resonance; steps through intervals when quantized.</td></tr>
+                <tr><td>Formant 3 / Interval 3</td><td class="n">28</td><td>Third resonance; steps through intervals when quantized.</td></tr>
+                <tr><td>Pan 1</td><td class="n">29</td><td>Left-right position of formant 1.</td></tr>
+                <tr><td>Pan 2</td><td class="n">30</td><td>Left-right position of formant 2.</td></tr>
+                <tr><td>Pan 3</td><td class="n">31</td><td>Left-right position of formant 3.</td></tr>
+                <tr class="grp" data-accent="acid"><th colspan="3" scope="colgroup">Grain</th></tr>
+                <tr><td>Mask Mode</td><td class="n">32</td><td>Off, random (Stochastic) or patterned (Burst).</td></tr>
+                <tr><td>Per-Formant</td><td class="n">33</td><td>Mask each formant separately, on or off.</td></tr>
+                <tr><td>Mask Amount</td><td class="n">34</td><td>How many pulses the random mask drops.</td></tr>
+                <tr><td>Amp Jitter</td><td class="n">35</td><td>Random loudness from pulse to pulse.</td></tr>
+                <tr><td>Timing Jitter</td><td class="n">36</td><td>Random early or late timing of each pulse.</td></tr>
+                <tr><td>Glisson</td><td class="n">37</td><td>Pitch bend inside every pulse, down or up.</td></tr>
+                <tr><td>Burst On</td><td class="n">38</td><td>Pulses that sound in each burst.</td></tr>
+                <tr><td>Burst Off</td><td class="n">39</td><td>Pulses left silent after each burst.</td></tr>
+                <tr class="grp" data-accent="ok"><th colspan="3" scope="colgroup">Voice</th></tr>
+                <tr><td>Gate Mode</td><td class="n">40</td><td>Held notes, free-running drone, or triggers.</td></tr>
+                <tr><td>Voices</td><td class="n">41</td><td>One to four voices.</td></tr>
+                <tr><td>Chord</td><td class="n">42</td><td>The chord the voices are stacked into.</td></tr>
+                <tr><td>Base Pitch</td><td class="n">43</td><td>The pulse rate: rhythm when low, pitch when higher.</td></tr>
+                <tr><td>Attack</td><td class="n">44</td><td>Fade-in time of a note.</td></tr>
+                <tr><td>Release</td><td class="n">45</td><td>Fade-out time of a note.</td></tr>
+                <tr><td>Glide</td><td class="n">46</td><td>Slide time between pitches.</td></tr>
+                <tr class="grp" data-accent="shock"><th colspan="3" scope="colgroup">Sample</th></tr>
+                <tr><td>Use Sample</td><td class="n">47</td><td>Use the loaded sample as the particle, on or off.</td></tr>
+                <tr><td>Sample Rate</td><td class="n">48</td><td>Playback speed of the sample.</td></tr>
+                <tr class="grp" data-accent="ice"><th colspan="3" scope="colgroup">Reverb</th></tr>
+                <tr><td>Mix</td><td class="n">49</td><td>Amount of reverb.</td></tr>
+                <tr><td>Decay</td><td class="n">50</td><td>Length of the tail.</td></tr>
+                <tr><td>Damping</td><td class="n">51</td><td>Darkens the tail.</td></tr>
+                <tr><td>Diffusion</td><td class="n">52</td><td>Density, from separate echoes to a smooth wash.</td></tr>
+                <tr><td>Movement</td><td class="n">53</td><td>Motion inside the tail.</td></tr>
+                <tr><td>Pre-delay</td><td class="n">54</td><td>Gap before the reverb begins.</td></tr>
+                <tr><td>Low Cut</td><td class="n">55</td><td>Removes lows from the reverb.</td></tr>
+                <tr><td>Shimmer</td><td class="n">56</td><td>Octave-up bloom in the tail.</td></tr>
+                <tr class="grp" data-accent="acid"><th colspan="3" scope="colgroup">Delay</th></tr>
+                <tr><td>Mix</td><td class="n">57</td><td>Amount of delay.</td></tr>
+                <tr><td>Feedback</td><td class="n">58</td><td>How long the echoes repeat.</td></tr>
+                <tr><td>Tap Spread</td><td class="n">59</td><td>Spacing of the four echoes.</td></tr>
+                <tr><td>Base Time</td><td class="n">60</td><td>Delay time in Free ms mode.</td></tr>
+                <tr><td>Sync</td><td class="n">61</td><td>Free time or locked to MIDI clock.</td></tr>
+                <tr><td>Clock Ratio</td><td class="n">62</td><td>Delay time as a fraction or multiple of a beat.</td></tr>
+              </tbody>
+            </table></div>
             <h3>Clock</h3>
             <p>Send MIDI clock from a drum machine, sequencer or computer and the instrument reads the tempo. LFOs with MIDI clock turned on, and the delay with Sync set to MIDI Clock, then follow it. Start, Continue and Stop from the clock source are followed as well.</p>
           </section>
