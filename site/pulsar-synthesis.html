@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Pulsar synthesis · Spiluter</title>
+    <meta name="description" content="A plain-language overview of pulsar synthesis for musicians: pulsarets, formants, windows, duty and masking, with a pulsar generator you can play in the browser." />
+    <meta name="theme-color" content="#0b0b0d" />
+    <link rel="icon" href="img/icon.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700&family=Barlow+Semi+Condensed:wght@700&display=swap" />
+    <link rel="stylesheet" href="css/site.css" />
+  </head>
+  <body>
+    <header class="site-head">
+      <div class="wrap">
+        <a class="brand" href="index.html" aria-label="Spiluter home">
+          <span class="wm">S<b>PI</b>LUTER</span>
+          <span class="tagline">Pulsar&nbsp;synthesis&nbsp;<b>instrument</b><br />Raspberry&nbsp;Pi&nbsp;·&nbsp;touch&nbsp;·&nbsp;MIDI</span>
+        </a>
+        <nav class="site-nav" aria-label="Pages">
+          <a href="index.html" data-page="home"><span class="ix">[01]</span><span class="nm">Overview</span></a>
+          <a href="pulsar-synthesis.html" data-page="pulsar" class="active" aria-current="page"><span class="ix">[02]</span><span class="nm">Pulsar Synthesis</span></a>
+          <a href="hardware.html" data-page="hardware"><span class="ix">[03]</span><span class="nm">Hardware</span></a>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <section class="page-hero">
+        <div class="wrap">
+          <div class="kicker">Pulsar synthesis · an overview for players</div>
+          <h1>A stream of <em>tiny sounds</em>.</h1>
+          <p class="lede">Most synthesizers start with a continuous tone and carve it. Pulsar synthesis starts with almost nothing: one very short sound, repeated. Everything you hear comes from how fast it repeats, how long each one lasts, what is inside it, and which repeats you leave out.</p>
+        </div>
+      </section>
+
+      <section>
+        <div class="wrap split">
+          <div class="reveal">
+            <div class="kicker">Where it comes from</div>
+            <h2>Named after a <em>star</em>.</h2>
+          </div>
+          <div class="prose reveal">
+            <p>A pulsar is a collapsed star that spins and sweeps a beam past the Earth at a perfectly regular rate, anywhere from once every few seconds to hundreds of times a second. Composer <strong>Curtis Roads</strong> borrowed the name for a technique he developed in the 1990s and described in his book <em>Microsound</em> (2001): music made from regular trains of sound particles.</p>
+            <p>The idea has older roots. In the electronic music studios of the 1950s, composers fed the clicks of laboratory pulse generators through filters and found that a click train could be a rhythm, a pitch, or a tone colour depending on its speed and on the filter. Pulsar synthesis takes that discovery, removes the laboratory, and gives each element its own control.</p>
+            <p>Roads and Alberto de Campo wrote the first dedicated program, PulsarGenerator, and Roads used it for pieces such as <em>Half-life</em> and the works collected on <em>Point Line Cloud</em>. Spiluter puts the same technique in a box you can play.</p>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <div class="wrap">
+          <div class="split">
+            <div class="reveal">
+              <div class="kicker">The building block</div>
+              <h2>Pulsaret, then <em>silence</em>.</h2>
+              <div class="prose">
+                <p>One pulsar has two parts: a short burst of waveform called the <strong>pulsaret</strong>, followed by a gap of <strong>silence</strong>. Repeat that over and over and you have a pulsar train.</p>
+                <p>Two timings describe it. How often a new pulsar begins is the <strong>pulse rate</strong>. How long the pulsaret lasts inside each one is the <strong>duty</strong>. They are independent, and that independence is the whole instrument.</p>
+              </div>
+            </div>
+            <div class="reveal">
+              <div class="figure">
+                <svg viewBox="0 0 560 250" role="img" aria-label="Diagram of two pulsars in a row. Each period contains a pulsaret, a short burst of waveform under a rounded envelope, followed by silence.">
+                  <rect x="30" y="50" width="100" height="120" fill="rgba(31,139,255,.10)" />
+                  <rect x="280" y="50" width="100" height="120" fill="rgba(31,139,255,.10)" />
+                  <line x1="30" y1="110" x2="530" y2="110" stroke="rgba(233,227,214,.14)" />
+                  <path d="M30 110 C45 110 55 56 80 56 S115 110 130 110" fill="none" stroke="#1f8bff" stroke-width="1.2" stroke-dasharray="3 3" />
+                  <path d="M280 110 C295 110 305 56 330 56 S365 110 380 110" fill="none" stroke="#1f8bff" stroke-width="1.2" stroke-dasharray="3 3" />
+                  <path d="M30 110 q6 -8 12 0 t12 0 q6 -42 12 0 t12 0 q7 -54 13 0 t13 0 q6 -30 12 0 t12 0 H280 q6 -8 12 0 t12 0 q6 -42 12 0 t12 0 q7 -54 13 0 t13 0 q6 -30 12 0 t12 0 H530" fill="none" stroke="#ff6f24" stroke-width="2" stroke-linejoin="round" />
+                  <g stroke="rgba(233,227,214,.35)"><line x1="30" y1="36" x2="30" y2="214" /><line x1="280" y1="36" x2="280" y2="214" /><line x1="530" y1="36" x2="530" y2="214" /></g>
+                  <g stroke="#9a99a4"><line x1="30" y1="186" x2="130" y2="186" /><line x1="130" y1="181" x2="130" y2="191" /><line x1="130" y1="186" x2="280" y2="186" stroke-dasharray="2 4" /></g>
+                  <text x="34" y="202" class="big">PULSARET</text><text x="140" y="202">SILENCE</text>
+                  <g stroke="#ff6f24"><line x1="30" y1="226" x2="280" y2="226" /></g>
+                  <text x="34" y="242" style="fill:#ff6f24">ONE PULSE PERIOD · REPEATS</text>
+                  <text x="34" y="28">ENVELOPE (WINDOW)</text>
+                </svg>
+              </div>
+              <p class="caption">Orange: the sound. Blue dashes: the envelope, called the window, that fades each pulsaret in and out.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <div class="wrap">
+          <div class="reveal">
+            <div class="kicker">Try it</div>
+            <h2>Play a pulsar <em>train</em>.</h2>
+            <p class="lede">A small pulsar generator, using the same controls as the instrument. Press Listen, start slow, and drag Pulse rate upward: somewhere around twenty per second the ticks stop being a rhythm and become a note.</p>
+          </div>
+          <div class="panel explorer reveal">
+            <div class="figure">
+              <span class="lab">Pulsar train</span><span class="lab r" data-span></span>
+              <canvas aria-label="Drawing of the current pulsar train"></canvas>
+            </div>
+            <div class="ctl-list">
+              <div class="ctl"><span class="nm">Pulse rate<small>rhythm or pitch</small></span><input type="range" min="0" max="1000" step="1" data-key="pitch" aria-label="Pulse rate" /><span class="val" data-val="pitch"></span></div>
+              <div class="ctl" data-accent="ice"><span class="nm">Formant<small>tone colour</small></span><input type="range" min="0" max="1000" step="1" data-key="formant" aria-label="Formant" /><span class="val" data-val="formant"></span></div>
+              <div class="ctl"><span class="nm">Duty<small>sound vs silence</small></span><input type="range" min="5" max="100" step="1" data-key="duty" aria-label="Duty" /><span class="val" data-val="duty"></span></div>
+              <div class="ctl sel"><span class="nm">Pulsaret</span><div class="opts" data-key="shape"><button class="opt" type="button" data-value="sine">Sine</button><button class="opt" type="button" data-value="triangle">Triangle</button><button class="opt" type="button" data-value="saw">Saw</button><button class="opt" type="button" data-value="square">Square</button></div></div>
+              <div class="ctl sel" data-accent="acid"><span class="nm">Window</span><div class="opts" data-key="window"><button class="opt" type="button" data-value="soft">Soft</button><button class="opt" type="button" data-value="round">Round</button><button class="opt" type="button" data-value="pluck">Pluck</button><button class="opt" type="button" data-value="hard">Hard</button></div></div>
+              <div class="ctl sel" data-accent="ok"><span class="nm">Burst mask<small>on : off</small></span><div class="opts" data-key="mask"><button class="opt" type="button" data-value="off">Off</button><button class="opt" type="button" data-value="3:1">3 : 1</button><button class="opt" type="button" data-value="2:2">2 : 2</button><button class="opt" type="button" data-value="1:3">1 : 3</button></div></div>
+            </div>
+            <div class="explorer-foot">
+              <span class="hear" data-hear></span>
+              <button class="btn listen" type="button" aria-pressed="false">Listen</button>
+            </div>
+          </div>
+          <p class="caption reveal">A simplified sketch that runs in your browser. The instrument itself has ten pulsaret shapes and nine windows that blend smoothly, three formants, four voices and random masking. Keep your volume low at first.</p>
+        </div>
+      </section>
+
+      <section>
+        <div class="wrap">
+          <div class="reveal">
+            <div class="kicker">Idea one</div>
+            <h2>Rhythm and pitch are the <em>same fader</em>.</h2>
+            <div class="prose">
+              <p>A pulsar train has no fixed identity. Slow, it is a rhythm. Fast, it is a pitch. In between is a zone that is neither, and pulsar music spends a lot of time crossing it on purpose. On Spiluter this is <strong>Base Pitch</strong>, or the note you play.</p>
+            </div>
+          </div>
+          <div class="scale reveal">
+            <div><div class="hz">1 – 8</div><div class="w">Pulses per second</div><p>Separate events you can count. A clock, a drip, a slow motor.</p></div>
+            <div><div class="hz">8 – 20</div><div class="w">Flutter</div><p>Too fast to count, not yet a note. Rolls, purring, a card in bicycle spokes.</p></div>
+            <div><div class="hz">20 – 200</div><div class="w">Low pitch</div><p>The ticks fuse into a buzzing bass tone whose colour comes from the formant.</p></div>
+            <div><div class="hz">200 +</div><div class="w">Pitch</div><p>A clear note. Now the pulsaret and its window decide whether it is soft, nasal or bright.</p></div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <div class="wrap split flip">
+          <div class="reveal">
+            <div class="figure"><span class="lab">One clock · three formants</span><canvas data-fig="formants" style="height:230px" aria-label="Three pulsar trains on the same pulse rate, each with a different formant frequency inside the pulsaret."></canvas></div>
+            <p class="caption">Three streams share one pulse rate. Each has a different number of wiggles inside the pulsaret: a different formant.</p>
+          </div>
+          <div class="reveal">
+            <div class="kicker">Idea two</div>
+            <h2>The <em>formant</em> is a second pitch.</h2>
+            <div class="prose">
+              <p>Inside each pulsaret the waveform has its own speed. That speed is heard as a <strong>formant</strong>: a band of emphasis in the tone, like the resonance that turns a sung "oo" into an "ee". Change it and the note stays put while its colour slides.</p>
+              <p>Because the formant does not depend on the pulse rate, you can hold a note and sweep the vowel, or hold the vowel and play a melody under it. With a filter you would need the filter to track the keyboard; here it is simply how the sound is built.</p>
+              <p>Spiluter runs up to <strong>three formants at once</strong> on every voice, each panned separately, so one note can be a wide, three-part chord of resonances. <strong>Track Pitch</strong> makes them follow your playing. <strong>Quantize</strong> pins the second and third to musical intervals of the first.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <div class="wrap split">
+          <div class="reveal">
+            <div class="kicker">Idea three</div>
+            <h2>The particle has a <em>shape</em>.</h2>
+            <div class="prose">
+              <p>Two things decide the character of each particle. The <strong>pulsaret</strong> is the raw waveform: a sine is pure and round, a saw or square is buzzy, noise is breathy. Spiluter has ten and its Pulsaret fader blends from each one into the next.</p>
+              <p>The <strong>window</strong> is the envelope laid over it. A soft, rounded window gives smooth, flute-like or vocal tones. A sharp window, or one that starts hard and decays, gives percussive, plucked, glassy ones. Often the window changes the sound more than the waveform does.</p>
+              <p><strong>Duty</strong> sets how much of each period the particle fills. Short duty: thin, bright, lots of air between pulses. Long duty: full and dense. Set Duty Mode to <strong>Formant</strong> and the instrument does it the classic way, letting the formant decide the length of each particle.</p>
+            </div>
+          </div>
+          <div class="reveal">
+            <div class="figure"><span class="lab">Same waveform · four windows</span><canvas data-fig="windows" style="height:230px" aria-label="The same waveform under four different envelopes: soft, round, plucked and hard-edged."></canvas></div>
+            <p class="caption">Soft, round, pluck, hard. Blue is the window, orange is what comes out.</p>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <div class="wrap split flip">
+          <div class="reveal">
+            <div class="figure"><canvas data-fig="masks" style="height:250px" aria-label="Three rows of pulses: all pulses sounding, a repeating burst pattern of three on and one off, and a random pattern."></canvas></div>
+            <p class="caption">Masking leaves pulses out, in a pattern or by chance.</p>
+          </div>
+          <div class="reveal">
+            <div class="kicker">Idea four</div>
+            <h2>Leave some <em>out</em>.</h2>
+            <div class="prose">
+              <p><strong>Masking</strong> silences some of the pulses. It is the part of pulsar synthesis with no real equivalent on an ordinary synth.</p>
+              <p><strong>Burst</strong> masking repeats a pattern, such as three pulses on and one off. At rhythm speeds that is a groove. At pitch speeds the pattern itself becomes audible as a deeper tone under the note, so changing two small numbers moves the sound down by musical intervals.</p>
+              <p><strong>Stochastic</strong> masking drops pulses at random. A little adds grit and life. A lot breaks a tone into crackle, rain and sputter. With <strong>Per-Formant</strong> on, each of the three formants is masked separately, and the sound flickers between its resonances across the stereo field.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <div class="wrap">
+          <div class="reveal">
+            <div class="kicker">On the instrument</div>
+            <h2>The words on the <em>screen</em>.</h2>
+          </div>
+          <dl class="defs reveal">
+            <div><dt>Pulsaret</dt><dd>The waveform inside each particle. Ten shapes, blended by one fader.</dd></div>
+            <div><dt>Window</dt><dd>The envelope over each particle. Soft windows sing, sharp ones click.</dd></div>
+            <div><dt>Duty</dt><dd>How much of each pulse period is sound. The rest is silence.</dd></div>
+            <div><dt>Formant 1 · 2 · 3</dt><dd>The resonances: the "vowel" of the sound. Independent of the note.</dd></div>
+            <div><dt>Base pitch</dt><dd>The pulse rate. Low values are rhythm, higher ones are notes.</dd></div>
+            <div><dt>Mask</dt><dd>Leaves pulses out, in a burst pattern or at random.</dd></div>
+            <div><dt>Amp jitter</dt><dd>Random loudness from one particle to the next. Adds grain and breath.</dd></div>
+            <div><dt>Timing jitter</dt><dd>Nudges each particle early or late. Loosens a rigid tone into something organic.</dd></div>
+            <div><dt>Glisson</dt><dd>Bends the pitch inside every particle, up or down. Chirps, zaps and liquid attacks.</dd></div>
+            <div><dt>Sample</dt><dd>Use a recording of your own as the particle in place of a built-in waveform.</dd></div>
+          </dl>
+        </div>
+      </section>
+
+      <section>
+        <div class="wrap split">
+          <div class="reveal">
+            <div class="kicker">Going further</div>
+            <h2>Read and <em>listen</em>.</h2>
+            <p class="note">Spiluter's direction is inspired by Curtis Roads' work on granular and microsound composition.</p>
+          </div>
+          <ul class="sources reveal">
+            <li data-ix="01"><span><cite>Microsound</cite>, Curtis Roads (MIT Press, 2001). The book that sets out pulsar synthesis alongside the other particle techniques. <a href="https://mitpress.mit.edu/9780262681544/microsound/" target="_blank" rel="noopener noreferrer">MIT Press</a></span></li>
+            <li data-ix="02"><span><cite>Sound Composition with Pulsars</cite>, Curtis Roads (Journal of the Audio Engineering Society, 2001). The technique in one article, with its history.</span></li>
+            <li data-ix="03"><span><cite>The Computer Music Tutorial</cite>, second edition, Curtis Roads (MIT Press, 2023). The wider background. <a href="https://mitpress.mit.edu/9780262044912/the-computer-music-tutorial/" target="_blank" rel="noopener noreferrer">MIT Press</a></span></li>
+            <li data-ix="04"><span><cite>Point Line Cloud</cite>, Curtis Roads (2004). An album of pieces made with these techniques, including <em>Half-life</em>. The best way to hear what the method can do.</span></li>
+          </ul>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-foot">
+      <div class="wrap">
+        <div>
+          <div class="wm">S<b>PI</b>LUTER</div>
+          <p>A pulsar synthesis instrument · MIT licensed</p>
+        </div>
+        <nav aria-label="Footer">
+          <a href="index.html">Overview</a>
+          <a href="pulsar-synthesis.html">Pulsar synthesis</a>
+          <a href="hardware.html">Hardware</a>
+        </nav>
+      </div>
+    </footer>
+    <script src="js/site.js"></script>
+  </body>
+</html>

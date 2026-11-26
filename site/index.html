@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Spiluter · a pulsar synthesis instrument</title>
+    <meta name="description" content="Spiluter is a touchscreen pulsar synthesizer built on a Raspberry Pi: four voices, three formants, sixteen LFOs, reverb and delay, playable from any MIDI controller." />
+    <meta name="theme-color" content="#0b0b0d" />
+    <link rel="icon" href="img/icon.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700&family=Barlow+Semi+Condensed:wght@700&display=swap" />
+    <link rel="stylesheet" href="css/site.css" />
+  </head>
+  <body>
+    <header class="site-head">
+      <div class="wrap">
+        <a class="brand" href="index.html" aria-label="Spiluter home">
+          <span class="wm">S<b>PI</b>LUTER</span>
+          <span class="tagline">Pulsar&nbsp;synthesis&nbsp;<b>instrument</b><br />Raspberry&nbsp;Pi&nbsp;·&nbsp;touch&nbsp;·&nbsp;MIDI</span>
+        </a>
+        <nav class="site-nav" aria-label="Pages">
+          <a href="index.html" data-page="home" class="active" aria-current="page"><span class="ix">[01]</span><span class="nm">Overview</span></a>
+          <a href="pulsar-synthesis.html" data-page="pulsar"><span class="ix">[02]</span><span class="nm">Pulsar Synthesis</span></a>
+          <a href="hardware.html" data-page="hardware"><span class="ix">[03]</span><span class="nm">Hardware</span></a>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <canvas class="hero-canvas" aria-hidden="true"></canvas>
+        <div class="wrap">
+          <div class="kicker">A pulsar synthesis instrument</div>
+          <h1>Sound, built from <em>particles</em>.</h1>
+          <p class="lede">Spiluter is a small, self-contained synthesizer with a touchscreen. It makes sound out of streams of tiny sonic grains, so one fader can carry you from a clicking rhythm to a singing, vowel-like tone, and it puts every part of that sound under your fingers, an LFO, or a knob on your MIDI controller.</p>
+          <div class="btns">
+            <a class="btn primary" href="pulsar-synthesis.html">How pulsar synthesis works <span class="arr">→</span></a>
+            <a class="btn" href="hardware.html">What you need to build one <span class="arr">→</span></a>
+          </div>
+          <figure class="shot hero-shot reveal">
+            <img src="img/screen-synth-engine.png" width="2048" height="1200" alt="The Spiluter Synth screen: section tabs for Engine, Formants, Grain and Voice on the left, three live waveform previews across the top, and large orange faders for amplitude, drive, pulsaret, window and duty." />
+            <figcaption><span>The Synth screen · Engine section</span><b>1024 × 600 touchscreen</b></figcaption>
+          </figure>
+          <div class="stats reveal">
+            <div class="stat"><div class="v">4</div><div class="k">Voices, stacked into 14 chord shapes</div></div>
+            <div class="stat"><div class="v">3</div><div class="k">Formants per voice, each with its own pan</div></div>
+            <div class="stat"><div class="v">10</div><div class="k">Pulsaret waveforms that morph into each other</div></div>
+            <div class="stat"><div class="v">16</div><div class="k">LFOs, free or locked to MIDI clock</div></div>
+            <div class="stat"><div class="v">32</div><div class="k">Preset slots that keep every setting</div></div>
+            <div class="stat"><div class="v">2<small>FX</small></div><div class="k">Shimmer reverb and a four-tap delay</div></div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <div class="wrap split">
+          <div class="reveal">
+            <div class="kicker">What it is</div>
+            <h2>An instrument, not a <em>program</em>.</h2>
+          </div>
+          <div class="prose reveal">
+            <p>Switch it on and it starts up as a synthesizer: no desktop, no mouse, no menus to dig through. Everything is on four screens you reach from the bar along the bottom edge, and every control is big enough to hit with a finger in the middle of a set.</p>
+            <p>The sound comes from <strong>pulsar synthesis</strong>, a technique from the world of electroacoustic composition that rarely shows up in hardware. Instead of filtering an oscillator, you shape a stream of very short sound particles: how often they arrive, how long each one lasts, what is inside it, and which ones are left out. The results run from dry, ticking pulses through buzzing drones to hollow, vocal tones, and the borders between those are places you can play.</p>
+            <p>You can play it from a keyboard or pad controller, let it drone on its own, or lock its movement to the clock of the rest of your rig.</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="screens">
+        <div class="wrap">
+          <div class="reveal">
+            <div class="kicker">Four screens</div>
+            <h2>Take the <em>tour</em>.</h2>
+            <p class="lede">These are the instrument's real screens. Pick one on the left, as you would on the device.</p>
+          </div>
+
+          <div class="tour reveal">
+            <div class="tour-rail" role="tablist" aria-label="Screens">
+              <button class="tour-tab" role="tab" type="button" data-pane="synth" data-accent="shock" aria-selected="true"><span class="t">01 Synth</span><span class="s">Shape the particle stream: engine, formants, grain, voice</span></button>
+              <button class="tour-tab" role="tab" type="button" data-pane="mods" data-accent="ice" aria-selected="false"><span class="t">02 Mods</span><span class="s">Sixteen LFOs you can watch while they work</span></button>
+              <button class="tour-tab" role="tab" type="button" data-pane="effects" data-accent="acid" aria-selected="false"><span class="t">03 Effects</span><span class="s">Reverb with shimmer, rhythmic four-tap delay</span></button>
+              <button class="tour-tab" role="tab" type="button" data-pane="presets" data-accent="ok" aria-selected="false"><span class="t">04 Presets</span><span class="s">Thirty-two slots for whole patches</span></button>
+            </div>
+
+            <div class="panel tour-stage" data-accent="shock">
+              <div class="tour-pane" data-pane="synth">
+                <div class="subtabs" data-target="#synthShot" data-note="#synthNote" aria-label="Synth sections">
+                  <button class="subtab" type="button" aria-pressed="true" data-src="img/screen-synth-engine.png" data-alt="Synth screen, Engine section: waveform previews and faders for amplitude, drive, pulsaret, window and duty." data-caption="Engine: what each particle is made of. Pulsaret picks and blends the waveform, Window shapes its fade in and out, Duty sets how much of each pulse is sound and how much is silence. The three previews redraw as you move.">Engine</button>
+                  <button class="subtab" type="button" aria-pressed="false" data-src="img/screen-synth-formants.png" data-alt="Synth screen, Formants section: formant count, pitch tracking, quantize, three formant frequency faders and three pan faders." data-caption="Formants: up to three resonances per voice, each panned on its own. Track Pitch makes them follow the notes you play. Quantize locks formants 2 and 3 to musical intervals of formant 1, so the tone colour stays in tune with itself.">Formants</button>
+                  <button class="subtab" type="button" aria-pressed="false" data-src="img/screen-synth-grain.png" data-alt="Synth screen, Grain section: mask mode, per-formant masking, burst on and off counts, amplitude jitter, timing jitter and glisson." data-caption="Grain: which pulses get through. Burst plays a repeating pattern of sounding and silent pulses, Stochastic drops them at random. Jitter roughens level and timing, and Glisson bends the pitch inside every single grain.">Grain</button>
+                  <button class="subtab" type="button" aria-pressed="false" data-src="img/screen-synth-voice.png" data-alt="Synth screen, Voice section: gate mode, voice count, chord chips, base pitch, attack, release and glide." data-caption="Voice: how it responds to playing. Choose held notes, a free-running drone, or triggers. Stack up to four voices into a chord, and set attack, release and glide.">Voice</button>
+                </div>
+                <div class="subshot"><figure class="shot" style="border:none"><img id="synthShot" src="img/screen-synth-engine.png" width="2048" height="1200" alt="Synth screen, Engine section: waveform previews and faders for amplitude, drive, pulsaret, window and duty." /></figure></div>
+                <div class="tour-text">
+                  <p id="synthNote">Engine: what each particle is made of. Pulsaret picks and blends the waveform, Window shapes its fade in and out, Duty sets how much of each pulse is sound and how much is silence. The three previews redraw as you move.</p>
+                  <p>The rail on the left always shows the key values of all four sections, so you can read the whole patch at a glance. Hold <strong>−</strong> or <strong>+</strong> for fine steps, and double-tap a name to send that control back to its default.</p>
+                </div>
+              </div>
+
+              <div class="tour-pane" data-pane="mods" hidden>
+                <figure class="shot"><img src="img/screen-mods.png" width="2048" height="1200" loading="lazy" alt="Mods screen: a monitor pane listing sixteen LFOs with live meters and a scope, next to an editor pane with shape buttons, rate and depth faders." /></figure>
+                <div class="tour-text">
+                  <p><strong>Sixteen LFOs</strong>, each with seven shapes (sine, triangle, two saws, square, sample-and-hold, smooth random) and a target of your choice: formants, pulsaret shape, duty, pans, pitch, chord, the effects, and more. The left pane shows what every one is doing right now; the right pane edits the one you tapped.</p>
+                  <p>Turn on <strong>MIDI clock</strong> for an LFO and it locks to your tempo, from one cycle every sixteen beats to sixteen cycles per beat. Press Run while the clock is ticking and it waits for the next beat, so movement always comes in on time.</p>
+                </div>
+              </div>
+
+              <div class="tour-pane" data-pane="effects" hidden>
+                <figure class="shot"><img src="img/screen-effects.png" width="2048" height="1200" loading="lazy" alt="Effects screen: reverb faders for mix, decay, diffusion, damping, shimmer, movement, pre-delay and low cut, and delay faders for mix, feedback, tap spread and base time with a clock sync switch." /></figure>
+                <div class="tour-text">
+                  <p>A lush <strong>reverb</strong> in the style loved by Eurorack players: Decay and Diffusion for size and density, Damping to darken long tails, Movement to keep them alive, and Shimmer for the rising octave bloom. The tail keeps ringing after you let go of a note.</p>
+                  <p>A <strong>four-tap delay</strong> for rhythm: Tap Spread fans four echoes out into a pattern, Feedback repeats the whole pattern. Set the time by hand or lock it to MIDI clock with straight, dotted and triplet-like ratios.</p>
+                </div>
+              </div>
+
+              <div class="tour-pane" data-pane="presets" hidden>
+                <figure class="shot"><img src="img/screen-presets.png" width="2048" height="1200" loading="lazy" alt="Presets screen: a bank of numbered preset slots with names and small waveform signatures, next to a detail pane with recall, save, rename and clear buttons." /></figure>
+                <div class="tour-text">
+                  <p><strong>Thirty-two slots.</strong> A preset keeps the whole instrument: every fader, all sixteen LFOs and their routing, the effects, and the sample if you loaded one. Each slot draws its own small signature so you can find a sound by its look.</p>
+                  <p>Recall is one tap. Name your presets on the device, and load your own <strong>samples</strong> from a USB stick to use as the particle in place of the built-in waveforms.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <div class="wrap">
+          <div class="reveal">
+            <div class="kicker">Playing it</div>
+            <h2>Made for <em>hands</em> and a rig.</h2>
+          </div>
+          <div class="cards">
+            <div class="card reveal" data-accent="shock"><span class="ix">[A]</span><h3>Notes, drones or triggers</h3><p>Three gate modes. Play it like a keyboard synth with held notes, leave it running as a drone you sculpt, or fire it with triggers. In note mode every new note restarts the LFOs, so each one begins the same way.</p></div>
+            <div class="card reveal" data-accent="ice"><span class="ix">[B]</span><h3>A knob for anything</h3><p>Tap MIDI learn, tap a control, move a knob. That is the whole procedure. Every parameter can be mapped, including the switches, and the instrument ships with a sensible mapping already in place.</p></div>
+            <div class="card reveal" data-accent="acid"><span class="ix">[C]</span><h3>In time with everything else</h3><p>Send it MIDI clock and the LFOs and the delay lock to your tempo. The detected tempo is shown on screen, and modulation started mid-bar lands on the next beat.</p></div>
+            <div class="card reveal" data-accent="ok"><span class="ix">[D]</span><h3>Chords from one key</h3><p>Stack two, three or four voices into octaves, fifths, major, minor, sevenths, sus, diminished and more. One finger plays the chord, and an LFO can step through chord shapes for you.</p></div>
+            <div class="card reveal" data-accent="shock"><span class="ix">[E]</span><h3>Tone colour that stays in tune</h3><p>Quantize ties the second and third formants to pure intervals of the first: a fifth above, an octave above, and twelve more. Sweep one fader and the whole vowel moves together.</p></div>
+            <div class="card reveal" data-accent="ice"><span class="ix">[F]</span><h3>You can see the sound</h3><p>The screen draws the particle, its envelope and its duty as you change them, and marks on each fader where an LFO is currently pushing it. It teaches you the synthesis while you play.</p></div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <div class="wrap">
+          <div class="reveal">
+            <div class="kicker">Keep reading</div>
+            <h2>Two more <em>pages</em>.</h2>
+          </div>
+          <div class="cards two">
+            <a class="card reveal" data-accent="shock" href="pulsar-synthesis.html"><span class="ix">[02]</span><h3>Pulsar synthesis, in plain terms</h3><p>Where the idea comes from, what a pulsaret is, why rhythm turns into pitch, and what each family of controls does to the sound. Includes a small pulsar generator you can play in the browser.</p><span class="go">Read the overview <span>→</span></span></a>
+            <a class="card reveal" data-accent="acid" href="hardware.html"><span class="ix">[03]</span><h3>The hardware</h3><p>The handful of parts that make up a Spiluter, what each one is for, how they connect, and the one part you should not economise on.</p><span class="go">See the parts list <span>→</span></span></a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-foot">
+      <div class="wrap">
+        <div>
+          <div class="wm">S<b>PI</b>LUTER</div>
+          <p>A pulsar synthesis instrument · MIT licensed</p>
+        </div>
+        <nav aria-label="Footer">
+          <a href="index.html">Overview</a>
+          <a href="pulsar-synthesis.html">Pulsar synthesis</a>
+          <a href="hardware.html">Hardware</a>
+        </nav>
+      </div>
+    </footer>
+    <script src="js/site.js"></script>
+  </body>
+</html>

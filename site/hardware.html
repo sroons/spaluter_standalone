@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Hardware · Spiluter</title>
+    <meta name="description" content="The parts that make up a Spiluter: Raspberry Pi 4, pisound audio and MIDI card, a 1024 by 600 touchscreen, a proper power supply and a MIDI controller." />
+    <meta name="theme-color" content="#0b0b0d" />
+    <link rel="icon" href="img/icon.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700&family=Barlow+Semi+Condensed:wght@700&display=swap" />
+    <link rel="stylesheet" href="css/site.css" />
+  </head>
+  <body>
+    <header class="site-head">
+      <div class="wrap">
+        <a class="brand" href="index.html" aria-label="Spiluter home">
+          <span class="wm">S<b>PI</b>LUTER</span>
+          <span class="tagline">Pulsar&nbsp;synthesis&nbsp;<b>instrument</b><br />Raspberry&nbsp;Pi&nbsp;·&nbsp;touch&nbsp;·&nbsp;MIDI</span>
+        </a>
+        <nav class="site-nav" aria-label="Pages">
+          <a href="index.html" data-page="home"><span class="ix">[01]</span><span class="nm">Overview</span></a>
+          <a href="pulsar-synthesis.html" data-page="pulsar"><span class="ix">[02]</span><span class="nm">Pulsar Synthesis</span></a>
+          <a href="hardware.html" data-page="hardware" class="active" aria-current="page"><span class="ix">[03]</span><span class="nm">Hardware</span></a>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <section class="page-hero">
+        <div class="wrap">
+          <div class="kicker">Hardware</div>
+          <h1>A few parts, one <em>instrument</em>.</h1>
+          <p class="lede">Spiluter is built from parts you can buy off the shelf: a Raspberry Pi, a sound card that sits on top of it, a small touchscreen, and a good power supply. Add a MIDI controller and something to listen through, and it is ready for a table or a stage.</p>
+          <div class="chips" aria-label="What the finished instrument reports when all is well">
+            <div class="chip"><div class="k">MIDI</div><div class="s">Live</div></div>
+            <div class="chip"><div class="k">AUDIO</div><div class="s">On</div></div>
+            <div class="chip"><div class="k">POWER</div><div class="s">OK</div></div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <div class="wrap">
+          <div class="reveal">
+            <div class="kicker">How it connects</div>
+            <h2>The signal <em>path</em>.</h2>
+          </div>
+          <div class="figure reveal" style="margin-top:32px">
+            <svg viewBox="0 0 1000 400" role="img" aria-label="Connection diagram. A MIDI controller and a touchscreen feed the Raspberry Pi with its pisound sound card. A dedicated power supply feeds the Pi. The pisound's audio output goes to a mixer, speakers or headphones. A USB stick supplies samples.">
+              <defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#ff6f24" /></marker></defs>
+              <g fill="#131318" stroke="rgba(233,227,214,.22)">
+                <rect x="30" y="50" width="230" height="80" /><rect x="30" y="160" width="230" height="80" /><rect x="30" y="270" width="230" height="80" />
+                <rect x="740" y="105" width="230" height="80" /><rect x="740" y="215" width="230" height="80" />
+              </g>
+              <rect x="385" y="70" width="230" height="260" fill="#1b1b22" stroke="#ff6f24" />
+              <rect x="385" y="70" width="230" height="4" fill="#ff6f24" />
+              <line x1="385" y1="170" x2="615" y2="170" stroke="rgba(233,227,214,.18)" />
+              <text x="405" y="108" class="big">PISOUND</text><text x="405" y="128">SOUND CARD · MIDI</text><text x="405" y="146">SITS ON TOP OF THE PI</text>
+              <text x="405" y="206" class="big">RASPBERRY PI 4</text><text x="405" y="226">RUNS THE SYNTH ENGINE</text><text x="405" y="244">AND DRAWS THE SCREENS</text>
+              <text x="405" y="300" style="fill:#ff6f24">SPILUTER STARTS ITSELF</text><text x="405" y="316" style="fill:#ff6f24">WHEN POWER GOES ON</text>
+              <text x="48" y="84" class="big">MIDI CONTROLLER</text><text x="48" y="104">KEYS, PADS, KNOBS, CLOCK</text>
+              <text x="48" y="194" class="big">TOUCHSCREEN</text><text x="48" y="214">1024 × 600</text>
+              <text x="48" y="304" class="big">POWER SUPPLY</text><text x="48" y="324">5.1 V · 3 A · DEDICATED</text>
+              <text x="758" y="139" class="big">MIXER / SPEAKERS</text><text x="758" y="159">OR HEADPHONES</text>
+              <text x="758" y="249" class="big">USB STICK</text><text x="758" y="269">YOUR OWN SAMPLES</text>
+              <g stroke="#ff6f24" stroke-width="1.6" fill="none" marker-end="url(#ah)">
+                <path d="M260 90 H385" /><path d="M260 200 H385" marker-start="url(#ah)" /><path d="M260 310 H385" />
+                <path d="M615 145 H740" /><path d="M740 255 H615" />
+              </g>
+              <text x="278" y="80">USB OR DIN</text><text x="270" y="190">PICTURE + TOUCH</text><text x="278" y="300">USB-C</text>
+              <text x="632" y="135">STEREO OUT</text><text x="640" y="245">USB</text>
+            </svg>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <div class="wrap">
+          <div class="reveal">
+            <div class="kicker">Parts list</div>
+            <h2>What you <em>need</em>.</h2>
+            <p class="lede">This is the combination Spiluter was built and tuned on. It is the one to copy if you want it to behave like the original.</p>
+          </div>
+          <div class="parts reveal">
+            <div class="part"><div class="pn">01</div><div class="what">Raspberry Pi 4 Model B<small>2 GB of memory is enough</small></div><p>The computer inside. It runs the sound engine and the touchscreen interface. One of its four processor cores is reserved for audio alone, so touching the screen does not disturb the sound.</p><span class="tag req">Required</span></div>
+            <div class="part"><div class="pn">02</div><div class="what">Blokas pisound<small>Audio and MIDI card for the Pi</small></div><p>The Pi has no proper audio output of its own. The pisound plugs onto its pin header and adds good stereo output and input on quarter-inch jacks, plus classic five-pin MIDI in and out. This is where your cables go.</p><span class="tag req">Required</span></div>
+            <div class="part"><div class="pn">03</div><div class="what">Touchscreen, 1024 × 600<small>The instrument's front panel</small></div><p>Every screen is laid out for exactly this size, with every control large enough for a fingertip. It is the entire front panel, so a responsive one is worth having.</p><span class="tag req">Required</span></div>
+            <div class="part"><div class="pn">04</div><div class="what">Power supply, 5.1 V 3 A<small>A proper one, used for nothing else</small></div><p>The official Raspberry Pi USB-C supply or an equivalent. See the note below: this is the part that decides whether the instrument sounds clean.</p><span class="tag req">Required</span></div>
+            <div class="part"><div class="pn">05</div><div class="what">microSD card<small>With Patchbox OS</small></div><p>The Pi's storage. Patchbox OS is a free system made by the pisound's makers for building audio devices on a Pi; Spiluter installs on top of it and takes over the screen.</p><span class="tag req">Required</span></div>
+            <div class="part"><div class="pn">06</div><div class="what">MIDI controller<small>USB or five-pin DIN</small></div><p>Anything that sends notes and control changes: a keyboard, a pad grid, a box of knobs. Spiluter was developed with an Intech Studio Grid controller on USB, and listens for knobs on MIDI channel 1. You can work from the touchscreen alone, but knobs are where it comes alive.</p><span class="tag opt">Recommended</span></div>
+            <div class="part"><div class="pn">07</div><div class="what">USB stick<small>For your own samples</small></div><p>Put audio files on a stick, plug it in, and use them as the particle in place of the built-in waveforms. Presets remember which sample they used.</p><span class="tag opt">Optional</span></div>
+            <div class="part"><div class="pn">08</div><div class="what">A clock source<small>Drum machine, sequencer, DAW</small></div><p>Anything that sends MIDI clock. With it, the LFOs and the delay lock to your tempo. Without it, they run free.</p><span class="tag opt">Optional</span></div>
+          </div>
+
+          <div class="callout reveal">
+            <div class="bolt">5.1V</div>
+            <div>
+              <h3>Do not economise on power</h3>
+              <p>During development the instrument had a constant crackle, like an old record, that no amount of work on the sound engine removed. The cause was the power: the Pi was running from a USB port on a power strip while also feeding the touchscreen and the controller. A dedicated 5.1 V, 3 A supply cured it completely. If the POWER chip at the top of the screen is not green, fix that before you judge the sound.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <div class="wrap">
+          <div class="reveal">
+            <div class="kicker">Putting it together</div>
+            <h2>From parts to <em>playing</em>.</h2>
+          </div>
+          <div class="steps">
+            <div class="step reveal"><h3>Stack</h3><p>Press the pisound onto the Pi's pin header and screw it down. Connect the touchscreen.</p></div>
+            <div class="step reveal"><h3>Prepare the card</h3><p>Write Patchbox OS to the microSD card and start the Pi once to finish its setup.</p></div>
+            <div class="step reveal"><h3>Install Spiluter</h3><p>Install the Spiluter package for Raspberry Pi. It sets up the audio system for low delay and steady timing by itself.</p></div>
+            <div class="step reveal"><h3>Plug in and play</h3><p>Connect your controller and your speakers, then switch on. The instrument is ready when the status chips turn green.</p></div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <div class="wrap split">
+          <div class="reveal">
+            <div class="kicker">What to expect</div>
+            <h2>Small box, <em>steady</em> hands.</h2>
+            <div class="prose">
+              <p>A Raspberry Pi is a modest computer, and a lot of the work on Spiluter went into making it behave like an instrument. With the default sound the engine uses about a tenth of the processor core set aside for it, the audio output runs about a fiftieth of a second behind your hands, and a five-minute stretch of heavy playing measured no audio dropouts.</p>
+              <p>The <strong>DSP</strong> reading in the top right of every screen shows how hard the engine is working. Four voices with three formants each is the heaviest setting.</p>
+            </div>
+          </div>
+          <div class="reveal">
+            <div class="kicker">No Pi?</div>
+            <h2>It runs on a <em>laptop</em> too.</h2>
+            <div class="prose">
+              <p>The same instrument runs as an ordinary application on <strong>macOS</strong>, <strong>Windows</strong> and <strong>Linux</strong>, using whatever audio interface and MIDI controller you already own. It needs SuperCollider, a free audio engine, and tries to install it for you on first start.</p>
+              <p>That is the quickest way to find out whether pulsar synthesis is for you before you buy a single part.</p>
+            </div>
+            <div class="btns"><a class="btn" href="pulsar-synthesis.html">Try the browser demo first <span class="arr">→</span></a></div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-foot">
+      <div class="wrap">
+        <div>
+          <div class="wm">S<b>PI</b>LUTER</div>
+          <p>A pulsar synthesis instrument · MIT licensed</p>
+        </div>
+        <nav aria-label="Footer">
+          <a href="index.html">Overview</a>
+          <a href="pulsar-synthesis.html">Pulsar synthesis</a>
+          <a href="hardware.html">Hardware</a>
+        </nav>
+      </div>
+    </footer>
+    <script src="js/site.js"></script>
+  </body>
+</html>

@@ -177,6 +177,18 @@ npm start
 
 Note: this repo’s launcher clears `ELECTRON_RUN_AS_NODE` automatically before spawning Electron, because some shells/environments set it and break app startup.
 
+## Web site
+
+`site/` holds a static web site about the instrument (overview, a musician's introduction to pulsar synthesis, and the hardware). It has no build step.
+
+```bash
+npm run site               # http://localhost:4173, reloads the browser when a file under site/ changes
+PORT=8080 npm run site     # another port
+npm run site:screenshots   # re-capture site/img/screen-*.png from the current renderer
+```
+
+The screenshots come from the real renderer at 1024x600 with a stand-in engine (`site/tools/`), so capturing them starts no SuperCollider, makes no sound and does not touch the app's saved presets.
+
 ## Platforms
 
 - macOS: supported
