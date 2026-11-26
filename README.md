@@ -97,14 +97,14 @@ Effect params are sent over the same `/spaluter/set` path as every other paramet
 2. Pick a timing mode with **Sync**:
    - **Free ms** — set **Base Time** (20–2000 ms) directly for a fixed delay time, independent of tempo.
    - **MIDI Clock** — the delay locks to incoming MIDI clock. **Base Time** is disabled and **Clock Ratio** chooses the note value instead.
-3. In **MIDI Clock** mode, choose **Clock Ratio**: `x1` = one beat (quarter note), `/2` = eighth, `/4` = sixteenth, `x2` = half note. Remember `/N` lengthens (slows) the delay and `xN` shortens (speeds) it. (Requires a MIDI clock source; see the Mods/MIDI sections.)
+3. In **MIDI Clock** mode, choose **Clock Ratio**: `x1` = one beat (quarter note), `x2` = eighth, `x4` = sixteenth, `/2` = half note, `/4` = whole note. The delay time is the beat length divided by the ratio, so `xN` shortens (speeds) the delay and `/N` lengthens (slows) it. (Requires a MIDI clock source; see the Mods/MIDI sections.)
 4. Use **Tap Spread** to fan the 4 taps out from the base time:
    - At 0 all four taps collapse onto the base time (one tight echo).
    - Higher values push taps to later times for a rhythmic, cascading pattern. The taps are discrete echoes at fixed levels (0.34, 0.27, 0.22, 0.17); in Free mode the right channel's taps are slightly detuned for width.
    - In **MIDI Clock** mode the spread snaps taps onto whole clock divisions, so every tap stays locked to the grid.
 5. Set **Delay Feedback** for repeat length (capped at 0.88 for stability): low for a couple of slaps, high for long trailing repeats. The loop runs from the last tap, so the whole pattern repeats as a group at the last tap's time (at spread 0, a plain single-tap echo).
 
-*Tempo-synced rhythmic delay:* Sync = MIDI Clock, Clock Ratio = `/4` (sixteenths), Tap Spread ~0.6, Feedback ~0.45, Delay Mix ~0.3.
+*Tempo-synced rhythmic delay:* Sync = MIDI Clock, Clock Ratio = `x4` (sixteenths), Tap Spread ~0.6, Feedback ~0.45, Delay Mix ~0.3.
 
 ## Default MIDI channel values (CC mappings)
 
