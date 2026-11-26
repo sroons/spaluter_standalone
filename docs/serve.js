@@ -2,7 +2,7 @@
 // Local preview server for the Spiluter site. No dependencies.
 //   npm run site            → http://localhost:4173
 //   PORT=8080 npm run site
-// Pages reload by themselves when a file under site/ changes.
+// Pages reload by themselves when a file under docs/ changes.
 const http = require("http");
 const fs = require("fs");
 const path = require("path");

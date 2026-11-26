@@ -7,8 +7,8 @@
   "scripts": {
     "start": "node scripts/start-electron.js",
     "check": "node --check main.js && node --check preload.js && node --check renderer/renderer.js",
-    "site": "node site/serve.js",
-    "site:screenshots": "node -e \"const e=Object.assign({},process.env);delete e.ELECTRON_RUN_AS_NODE;process.exit(require('child_process').spawnSync(require('electron'),['site/tools/capture-screenshots.js'],{stdio:'inherit',env:e}).status)\"",
+    "site": "node docs/serve.js",
+    "site:screenshots": "node -e \"const e=Object.assign({},process.env);delete e.ELECTRON_RUN_AS_NODE;process.exit(require('child_process').spawnSync(require('electron'),['docs/tools/capture-screenshots.js'],{stdio:'inherit',env:e}).status)\"",
     "build:mac": "electron-builder --mac dmg pkg --x64 --arm64 --publish never",
     "build:win": "electron-builder --win nsis --publish never",
     "build:pi": "electron-builder --linux deb --arm64 --publish never",

@@ -1,4 +1,4 @@
-// Regenerates site/img/screen-*.png from the real renderer at the Pi's
+// Regenerates docs/img/screen-*.png from the real renderer at the Pi's
 // 1024x600, with a fake engine (capture-preload.js). Makes no sound and uses
 // a throwaway profile, so the app's own presets and settings are untouched.
 //   npm run site:screenshots
@@ -98,7 +98,7 @@ app.whenReady().then(async () => {
     await wait(shot.settle || 700);
     const image = await win.webContents.capturePage();
     fs.writeFileSync(path.join(outDir, `${shot.file}.png`), image.toPNG());
-    console.log(`wrote site/img/${shot.file}.png`, image.getSize());
+    console.log(`wrote docs/img/${shot.file}.png`, image.getSize());
   }
   app.exit(0);
 }).catch((err) => { console.error(err); app.exit(1); });
