@@ -96,7 +96,9 @@
     });
     // Synth pane: section buttons swap the screenshot.
     tourEl.querySelectorAll(".subtabs").forEach((group) => {
-      const img = tourEl.querySelector(group.dataset.target);
+      // The image node is replaced on every switch (to replay its entrance),
+      // so keep hold of the one currently in the page.
+      let img = tourEl.querySelector(group.dataset.target);
       const note = tourEl.querySelector(group.dataset.note);
       group.querySelectorAll(".subtab").forEach((btn) => {
         btn.addEventListener("click", () => {
@@ -105,7 +107,7 @@
           fresh.src = btn.dataset.src;
           fresh.alt = btn.dataset.alt;
           img.replaceWith(fresh);
-          fresh.id = img.id;
+          img = fresh;
           if (note) note.textContent = btn.dataset.caption;
         });
       });
@@ -417,4 +419,22 @@
     paint();
     window.addEventListener("resize", paint);
   });
+})();
+
+/* ── documentation: highlight the section being read in the contents list ── */
+(function () {
+  "use strict";
+  const toc = document.querySelector(".doc-toc");
+  if (!toc || !("IntersectionObserver" in window)) return;
+  const links = new Map();
+  toc.querySelectorAll("a[href^='#']").forEach((a) => links.set(a.getAttribute("href").slice(1), a));
+  const visible = new Set();
+  const order = Array.from(links.keys());
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach((en) => { if (en.isIntersecting) visible.add(en.target.id); else visible.delete(en.target.id); });
+    const current = order.find((id) => visible.has(id));
+    if (!current) return;
+    links.forEach((a, id) => a.classList.toggle("on", id === current));
+  }, { rootMargin: "-80px 0px -55% 0px" });
+  order.forEach((id) => { const el = document.getElementById(id); if (el) io.observe(el); });
 })();

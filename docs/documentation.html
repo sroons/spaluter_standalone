@@ -1,0 +1,401 @@
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Documentation · Spiluter</title>
+    <meta name="description" content="How to use Spiluter: the four screens, modulation, effects, presets, MIDI, installing it on a Raspberry Pi or a computer, and what to do when something goes wrong." />
+    <meta name="theme-color" content="#0b0b0d" />
+    <link rel="icon" href="img/icon.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700&family=Barlow+Semi+Condensed:wght@700&display=swap" />
+    <link rel="stylesheet" href="css/site.css" />
+  </head>
+  <body>
+    <header class="site-head">
+      <div class="wrap">
+        <a class="brand" href="index.html" aria-label="Spiluter home">
+          <span class="wm">S<b>PI</b>LUTER</span>
+          <span class="tagline">Pulsar&nbsp;synthesis&nbsp;<b>instrument</b><br />Raspberry&nbsp;Pi&nbsp;·&nbsp;touch&nbsp;·&nbsp;MIDI</span>
+        </a>
+        <nav class="site-nav" aria-label="Pages">
+          <a href="index.html" data-page="home"><span class="ix">[01]</span><span class="nm">Overview</span></a>
+          <a href="pulsar-synthesis.html" data-page="pulsar"><span class="ix">[02]</span><span class="nm">Pulsar Synthesis</span></a>
+          <a href="hardware.html" data-page="hardware"><span class="ix">[03]</span><span class="nm">Hardware</span></a>
+          <a href="documentation.html" data-page="docs" class="active" aria-current="page"><span class="ix">[04]</span><span class="nm">Documentation</span></a>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <section class="page-hero">
+        <div class="wrap">
+          <div class="kicker">Documentation</div>
+          <h1>How to <em>use it</em>.</h1>
+          <p class="lede">Everything in the project's README, rewritten as a player's manual: what is on each screen, how to set up modulation and effects, how MIDI works, how to install it, and what to do when something is not right.</p>
+        </div>
+      </section>
+
+      <div class="wrap doc">
+        <nav class="doc-toc" aria-label="On this page">
+          <div class="ph"><span class="t">On this page</span></div>
+          <ol>
+            <li><a href="#basics">The basics</a></li>
+            <li><a href="#synth">Synth screen</a></li>
+            <li><a href="#mods">Mods screen</a></li>
+            <li><a href="#effects">Effects screen</a></li>
+            <li><a href="#presets">Presets and samples</a></li>
+            <li><a href="#midi">MIDI</a></li>
+            <li><a href="#install">Installing</a></li>
+            <li><a href="#pi">Looking after a Pi</a></li>
+            <li><a href="#trouble">Troubleshooting</a></li>
+          </ol>
+        </nav>
+
+        <div class="doc-body">
+
+          <section id="basics">
+            <div class="kicker">01</div>
+            <h2>The <em>basics</em></h2>
+            <p>When Spiluter starts it checks that its sound engine is present, starts it, starts the synth, and then shows the Synth screen. On a Raspberry Pi all of that happens by itself when you switch on.</p>
+            <h3>The bar along the bottom</h3>
+            <ul>
+              <li><strong>Synth, Mods, Effects, Presets</strong> switch between the four screens.</li>
+              <li>The large button on the right <strong>starts the synth</strong>, or <strong>stops</strong> it while it is running.</li>
+            </ul>
+            <h3>The row along the top</h3>
+            <ul>
+              <li><strong>Status chips.</strong> <code>MIDI</code> shows whether a controller is connected, <code>SCLANG</code> and <code>AUDIO</code> show that the sound engine is running and producing sound, and <code>POWER</code> shows whether the Pi is getting enough power. Green means healthy.</li>
+              <li><strong>Status message.</strong> What the engine is doing right now, for example "Synth started".</li>
+              <li><strong>DSP.</strong> How hard the sound engine is working, as a percentage. The small number in its label is the recent peak. It turns amber when the peak passes 60% and orange when it passes 80%.</li>
+              <li><strong>Reset</strong> returns every control to its starting value. <strong>Log</strong> opens a list of engine messages, useful when something goes wrong. <strong>About</strong> gives a short description and credits.</li>
+            </ul>
+          </section>
+
+          <section id="synth">
+            <div class="kicker">02</div>
+            <h2>The <em>Synth</em> screen</h2>
+            <p>Every control that shapes the sound itself lives here. Nothing scrolls, and every control is sized for a fingertip.</p>
+            <figure class="shot"><img src="img/screen-synth-formants.png" width="2048" height="1200" loading="lazy" alt="The Synth screen showing the Formants section." /><figcaption><span>Synth screen · Formants section</span><b>02</b></figcaption></figure>
+            <h3>Finding your way</h3>
+            <ul>
+              <li><strong>Four sections</strong> down the left: Engine, Formants, Grain and Voice. Tap one to open it on the right. Each tab also shows a short summary of its most important values, so you can read the whole patch without opening every section.</li>
+              <li>The instrument <strong>remembers</strong> which section you had open.</li>
+            </ul>
+            <h3>Changing a value</h3>
+            <ul>
+              <li><strong>Drag the fader</strong> for big moves.</li>
+              <li><strong>Tap − or +</strong> for small, exact steps. Hold either one down and it repeats.</li>
+              <li><strong>Double-tap a control's name</strong> to send it back to its default. The row flashes to confirm.</li>
+              <li><strong>Switches</strong> are rows of buttons: tap the option you want. Chord is a two-row grid of buttons.</li>
+            </ul>
+            <h3>Why some controls are greyed out</h3>
+            <p>Controls that would have no effect right now are dimmed or hidden, so what you see is what matters:</p>
+            <ul>
+              <li><strong>Burst On</strong> and <strong>Burst Off</strong> appear only when Mask Mode is Burst.</li>
+              <li><strong>Mask Amount</strong> works only when Mask Mode is Stochastic. <strong>Per-Formant</strong> works only when a mask is on.</li>
+              <li><strong>Formant 2 and 3</strong> and <strong>Pan 2 and 3</strong> are dimmed when the formant Count is lower than their number.</li>
+              <li><strong>Duty</strong> is dimmed when Duty Mode is Formant, because the formant sets it.</li>
+              <li><strong>Chord</strong> is dimmed when there is only one voice.</li>
+            </ul>
+            <h3>The three previews</h3>
+            <p>The Engine section draws the pulsaret, the window and the duty across its top. They follow your settings, and they move when an LFO is driving one of them.</p>
+            <h3>Seeing what an LFO is doing</h3>
+            <p>A control that an LFO is driving shows a small orange <code>LFO</code> tag under its name, and a moving orange mark on its fader at the value the LFO has pushed it to. Your own setting stays where you left it. Tap the tag to jump to that LFO on the Mods screen.</p>
+            <h3>Quantized formants</h3>
+            <p>Formants set freely can clash with each other. <strong>Quantize</strong>, in the Formants section, locks Formants 2 and 3 to musical intervals of Formant 1.</p>
+            <ul>
+              <li>With Quantize on, the Formant 2 and 3 faders are replaced by <strong>Interval</strong> rows with fourteen choices: <code>1/2</code> <code>3/4</code> <code>1/1</code> <code>6/5</code> <code>5/4</code> <code>4/3</code> <code>3/2</code> <code>5/3</code> <code>2/1</code> <code>5/2</code> <code>3/1</code> <code>4/1</code> <code>5/1</code> <code>6/1</code>. For example <code>3/2</code> is a fifth above Formant 1 and <code>2/1</code> is an octave above. Each row shows the frequency that results.</li>
+              <li><strong>Formant 1 now carries the other two.</strong> Move it by hand, with an LFO, from MIDI or from a preset, and the others follow.</li>
+              <li><strong>Switching never jumps the sound.</strong> Turning Quantize on picks the interval nearest to where each formant already was. Turning it off leaves the faders at the quantized frequencies.</li>
+              <li>An LFO aimed at Formant 2 or 3 still works when quantized. It becomes a detune around the interval.</li>
+              <li>Formants top out at 8 kHz, so a high interval on a high Formant 1 stops rising there.</li>
+            </ul>
+            <h3>MIDI learn</h3>
+            <ol class="howto">
+              <li><span>Tap <strong>MIDI learn</strong> at the top of the section. Each row now shows which controller number it answers to.</span></li>
+              <li><span>Tap the <strong>name</strong> of the control you want. It reads "waiting for CC…".</span></li>
+              <li><span><strong>Move a knob or fader</strong> on your controller (set to MIDI channel 1). It is now assigned.</span></li>
+              <li><span>Tap <strong>MIDI learn</strong> again to finish.</span></li>
+            </ol>
+            <ul>
+              <li>If that knob was already assigned to something else, it <strong>moves</strong> to the new control.</li>
+              <li>Tap a <code>CC n ×</code> tag to <strong>remove</strong> an assignment.</li>
+              <li>Assignments are <strong>kept</strong> between sessions and work for every control, switches included: a knob sweeps through a switch's options.</li>
+              <li>The Interval rows share the knob of their formant. One knob moves Formant 2's frequency when Quantize is off and steps through its intervals when it is on.</li>
+            </ul>
+          </section>
+
+          <section id="mods">
+            <div class="kicker">03</div>
+            <h2>The <em>Mods</em> screen</h2>
+            <p>Sixteen LFOs, each of which can move one control automatically. The screen is split in two so that watching and editing never get in each other's way.</p>
+            <figure class="shot"><img src="img/screen-mods.png" width="2048" height="1200" loading="lazy" alt="The Mods screen: Monitor pane on the left, Editor pane on the right." /><figcaption><span>Mods screen · Monitor and Editor</span><b>03</b></figcaption></figure>
+            <h3>Monitor, on the left</h3>
+            <ul>
+              <li>All sixteen LFOs are listed. Each row shows its target, shape and speed, and a small meter of what it is putting out at this moment.</li>
+              <li><strong>Tap a row's number</strong> to run or stop that LFO. <strong>Tap the rest of the row</strong> to select it for editing.</li>
+              <li><strong>Scope</strong>, in the corner, shows or hides a drawing of the last four seconds of every running LFO, with the selected one highlighted. When MIDI clock is present it also draws beat and bar lines.</li>
+              <li>The line at the bottom shows the selected LFO's target as the engine hears it: your setting, the value right now, how much this LFO is adding, and the total from every LFO on that target.</li>
+            </ul>
+            <p>What you see here is reported by the sound engine itself, so it is the modulation that is really happening.</p>
+            <h3>Editor, on the right</h3>
+            <ul>
+              <li><strong>‹ and ›</strong> step through the LFOs. The <strong>Running / Off</strong> button turns the selected one on.</li>
+              <li><strong>Source</strong> sets the movement: one of seven shapes (sine, triangle, saw up, saw down, square, sample-and-hold, smooth random), and either a free <strong>Rate</strong> or a <strong>MIDI clock</strong> division.</li>
+              <li><strong>Destination</strong> sets what it moves and how far: a <strong>Target</strong> and a <strong>Depth</strong>. Negative depth turns the shape upside down. The note under the fader tells you what the depth means in the target's own units.</li>
+              <li>Tap a section's heading to fold it away. The heading still shows a summary.</li>
+            </ul>
+            <h3>What an LFO can move</h3>
+            <p>Amplitude, Drive, Pulsaret, Window, Duty, Formants 1 to 3, Mask Amount, Pans 1 to 3, Amp Jitter, Timing Jitter, Glisson, Base Pitch, Attack, Release, Glide and Sample Rate. From the effects: Reverb Mix, Reverb Decay, Delay Mix, Delay Feedback and Delay Clock Ratio. And four switches: Chord, Mask Mode, Interval 2 and Interval 3.</p>
+            <ul>
+              <li><strong>Switch targets move in steps.</strong> The depth is a number of options up or down the list. A square or sample-and-hold LFO on Chord flips between two chords; an LFO on Delay Clock Ratio always lands on a proper ratio.</li>
+              <li>An LFO on <strong>Reverb Mix</strong> or <strong>Delay Mix</strong> can open the effect even if you left its Mix fader at zero.</li>
+            </ul>
+            <h3>Free rate</h3>
+            <p>With MIDI clock off, the Rate fader runs from one cycle every hundred seconds (0.01 Hz) to twenty cycles a second (20 Hz). Most of the fader's travel is given to the slow, musical end: the lower three quarters cover everything up to about 3 Hz.</p>
+            <h3>Locking to MIDI clock</h3>
+            <p>Turn on <strong>MIDI clock</strong> for an LFO and it follows the tempo of whatever is sending clock.</p>
+            <ul>
+              <li>The fader now chooses a division. <code>/4</code> makes one cycle every four beats and lands on the same beat of every bar. <code>x2</code> makes two cycles per beat.</li>
+              <li><strong>Start</strong> on your clock source puts every locked LFO on the downbeat. <strong>Continue</strong> picks up where it stopped.</li>
+              <li><strong>Run waits for the beat.</strong> Press Run while the clock is ticking and the LFO holds off until the next whole beat. Its number and the Running button pulse and read "On next beat" while it waits. Stop is always immediate.</li>
+              <li>Sample-and-hold steps land on the grid too.</li>
+              <li>The tempo is shown at the top of the Monitor and on the Effects screen. A few seconds after the clock stops it reads "stopped" and the last tempo is held, so a synced delay does not jump.</li>
+              <li>Until the instrument has heard enough clock to work out a tempo (a fraction of a beat), a locked LFO runs at its free rate.</li>
+            </ul>
+            <h3>Restarting LFOs with each note</h3>
+            <p>When Gate Mode is <strong>MIDI-like</strong>, every note you play restarts the running LFOs, so each note gets the same movement from its beginning.</p>
+          </section>
+
+          <section id="effects">
+            <div class="kicker">04</div>
+            <h2>The <em>Effects</em> screen</h2>
+            <p>A reverb and a four-tap delay. Both come after the synth, so tails and echoes keep ringing after a note has ended. Effect settings are saved in presets like everything else.</p>
+            <figure class="shot"><img src="img/screen-effects.png" width="2048" height="1200" loading="lazy" alt="The Effects screen with reverb and delay faders." /><figcaption><span>Effects screen · Reverb and delay</span><b>04</b></figcaption></figure>
+
+            <h3>Reverb controls</h3>
+            <div class="tbl-wrap"><table>
+              <thead><tr><th>Control</th><th>Range</th><th>Starts at</th><th>What it does</th></tr></thead>
+              <tbody>
+                <tr><td>Mix</td><td class="n">0 – 1</td><td class="n">0</td><td>How much reverb you hear against the dry sound. At 0 the reverb is off.</td></tr>
+                <tr><td>Decay</td><td class="n">0 – 0.95</td><td class="n">0.6</td><td>How long the tail lasts. It is limited so that it can never run away.</td></tr>
+                <tr><td>Diffusion</td><td class="n">0 – 1</td><td class="n">0.7</td><td>Density. Low gives separate early echoes, high gives a smooth wash.</td></tr>
+                <tr><td>Damping</td><td class="n">0 – 1</td><td class="n">0.5</td><td>How quickly the highs die away. Higher is darker.</td></tr>
+                <tr><td>Shimmer</td><td class="n">0 – 1</td><td class="n">0</td><td>Feeds an octave-up copy into the tail for the rising "shimmer" bloom.</td></tr>
+                <tr><td>Movement</td><td class="n">0 – 1</td><td class="n">0.3</td><td>Gentle motion inside the tail. Stops it sounding metallic; more gives a chorused tail.</td></tr>
+                <tr><td>Pre-delay</td><td class="n">0 – 250 ms</td><td class="n">0</td><td>A gap before the reverb begins, which keeps the start of each note clear.</td></tr>
+                <tr><td>Low Cut</td><td class="n">20 – 1000 Hz</td><td class="n">20</td><td>Removes low frequencies from the reverb only, to stop it muddying the bass.</td></tr>
+              </tbody>
+            </table></div>
+
+            <h3>Dialling in a reverb</h3>
+            <ol class="howto">
+              <li><span>Raise <strong>Mix</strong> to about 0.2 to 0.4.</span></li>
+              <li><span>Set <strong>Decay</strong> for length: around 0.3 for a room, around 0.85 for a long wash.</span></li>
+              <li><span>Set <strong>Diffusion</strong> for density: low for distinct reflections, high for a smooth smear.</span></li>
+              <li><span>Raise <strong>Damping</strong> to darken long tails and keep them from turning harsh.</span></li>
+              <li><span>Raise <strong>Low Cut</strong> to 150 to 300 Hz if the low end gets muddy.</span></li>
+              <li><span>Add <strong>Pre-delay</strong> to separate the dry attack from the tail.</span></li>
+              <li><span>Leave <strong>Movement</strong> near 0.3, or raise it for a more chorused tail.</span></li>
+              <li><span>Bring <strong>Shimmer</strong> up slowly, with a longer Decay, for the octave bloom.</span></li>
+            </ol>
+            <div class="recipe" data-accent="ice"><div class="k">Starting point · ambient pad wash</div><p>Decay 0.85 · Diffusion 0.8 · Damping 0.4 · Movement 0.4 · Shimmer 0.3 · Low Cut 200 Hz · Mix 0.35</p></div>
+
+            <h3>Delay controls</h3>
+            <div class="tbl-wrap"><table>
+              <thead><tr><th>Control</th><th>Range</th><th>Starts at</th><th>What it does</th></tr></thead>
+              <tbody>
+                <tr><td>Mix</td><td class="n">0 – 1</td><td class="n">0</td><td>How much delay you hear. At 0 the delay is silent.</td></tr>
+                <tr><td>Feedback</td><td class="n">0 – 0.88</td><td class="n">0.35</td><td>How many times the echo pattern repeats. Each repeat is a little darker. It is limited so it cannot run away.</td></tr>
+                <tr><td>Tap Spread</td><td class="n">0 – 1</td><td class="n">0.45</td><td>Fans the four echoes apart. At 0 they land together as one echo; at 1 the last one arrives at about two and a half times the base time.</td></tr>
+                <tr><td>Base Time</td><td class="n">20 – 2000 ms</td><td class="n">320</td><td>The delay time when Sync is set to Free ms.</td></tr>
+                <tr><td>Sync</td><td class="n">Free ms / MIDI Clock</td><td class="n">Free ms</td><td>Set the time by hand, or lock it to incoming MIDI clock.</td></tr>
+                <tr><td>Clock Ratio</td><td class="n">/16 … x16</td><td class="n">x1</td><td>The delay time as a fraction or multiple of one beat when Sync is MIDI Clock.</td></tr>
+              </tbody>
+            </table></div>
+
+            <h3>Dialling in a delay</h3>
+            <ol class="howto">
+              <li><span>Raise <strong>Mix</strong> to bring the echoes in.</span></li>
+              <li><span>Choose <strong>Sync</strong>. <strong>Free ms</strong> lets you set Base Time by hand, independent of tempo. <strong>MIDI Clock</strong> locks the delay to your clock source; Base Time is switched off and Clock Ratio takes over.</span></li>
+              <li><span>In MIDI Clock mode, pick a <strong>Clock Ratio</strong>. <code>x1</code> is one beat. <code>/N</code> makes the delay longer and slower; <code>xN</code> makes it shorter and faster. Besides whole numbers up to 16 each way there are 1.3, 1.5, 1.75 and 2.5 for dotted and triplet-like feels.</span></li>
+              <li><span>Use <strong>Tap Spread</strong> to turn one echo into a pattern of four. In MIDI Clock mode the echoes snap onto clock divisions, so the pattern stays on the grid.</span></li>
+              <li><span>Set <strong>Feedback</strong> for length: low for a couple of slaps, high for long trails. The whole four-echo pattern repeats as a group.</span></li>
+            </ol>
+            <div class="recipe" data-accent="acid"><div class="k">Starting point · tempo-synced rhythmic delay</div><p>Sync MIDI Clock · Clock Ratio x4 (four echoes per beat) · Tap Spread 0.6 · Feedback 0.45 · Mix 0.3</p></div>
+            <p class="note" style="margin-top:14px">When both Mix faders are at 0 the effects are switched off completely and use no processing power.</p>
+          </section>
+
+          <section id="presets">
+            <div class="kicker">05</div>
+            <h2>Presets and <em>samples</em></h2>
+            <figure class="shot"><img src="img/screen-presets.png" width="2048" height="1200" loading="lazy" alt="The Presets screen with the preset bank and slot detail." /><figcaption><span>Presets screen</span><b>05</b></figcaption></figure>
+            <h3>Presets</h3>
+            <p>There are thirty-two slots. A preset stores every control on the Synth and Effects screens, all sixteen LFOs, and the sample in use.</p>
+            <ul>
+              <li><strong>Tap a slot</strong> in the bank on the left to select it.</li>
+              <li><strong>Recall</strong> loads it. <strong>Save Here</strong> stores the current sound in it.</li>
+              <li><strong>Rename</strong> gives it the name typed in the Name box. <strong>Clear</strong> empties the slot.</li>
+            </ul>
+            <h3>Using your own samples</h3>
+            <p>A sample can take the place of the built-in waveform as the particle the sound is made from.</p>
+            <ol class="howto">
+              <li><span>Put audio files in the samples folder. On the Pi this is <code>/spaluter/samples/</code>, which is meant to be a USB stick. You can type a different folder into the box.</span></li>
+              <li><span>Tap <strong>↻</strong> to refresh the list, choose a file, and tap <strong>Load</strong>.</span></li>
+              <li><span>Tick <strong>Use Sample</strong>.</span></li>
+              <li><span><strong>Rate</strong> plays the sample slower or faster, from a quarter speed to four times.</span></li>
+            </ol>
+          </section>
+
+          <section id="midi">
+            <div class="kicker">06</div>
+            <h2><em>MIDI</em></h2>
+            <h3>Notes</h3>
+            <p>Playing a note sets the pitch and opens the sound; releasing it lets the sound go. How the instrument responds depends on <strong>Gate Mode</strong> in the Voice section, and playing notes never changes that setting for you:</p>
+            <ul>
+              <li><strong>MIDI-like</strong>: sound while a note is held, like a keyboard synth. Each new note also restarts the running LFOs.</li>
+              <li><strong>Free Run</strong>: the sound runs continuously as a drone.</li>
+              <li><strong>CV-like</strong>: the sound is fired by triggers.</li>
+            </ul>
+            <h3>Knobs and faders</h3>
+            <p>Controllers are read on <strong>MIDI channel 1</strong>. Every control has a controller number (CC) assigned out of the box, listed below. Change any of them with <a href="#synth">MIDI learn</a>.</p>
+            <div class="cc-grid">
+            <div class="cc-group" data-accent="shock"><h4>Engine</h4><dl><dt>Amplitude</dt><dd>CC 7</dd><dt>Drive Gain</dt><dd>CC 71</dd><dt>Pulsaret</dt><dd>CC 20</dd><dt>Window</dt><dd>CC 21</dd><dt>Duty</dt><dd>CC 22</dd><dt>Duty Mode</dt><dd>CC 23</dd></dl></div>
+            <div class="cc-group" data-accent="ice"><h4>Formants</h4><dl><dt>Count</dt><dd>CC 24</dd><dt>Track Pitch</dt><dd>CC 25</dd><dt>Quantize</dt><dd>CC 63</dd><dt>Formant 1</dt><dd>CC 26</dd><dt>Formant 2 / Interval 2</dt><dd>CC 27</dd><dt>Formant 3 / Interval 3</dt><dd>CC 28</dd><dt>Pan 1</dt><dd>CC 29</dd><dt>Pan 2</dt><dd>CC 30</dd><dt>Pan 3</dt><dd>CC 31</dd></dl></div>
+            <div class="cc-group" data-accent="acid"><h4>Grain</h4><dl><dt>Mask Mode</dt><dd>CC 32</dd><dt>Per-Formant</dt><dd>CC 33</dd><dt>Mask Amount</dt><dd>CC 34</dd><dt>Amp Jitter</dt><dd>CC 35</dd><dt>Timing Jitter</dt><dd>CC 36</dd><dt>Glisson</dt><dd>CC 37</dd><dt>Burst On</dt><dd>CC 38</dd><dt>Burst Off</dt><dd>CC 39</dd></dl></div>
+            <div class="cc-group" data-accent="ok"><h4>Voice</h4><dl><dt>Gate Mode</dt><dd>CC 40</dd><dt>Voices</dt><dd>CC 41</dd><dt>Chord</dt><dd>CC 42</dd><dt>Base Pitch</dt><dd>CC 43</dd><dt>Attack</dt><dd>CC 44</dd><dt>Release</dt><dd>CC 45</dd><dt>Glide</dt><dd>CC 46</dd></dl></div>
+            <div class="cc-group" data-accent="shock"><h4>Sample</h4><dl><dt>Use Sample</dt><dd>CC 47</dd><dt>Sample Rate</dt><dd>CC 48</dd></dl></div>
+            <div class="cc-group" data-accent="ice"><h4>Reverb</h4><dl><dt>Mix</dt><dd>CC 49</dd><dt>Decay</dt><dd>CC 50</dd><dt>Damping</dt><dd>CC 51</dd><dt>Diffusion</dt><dd>CC 52</dd><dt>Movement</dt><dd>CC 53</dd><dt>Pre-delay</dt><dd>CC 54</dd><dt>Low Cut</dt><dd>CC 55</dd><dt>Shimmer</dt><dd>CC 56</dd></dl></div>
+            <div class="cc-group" data-accent="acid"><h4>Delay</h4><dl><dt>Mix</dt><dd>CC 57</dd><dt>Feedback</dt><dd>CC 58</dd><dt>Tap Spread</dt><dd>CC 59</dd><dt>Base Time</dt><dd>CC 60</dd><dt>Sync</dt><dd>CC 61</dd><dt>Clock Ratio</dt><dd>CC 62</dd></dl></div>
+            </div>
+            <h3>Clock</h3>
+            <p>Send MIDI clock from a drum machine, sequencer or computer and the instrument reads the tempo. LFOs with MIDI clock turned on, and the delay with Sync set to MIDI Clock, then follow it. Start, Continue and Stop from the clock source are followed as well.</p>
+          </section>
+
+          <section id="install">
+            <div class="kicker">07</div>
+            <h2><em>Installing</em></h2>
+            <p>Spiluter runs on a Raspberry Pi 4, on macOS, on Windows and on Linux. It uses <strong>SuperCollider</strong>, a free audio program, as its sound engine. If SuperCollider is missing, Spiluter tries to install it for you on first start, and your computer may ask for an administrator password.</p>
+            <h3>On a Raspberry Pi</h3>
+            <ol class="howto">
+              <li><span>Build the instrument as described on the <a href="hardware.html">Hardware</a> page, with Patchbox OS on the card.</span></li>
+              <li><span>Install the Spiluter package for Raspberry Pi (the file ending in <code>linux-arm64.deb</code>).</span></li>
+              <li><span>The installer does the rest: it fetches what the instrument needs, tunes the audio system for low delay and steady timing, and keeps the Pi's own headphone and HDMI sound outputs out of the way so the pisound is the only one in use.</span></li>
+              <li><span>Restart. The instrument starts by itself.</span></li>
+            </ol>
+            <p>If the automatic setup did not complete, you can run it again from a terminal on the Pi:</p>
+            <pre><code>sudo /usr/local/bin/spaluter-rpi-setup --force</code></pre>
+            <h3>On a Mac or a Windows PC</h3>
+            <ul>
+              <li><strong>macOS</strong>: there are installers for both Apple Silicon and Intel Macs.</li>
+              <li><strong>Windows</strong>: run the installer and follow the prompts.</li>
+              <li>Start Spiluter like any other application. It finds SuperCollider, or offers to install it (using Homebrew on a Mac and winget on Windows).</li>
+            </ul>
+            <h3>Running it from the project files</h3>
+            <p>If you have the project itself rather than an installer, you need Node.js version 18 or newer. In the project folder:</p>
+            <pre><code>npm install
+npm start</code></pre>
+            <h3>Making the installers yourself</h3>
+            <p>These commands build the installers into the <code>installers</code> folder:</p>
+            <pre><code>npm run build:mac          <span class="c"># macOS, Intel and Apple Silicon</span>
+npm run build:win          <span class="c"># Windows</span>
+npm run build:pi           <span class="c"># Raspberry Pi</span>
+npm run build:installers   <span class="c"># all three</span></code></pre>
+          </section>
+
+          <section id="pi">
+            <div class="kicker">08</div>
+            <h2>Looking after a <em>Pi</em></h2>
+            <p>The installer sets the Pi up for clean, steady audio. You should not need to change anything, but these checks tell you whether all is well.</p>
+            <h3>While you play</h3>
+            <ul>
+              <li>Watch the <strong>DSP</strong> reading. With the default sound it sits around 10%. Amber means the peak has passed 60%, orange 80%: use fewer voices or formants if you hear dropouts.</li>
+              <li>Keep the <strong>POWER</strong> chip green. A weak power supply causes crackle that no setting will remove. Use a dedicated 5.1 V, 3 A supply.</li>
+            </ul>
+            <h3>If you hear clicks or crackle</h3>
+            <ol class="howto">
+              <li><span><strong>Check power first.</strong> In a terminal on the Pi, <code>vcgencmd get_throttled</code> should answer <code>0x0</code>. Anything else means the Pi has been short of power.</span></li>
+              <li><span><strong>Check the DSP reading.</strong> If it is high, lighten the patch.</span></li>
+              <li><span><strong>Record what the Pi is sending out</strong>, with the command below. If the recording is clean but you still hear the noise, the cause is after the Pi: power, a cable, or the equipment it is plugged into.</span></li>
+            </ol>
+            <pre><code>pw-record --target alsa_output.platform-soc_sound.stereo-fallback -P '{ stream.capture.sink = true }' out.wav</code></pre>
+            <h3>Measuring a session</h3>
+            <p>For a full report on how the Pi is coping, run this from another computer while you play for five minutes with the screen on. The number is the length in seconds.</p>
+            <pre><code>spaluter-measure 300</code></pre>
+            <p>The report is saved in <code>~/.local/state/spaluter/</code>. The instrument also writes a line about its own workload every fifteen seconds to the Log and to <code>start.log</code> in that same folder.</p>
+          </section>
+
+          <section id="trouble">
+            <div class="kicker">09</div>
+            <h2><em>Troubleshooting</em></h2>
+            <details class="qa" open>
+              <summary>The app opens but there is no sound and the synth never starts</summary>
+              <div class="a">
+                <p>Tap <strong>Log</strong> and look for the words <code>Failed to launch sclang</code>. That means SuperCollider could not be found.</p>
+                <p>Make sure SuperCollider is installed. If it is installed somewhere unusual, tell Spiluter where, by starting it from a terminal like this.</p>
+                <p>macOS or Linux:</p>
+                <pre><code>SCLANG_PATH=/absolute/path/to/sclang npm start</code></pre>
+                <p>Windows (PowerShell):</p>
+                <pre><code>$env:SCLANG_PATH="C:\Path\to\sclang.exe"; npm start</code></pre>
+              </div>
+            </details>
+            <details class="qa">
+              <summary>The Log says "Server 'localhost' exited" just after starting</summary>
+              <div class="a">
+                <p>This is nearly always a disagreement between the sound engine and your audio output, usually about sample rate.</p>
+                <p>Open SuperCollider on its own and check that it can start with your current output device. On a Mac, open Audio MIDI Setup and make sure the output device's sample rate is the one you expect.</p>
+              </div>
+            </details>
+            <details class="qa">
+              <summary>My controller does nothing</summary>
+              <div class="a">
+                <p>Check the <code>MIDI</code> chip at the top. If it is not green, the controller is not being seen: check the cable and that the controller is switched on.</p>
+                <p>If it is green, make sure the controller sends on <strong>MIDI channel 1</strong>, and that its knobs send the controller numbers in the table above, or assign them with MIDI learn.</p>
+              </div>
+            </details>
+            <details class="qa">
+              <summary>A clock-synced LFO or delay is not following the tempo</summary>
+              <div class="a">
+                <p>Look at the tempo readout at the top of the Mods Monitor or on the Effects screen. If it says no clock is detected, your clock source is not sending MIDI clock to the instrument. Until a tempo is known, synced LFOs run at their free rate and the delay uses its last tempo.</p>
+              </div>
+            </details>
+            <details class="qa">
+              <summary>Crackle or clicks on the Raspberry Pi</summary>
+              <div class="a">
+                <p>See <a href="#pi">Looking after a Pi</a>. Start with the power supply.</p>
+              </div>
+            </details>
+            <details class="qa">
+              <summary>The Pi did not finish setting itself up</summary>
+              <div class="a">
+                <p>Run the setup again, then restart:</p>
+                <pre><code>sudo /usr/local/bin/spaluter-rpi-setup --force</code></pre>
+                <p>To re-run only the checks the instrument makes each time it starts:</p>
+                <pre><code>/usr/local/bin/spaluter-linux-startup</code></pre>
+              </div>
+            </details>
+          </section>
+
+        </div>
+      </div>
+    </main>
+
+    <footer class="site-foot">
+      <div class="wrap">
+        <div>
+          <div class="wm">S<b>PI</b>LUTER</div>
+          <p>A pulsar synthesis instrument · MIT licensed</p>
+        </div>
+        <nav aria-label="Footer">
+          <a href="index.html">Overview</a>
+          <a href="pulsar-synthesis.html">Pulsar synthesis</a>
+          <a href="hardware.html">Hardware</a>
+          <a href="documentation.html">Documentation</a>
+        </nav>
+      </div>
+    </footer>
+    <script src="js/site.js"></script>
+  </body>
+</html>
